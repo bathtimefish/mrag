@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+.eggs/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# mypy / pyright / ruff
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# Distribution / packaging
+*.tar.gz
+*.whl
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# mrag project directories (user data — not part of source)
+e2e_test/
+dev_docs/
+
+# mrag runtime files that may appear at repo root during development
+mrag.yaml
+mrag.db
+mrag.db-shm
+mrag.db-wal
+profiles/
+data/
+qdrant/
+logs/
+cache/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Jupyter
+.ipynb_checkpoints/

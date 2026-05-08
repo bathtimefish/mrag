@@ -1,0 +1,340 @@
+# SKILLS.md — mrag Skill Procedures
+
+Concrete, step-by-step procedures for AI agents operating mrag. Each skill lists preconditions, exact commands, expected output, and verification steps.
+
+For background concepts and constraints, see [AGENTS.md](AGENTS.md).
+
+---
+
+## Skill 1 — Initialize a new project
+
+**Preconditions:**
+- `mrag` CLI is installed (`pip install mrag` or `pip install mrag[vaporetto]`)
+- Ollama is running and `bge-m3` is pulled
+- Qdrant is running on `localhost:6333`
+- You are in the **parent directory** (not inside the intended project directory)
+
+**Steps:**
+
+```bash
+# 1. Move to the parent directory where the project subdirectory should be created
+cd /path/to/parent
+
+# 2. Initialize (creates /path/to/parent/<name>/)
+mrag init --name <name> --yes
+# --yes skips interactive prompts and accepts all defaults
+
+# 3. Enter the project directory for all subsequent operations
+cd <name>
+```
+
+**Expected output:**
+```
+✓ vaporetto tokenizer detected (libsqlite_vaporetto.dylib)   # if vaporetto available
+✓ Created directory structure
+✓ Generated mrag.yaml
+✓ Generated profiles/default.yaml
+✓ Initialized mrag.db
+```
+
+**Verify:**
+```bash
+mrag doctor   # should show all checks green
+cat mrag.yaml # confirm fts_tokenizer and knowledge_base.id
+```
+
+---
+
+## Skill 2 — Add documents to a project
+
+**Preconditions:**
+- Inside the project directory (`mrag.yaml` exists in cwd)
+- Source files are accessible (PDF, .txt, or .md)
+
+**Steps:**
+
+```bash
+# Add one file
+mrag add /path/to/document.pdf
+
+# Add multiple files — loop (mrag add accepts one file per invocation)
+for f in /path/to/docs/*.pdf; do mrag add "$f"; done
+```
+
+**Expected output per file:**
+```
+✓ Added: document.pdf  (id=91f28863-...)
+```
+
+**Notes:**
+- Adding does **not** index. Run `mrag index` separately.
+- Re-adding the same file (same SHA-256 hash) is rejected unless `--force` is passed.
+- The extracted text is stored in `data/documents/<doc-id>/extracted.txt`.
+
+**Verify extraction:**
+```bash
+mrag show-extracted <doc-id>   # preview extracted text
+```
+
+---
+
+## Skill 3 — Build (or update) the retrieval index
+
+**Preconditions:**
+- Inside the project directory
+- At least one document has been added (`mrag add` completed)
+- Qdrant is running on `localhost:6333`
+- Ollama is running and the embedding model (default: `bge-m3`) is pulled
+
+**Steps:**
+
+```bash
+# Index all un-indexed documents (differential)
+mrag index
+
+# Index a specific document only
+mrag index --document-id <doc-id>
+
+# Force full rebuild of the index (drops and recreates all chunks)
+mrag reindex
+```
+
+**Expected output:**
+```
+✓ Indexed: 12  Skipped: 0
+```
+
+`Skipped` count shows documents whose content and profile hash have not changed since last indexing.
+
+**Verify:**
+```bash
+mrag search "test" --strategy keyword --top-k 1
+# Should return at least one result if documents contain the term
+```
+
+---
+
+## Skill 4 — Search the knowledge base (CLI)
+
+**Preconditions:**
+- Inside the project directory
+- `mrag index` has completed at least once
+- For `vector` or `hybrid` strategy: Qdrant and Ollama must be running
+
+**Steps:**
+
+```bash
+# Hybrid search (default — recommended)
+mrag search "<query>" --top-k 5
+
+# Keyword search (FTS5 BM25 — works without Qdrant/Ollama)
+mrag search "<query>" --strategy keyword --top-k 5
+
+# Vector search (dense — requires Qdrant + Ollama)
+mrag search "<query>" --strategy vector --top-k 5
+```
+
+**Query syntax for keyword/hybrid strategy:**
+
+| Query form | Behaviour |
+|------------|-----------|
+| `word1 word2` | AND — chunks containing both terms |
+| `"exact phrase"` | Phrase match |
+| `熱電対 概要` | AND for Japanese (space = AND) |
+| `熱電対の概要` | Phrase for Japanese (no space = adjacent tokens) |
+
+**Expected output:**
+```
+[1] score=6.39  doc=manual.pdf  chunk=eb0495d2...
+    …接点出力ポートに対してON/OFF制御を…
+```
+
+**If zero results:**
+1. Confirm `mrag index` has been run
+2. Check `fts_tokenizer` in `mrag.yaml` matches what was used at index time
+3. Try a simpler, shorter query term first
+4. Run `mrag doctor` to check Qdrant and Ollama connectivity
+
+---
+
+## Skill 5 — Search the knowledge base (HTTP API)
+
+**Preconditions:**
+- Inside the project directory
+- `mrag serve` is running (see Skill 6)
+- If `MRAG_API_KEY` is set: include `Authorization: Bearer <key>` in every request
+
+**Retrieve chunks:**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "接点出力の制御方法",
+    "strategy": "hybrid",
+    "top_k": 5
+  }'
+```
+
+**Response shape:**
+```json
+{
+  "query": "接点出力の制御方法",
+  "profile": "default",
+  "strategy": "hybrid",
+  "results": [
+    {
+      "chunk_id": "eb0495d2-...",
+      "document_id": "91f28863-...",
+      "filename": "manual.pdf",
+      "score": 6.39,
+      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "metadata": {}
+    }
+  ]
+}
+```
+
+**List all documents:**
+```bash
+curl -s http://127.0.0.1:8000/api/v1/documents
+```
+
+**Get a document by ID:**
+```bash
+curl -s http://127.0.0.1:8000/api/v1/documents/<doc-id>
+```
+
+**List profiles:**
+```bash
+curl -s http://127.0.0.1:8000/api/v1/profiles
+```
+
+**With authentication:**
+```bash
+curl -s http://127.0.0.1:8000/api/v1/documents \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+---
+
+## Skill 6 — Start the API server
+
+**Preconditions:**
+- Inside the project directory
+- `mrag index` has completed at least once
+- Qdrant and Ollama must be running (for vector/hybrid retrieval)
+
+**Steps:**
+
+```bash
+# Start on default port 8000
+mrag serve
+
+# Custom host and port
+mrag serve --host 0.0.0.0 --port 8080
+
+# With authentication
+MRAG_API_KEY=your-secret-key mrag serve
+```
+
+**Verify the server is ready:**
+```bash
+curl -s http://127.0.0.1:8000/api/v1/profiles
+# Should return a JSON array with at least "default"
+```
+
+Interactive API docs: `http://127.0.0.1:8000/docs`
+
+---
+
+## Skill 7 — Remove a document
+
+**Preconditions:**
+- Inside the project directory
+- The document ID must exist in the database
+
+**Steps:**
+
+```bash
+# Step 1: dry-run — shows what would be deleted, nothing is changed
+mrag remove <doc-id>
+
+# Step 2: actual deletion (removes from SQLite, FTS5, and Qdrant)
+mrag remove --force <doc-id>
+```
+
+**Find a document ID:**
+```bash
+# From CLI (after indexing)
+mrag profiles list
+
+# From SQLite directly
+sqlite3 mrag.db "SELECT id, filename FROM documents;"
+
+# From API
+curl -s http://127.0.0.1:8000/api/v1/documents
+```
+
+**Verify deletion:**
+```bash
+mrag search "<term from that document>" --strategy keyword
+# Should return no results from the deleted document
+```
+
+---
+
+## Skill 8 — Check environment health
+
+**Preconditions:** None (works without a project directory)
+
+```bash
+mrag doctor
+```
+
+Checks and reports:
+- SQLite version and FTS5 availability
+- `trigram` tokenizer availability
+- vaporetto extension load (if library found)
+- Qdrant reachability (`localhost:6333`)
+- Ollama reachability (`localhost:11434`)
+- `mrag.yaml` validity (if in a project directory)
+
+**Use this skill** before starting any indexing or serving task to confirm the environment is ready.
+
+---
+
+## Skill 9 — Preview or export extracted text
+
+Use these skills to inspect what text was extracted from a document before or after indexing.
+
+**Preview extracted text of an added document:**
+```bash
+mrag show-extracted <doc-id>
+```
+
+**Export to a file:**
+```bash
+mrag export-extracted <doc-id> --output /path/to/output.txt
+```
+
+**Dry-run extraction from a file (no storage):**
+```bash
+mrag extract /path/to/document.pdf
+```
+
+This is useful to verify that a PDF is readable and produces meaningful text before committing it to the knowledge base.
+
+---
+
+## Quick decision guide
+
+```
+Need to search without Qdrant/Ollama?  →  --strategy keyword
+Need best Japanese retrieval?          →  ensure fts_tokenizer: vaporetto in mrag.yaml
+Zero results from keyword search?      →  check mrag index ran; try single-word query
+Zero results from vector/hybrid?       →  check Qdrant + Ollama running; run mrag doctor
+Need to update one document?           →  mrag remove --force <id>; mrag add <file>; mrag index
+Need to rebuild everything?            →  mrag reindex
+Need to expose retrieval over HTTP?    →  mrag serve (from inside project dir)
+```

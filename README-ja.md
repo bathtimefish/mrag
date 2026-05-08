@@ -1,0 +1,398 @@
+# mrag — Micro RAG
+
+**ローカルファーストの軽量 RAG 検索ランタイム**
+
+mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG ツールです。コマンド1つで自己完結型のナレッジベースを作成し、ドキュメントをインデックスして、CLI または HTTP API で検索できます。すべてのデータはローカルに保存され、SQLite が信頼できる唯一のソースです。Qdrant のベクターインデックスはいつでも再構築できます。
+
+---
+
+## 特徴
+
+- **ハイブリッド検索** — キーワード（FTS5 BM25）、ベクター（密ベクトル）、RRF 融合ハイブリッドの3方式に対応
+- **日本語対応トークナイザー** — [sqlite-vaporetto](https://github.com/daac-tools/sqlite-vaporetto)（形態素解析）を自動検出し、見つからない場合は SQLite 組み込みの trigram トークナイザーにフォールバック
+- **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
+- **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
+- **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
+- **FastAPI サーバー** — オプションの Bearer トークン認証付きで HTTP API として公開可能
+- **Dify 対応** — `mrag serve` は [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) 仕様を実装済み。アダプター不要で Dify の外部ナレッジソースとして利用可能
+- **完全ローカル** — クラウド依存なし。Qdrant はローカルサーバーとして動作
+
+---
+
+## 必要な環境
+
+| コンポーネント | 備考 |
+|--------------|------|
+| Python 3.11+ | |
+| [Ollama](https://ollama.com) | 起動済みであること。デフォルトで `bge-m3` を使用 |
+| [Qdrant](https://qdrant.tech) | `localhost:6333` でローカルサーバーが起動済みであること |
+| `libsqlite_vaporetto` | 任意。日本語形態素解析を有効にする |
+| `apsw >= 3.43` | vaporetto トークナイザー使用時のみ必要 |
+
+---
+
+## インストール
+
+```bash
+pip install mrag
+```
+
+### vaporetto を使う場合（日本語ドキュメントに推奨）
+
+```bash
+pip install mrag[vaporetto]
+```
+
+次に、`libsqlite_vaporetto.dylib`（macOS）または `libsqlite_vaporetto.so`（Linux）を以下のディレクトリに配置します：
+
+```
+~/.mrag/extensions/
+```
+
+または環境変数でカスタムパスを指定できます：
+
+```bash
+export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
+```
+
+> **注意:** macOS のシステム `sqlite3` は `OMIT_LOAD_EXTENSION` フラグ付きでビルドされているため、vaporetto を使用するには `apsw`（拡張ローディングを常にサポートする代替 SQLite バインディング）が必要です。`pip install mrag[vaporetto]` を実行すると自動的にインストールされます。
+
+### デフォルト Embedding モデルの取得
+
+```bash
+ollama pull bge-m3
+```
+
+`bge-m3` は日本語・英語を含む多言語対応の Embedding モデルです（1024 次元）。プロファイル YAML を編集することで、Ollama に対応した任意のモデルに変更できます。
+
+---
+
+## クイックスタート
+
+### 1. プロジェクトを初期化する
+
+```bash
+mrag init --name my-project
+cd my-project
+```
+
+`mrag init` はカレントディレクトリに `my-project/` サブディレクトリを作成します：
+
+- `mrag.yaml` — プロジェクト設定
+- `profiles/default.yaml` — 検索プロファイル
+- `mrag.db` — SQLite データベース
+- `data/`、`qdrant/`、`cache/` などのサポートディレクトリ
+
+初期化時にトークナイザーが自動検出されます。vaporetto が見つかった場合は自動的に設定されます：
+
+```
+✓ vaporetto tokenizer detected (libsqlite_vaporetto.dylib)
+✓ Created directory structure
+✓ Generated mrag.yaml
+✓ Generated profiles/default.yaml
+✓ Initialized mrag.db
+```
+
+### 2. ドキュメントを追加する
+
+```bash
+mrag add report.pdf
+mrag add manual.pdf notes.txt
+```
+
+ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。
+
+### 3. インデックスを構築する
+
+```bash
+mrag index
+```
+
+未インデックスのドキュメントを Embedding してFTS5 + Qdrant インデックスを構築します：
+
+```
+✓ Indexed: 12  Skipped: 0
+```
+
+新しいファイルを追加してから `mrag index` を再実行すると、新規分のみが処理されます。
+
+### 4. 検索する
+
+```bash
+# ハイブリッド（デフォルト）
+mrag search "熱電対の温度測定"
+
+# キーワードのみ
+mrag search "接点出力 ON OFF" --strategy keyword
+
+# ベクターのみ
+mrag search "temperature sensing" --strategy vector
+
+# 件数を指定
+mrag search "Bluetooth LE" --top-k 3
+```
+
+### 5. API サーバーとして起動する
+
+```bash
+mrag serve
+```
+
+`http://127.0.0.1:8000` で FastAPI サーバーが起動します。詳細は [API リファレンス](#api-リファレンス) を参照してください。
+
+---
+
+## CLI リファレンス
+
+| コマンド | 説明 |
+|---------|------|
+| `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
+| `mrag add <file> [file…]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
+| `mrag index [--profile P]` | 差分インデックス（最新のドキュメントはスキップ） |
+| `mrag reindex [--profile P]` | プロファイルのインデックスを強制再構築 |
+| `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`） |
+| `mrag serve` | FastAPI サーバー起動（`--host`、`--port`） |
+| `mrag remove <doc-id>` | ドライラン削除（実際に削除するには `--force`） |
+| `mrag profiles list` | DBに登録済みのプロファイル一覧 |
+| `mrag profiles show <name>` | プロファイルの設定を表示 |
+| `mrag extract <file>` | 抽出テキストのプレビュー（保存なし） |
+| `mrag show-extracted <doc-id>` | 保存済みの抽出テキストを表示 |
+| `mrag export-extracted <doc-id>` | 抽出テキストをファイルにエクスポート |
+| `mrag doctor` | 環境チェック（SQLite、vaporetto、Qdrant、Ollama） |
+
+---
+
+## API リファレンス
+
+`mrag serve` でサーバーを起動した後、以下のエンドポイントを呼び出せます：
+
+### `POST /api/v1/retrieve`
+
+ナレッジベースからチャンクを検索します。
+
+**リクエストボディ:**
+
+```json
+{
+  "query": "接点出力の制御方法",
+  "strategy": "hybrid",
+  "top_k": 5,
+  "profile": "default"
+}
+```
+
+`strategy` — `"hybrid"`（デフォルト）、`"keyword"`、`"vector"` のいずれか  
+`profile` — プロファイル名。省略時はプロジェクトの `default_profile` を使用
+
+**レスポンス:**
+
+```json
+{
+  "query": "接点出力の制御方法",
+  "profile": "default",
+  "strategy": "hybrid",
+  "results": [
+    {
+      "chunk_id": "...",
+      "document_id": "...",
+      "filename": "manual.pdf",
+      "score": 6.39,
+      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "metadata": {}
+    }
+  ]
+}
+```
+
+`POST /api/v1/search` は同じエンドポイントのエイリアスです。
+
+### `GET /api/v1/documents`
+
+ナレッジベース内のドキュメント一覧を返します。
+
+### `GET /api/v1/documents/{document_id}`
+
+ドキュメントの詳細（チャンク数を含む）を返します。
+
+### `GET /api/v1/profiles`
+
+DBに登録済みの検索プロファイル一覧を返します。
+
+### `GET /api/v1/profiles/{profile_name}`
+
+プロファイルの完全な設定を返します。
+
+### 認証
+
+サーバー起動前に `MRAG_API_KEY` 環境変数を設定すると、Bearer トークン認証が有効になります：
+
+```bash
+MRAG_API_KEY=your-secret-key mrag serve
+```
+
+以降のリクエストにはヘッダーが必要です：
+
+```
+Authorization: Bearer your-secret-key
+```
+
+有効なキーがない場合は `401 Unauthorized` が返ります。
+
+---
+
+## Dify 外部ナレッジ API
+
+`mrag serve` は [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) 仕様をそのまま実装しています。起動中の mrag インスタンスをアダプターなしで Dify の外部ナレッジソースとして接続できます。
+
+### `POST /retrieval`
+
+**リクエストボディ:**
+
+```json
+{
+  "knowledge_id": "<your-knowledge-id>",
+  "query": "接点出力の制御方法",
+  "retrieval_setting": {
+    "top_k": 5,
+    "score_threshold": 0.5
+  }
+}
+```
+
+`knowledge_id` — `mrag.yaml` の `knowledge_id` と一致する必要があります  
+`top_k` — 最大取得件数（1〜100）  
+`score_threshold` — 正規化スコアの下限（0.0〜1.0）。この値未満の結果は除外されます
+
+**レスポンス:**
+
+```json
+{
+  "records": [
+    {
+      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "score": 0.87,
+      "title": "manual.pdf",
+      "metadata": {}
+    }
+  ]
+}
+```
+
+スコアはすべて `[0, 1]` に正規化されます。BM25 キーワードスコアは `score / (1 + score)` で変換、ベクターおよびハイブリッドスコアは元から範囲内でクランプされます。
+
+**エラーレスポンス**は Dify 仕様に準拠します：
+
+| HTTP | `error_code` | 内容 |
+|------|-------------|------|
+| 404 | 2001 | `knowledge_id` が見つからない |
+| 401 | 1001 | `Authorization` ヘッダーが欠落または不正 |
+| 401 | 1002 | API キーが間違っている |
+
+### Dify への接続手順
+
+1. Docker からアクセスできるよう、すべてのインターフェースにバインドしてサーバーを起動します：
+   ```bash
+   MRAG_API_KEY=your-secret-key mrag serve --host 0.0.0.0 --port 8000
+   ```
+2. Dify で **ナレッジ → 外部ナレッジ API → 追加** を開きます。
+3. **エンドポイント URL** を設定します。Dify の動作環境によって異なります：
+
+   | Dify の環境 | エンドポイント URL |
+   |------------|-----------------|
+   | Docker Desktop（macOS / Windows） | `http://host.docker.internal:8000` |
+   | Linux の Docker | `http://172.17.0.1:8000`（docker0 ブリッジ） |
+   | 同じ LAN / VM | `http://<ホストの LAN IP>:8000` |
+
+   > `http://127.0.0.1:8000` は**使用不可**です。Dify コンテナ内の `127.0.0.1` はコンテナ自身を指すため、ホストマシンの mrag に到達できません。
+
+4. **API キー** に `MRAG_API_KEY` の値を設定します（認証なしの場合は空欄）。
+5. Dify でナレッジベースを作成する際は、`mrag.yaml` の `knowledge_id` を使用します。
+
+---
+
+## 検索プロファイル
+
+プロファイルは `profiles/` 内の YAML ファイルで、チャンキング・Embedding・検索を制御します。`mrag init` で生成されるデフォルトプロファイル：
+
+```yaml
+name: default
+
+chunking:
+  strategy: recursive
+  source_format: text
+  chunk_size: 800
+  overlap: 120
+
+embedding:
+  provider: ollama
+  model: bge-m3
+  endpoint: http://localhost:11434
+
+retrieval:
+  strategy: hybrid
+  top_k: 8
+  dense_top_k: 20
+  keyword_top_k: 20
+  fusion: rrf
+
+keyword:
+  provider: sqlite_fts5
+  tokenizer: vaporetto       # init 時に自動設定。vaporetto 未検出時は trigram
+  fallback_tokenizer: trigram
+```
+
+`profiles/` に新しい YAML を配置して `mrag index --profile <name>` を実行することで、複数のプロファイルを使い分けられます。
+
+---
+
+## アーキテクチャ
+
+```
+mrag CLI
+  ├── mrag add      → テキスト抽出 → SQLite（documents テーブル）
+  ├── mrag index    → チャンキング → Embedding（Ollama） → SQLite（chunks）+ Qdrant + FTS5
+  └── mrag search   → キーワード（FTS5 BM25）+ ベクター（Qdrant）→ RRF 融合 → 結果
+
+mrag serve  → FastAPI → 同じ検索パイプラインを HTTP で公開
+```
+
+- **SQLite** — ドキュメント、チャンク、プロファイル、FTS5 インデックスの信頼できる唯一のソース
+- **Qdrant** — 再構築可能なベクターインデックス（`mrag reindex` で SQLite から再作成）
+- **FTS5 トークナイザー** — vaporetto（日本語形態素解析）または trigram（汎用）
+- **apsw** — vaporetto 使用時に必須。macOS での SQLite 拡張ローディングを担う
+
+---
+
+## プロジェクト構成
+
+```
+my-project/
+├── mrag.yaml                  # プロジェクト設定（名前、KB ID、トークナイザー、Qdrant 接続先）
+├── mrag.db                    # SQLite データベース
+├── profiles/
+│   └── default.yaml           # 検索プロファイル
+├── data/
+│   └── documents/
+│       └── <doc-id>/
+│           ├── original.pdf   # 元ファイルのコピー
+│           ├── extracted.txt  # 抽出されたプレーンテキスト
+│           ├── extracted.md   # 抽出された Markdown
+│           └── extraction_meta.json
+├── qdrant/                    # Qdrant ストレージ
+└── cache/
+    └── embeddings/            # Embedding キャッシュ（任意）
+```
+
+---
+
+## ライセンス
+
+MIT License
+
+Copyright (c) 2026 BathTimeFish KK.
+
+以下に定める条件に従い、本ソフトウェアおよび関連文書のファイル（以下「ソフトウェア」）の複製を取得するすべての人に対し、ソフトウェアを無制限に扱うことを無償で許可します。これには、ソフトウェアの複製を使用、複写、変更、結合、掲載、頒布、サブライセンス、および/または販売する権利、およびソフトウェアを提供する相手に同じことを許可する権利も無制限に含まれます。
+
+上記の著作権表示および本許諾表示を、ソフトウェアのすべての複製または重要な部分に記載するものとします。
+
+ソフトウェアは「現状のまま」で、明示であるか暗黙であるかを問わず、何らの保証もなく提供されます。ここでいう保証とは、商品性、特定の目的への適合性、および権利非侵害についての保証も含みますが、それに限定されるものではありません。作者または著作権者は、契約行為、不法行為、またはそれ以外であろうと、ソフトウェアに起因または関連し、あるいはソフトウェアの使用またはその他の扱いによって生じる一切の請求、損害、その他の義務について何らの責任も負わないものとします。
