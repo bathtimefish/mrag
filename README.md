@@ -13,6 +13,7 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 - **Multilingual embeddings** — defaults to `bge-m3` via [Ollama](https://ollama.com) (any Ollama-compatible model works)
 - **Differential indexing** — re-running `mrag index` skips already-indexed documents
 - **Retrieval profiles** — per-project YAML profiles control chunking, embedding, and retrieval strategy independently
+- **Contextual augmentation** — optional index-time LLM context generation per chunk (Anthropic contextual retrieval pattern); prompt is editable per project via `profiles/context_prompt.txt`
 - **Reranking** — optional CrossEncoder reranking (sentence-transformers) after retrieval; disabled per-request with `--no-rerank`
 - **Retrieval evaluation** — `mrag eval` inspects retrieval quality: scores, duplicates, document distribution, multi-profile diff
 - **FastAPI server** — expose the knowledge base as an HTTP API with optional Bearer-token authentication
@@ -102,6 +103,7 @@ cd my-project
 `mrag init` creates a `my-project/` subdirectory in the current directory with:
 - `mrag.yaml` — project configuration
 - `profiles/default.yaml` — retrieval profile
+- `profiles/context_prompt.txt` — LLM prompt template for contextual augmentation (editable)
 - `mrag.db` — SQLite database
 - Supporting directories (`data/`, `qdrant/`, `cache/`, …)
 
@@ -396,6 +398,9 @@ retrieval:
   keyword_top_k: 20
   fusion: rrf
 
+augmentation:
+  strategy: none            # none (default) | contextual
+
 keyword:
   provider: sqlite_fts5
   tokenizer: vaporetto       # set at init time; trigram if vaporetto not found
@@ -478,6 +483,44 @@ Reranking is applied at query time only — changing `rerank` settings never tri
 
 Disable at runtime with `--no-rerank` on `mrag search`, `mrag eval`, or `mrag serve`.
 
+### Contextual Augmentation
+
+When `augmentation.strategy: contextual` is set, mrag calls an Ollama LLM once per chunk during `mrag index` to generate a short context description. This context is prepended to the chunk content before embedding, helping the model understand each chunk in the context of the full document.
+
+```yaml
+augmentation:
+  strategy: contextual        # none (default) | contextual
+  provider: ollama
+  model: gemma4:e4b           # generation model — separate from embedding.model
+  endpoint: http://localhost:11434
+```
+
+This follows the [Anthropic contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) pattern. The generation model is independent of the embedding model: `bge-m3` embeds the augmented text, while `gemma4:e4b` (or any other Ollama generation model) produces the context.
+
+**Important notes:**
+
+- `strategy: none` (default) — no LLM call; indexing speed is unchanged
+- Keyword search (FTS5) always indexes original chunk content — augmentation only affects vector embeddings
+- Changing `augmentation.strategy` invalidates the index; run `mrag reindex` to rebuild
+- Indexing with `strategy: contextual` is slower: one LLM call per chunk
+
+**Per-project prompt customisation:**
+
+`mrag init` creates `profiles/context_prompt.txt` with the default prompt template. Edit this file to tailor the LLM instructions for your domain:
+
+```bash
+# View the current prompt
+cat profiles/context_prompt.txt
+
+# Edit it (must keep {document} and {chunk} placeholders)
+nano profiles/context_prompt.txt
+
+# Rebuild the index with the new prompt
+mrag reindex
+```
+
+The prompt file is picked up automatically at index time. Changes to it are not reflected in already-indexed chunks until `mrag reindex` is run.
+
 ---
 
 ## Architecture
@@ -485,8 +528,9 @@ Disable at runtime with `--no-rerank` on `mrag search`, `mrag eval`, or `mrag se
 ```
 mrag CLI
   ├── mrag add      → extracts text → SQLite (documents table)
-  ├── mrag index    → chunks → embeds (Ollama) → SQLite (chunks) + Qdrant + FTS5
-  └── mrag search   → keyword (FTS5 BM25) + vector (Qdrant) → RRF fusion → results
+  ├── mrag index    → chunks → [contextual augmentation (LLM, optional)] → embeds (Ollama)
+  │                         → SQLite (chunks + chunk_variants) + Qdrant + FTS5
+  └── mrag search   → keyword (FTS5 BM25) + vector (Qdrant) → RRF fusion → [reranker] → results
 
 mrag serve  → FastAPI → same retrieval pipeline over HTTP
 ```
@@ -502,20 +546,21 @@ mrag serve  → FastAPI → same retrieval pipeline over HTTP
 
 ```
 my-project/
-├── mrag.yaml                  # project config (name, KB ID, tokenizer, Qdrant)
-├── mrag.db                    # SQLite database
+├── mrag.yaml                    # project config (name, KB ID, tokenizer, Qdrant)
+├── mrag.db                      # SQLite database
 ├── profiles/
-│   └── default.yaml           # retrieval profile
+│   ├── default.yaml             # retrieval profile
+│   └── context_prompt.txt       # LLM prompt for contextual augmentation (editable)
 ├── data/
 │   └── documents/
 │       └── <doc-id>/
-│           ├── original.pdf   # copy of original file
-│           ├── extracted.txt  # extracted plain text
-│           ├── extracted.md   # extracted markdown
+│           ├── original.pdf     # copy of original file
+│           ├── extracted.txt    # extracted plain text
+│           ├── extracted.md     # extracted markdown
 │           └── extraction_meta.json
-├── qdrant/                    # Qdrant vector storage (mode: local writes here)
+├── qdrant/                      # Qdrant vector storage (mode: local writes here)
 └── cache/
-    └── embeddings/            # optional embedding cache
+    └── embeddings/              # optional embedding cache
 ```
 
 ---
@@ -568,7 +613,7 @@ mrag search "query"   # works without mrag reindex
 |------|---------|
 | `mrag.yaml` | Project config |
 | `mrag.db` | SQLite — documents, chunks, FTS5 index |
-| `profiles/` | Retrieval profile YAML files |
+| `profiles/` | Retrieval profile YAML files + `context_prompt.txt` |
 | `data/documents/` | Original files + extracted text |
 | `qdrant/` | Qdrant vector data (local mode only) |
 

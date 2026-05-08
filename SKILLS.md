@@ -59,6 +59,7 @@ cd <name>
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated profiles/context_prompt.txt
 ✓ Initialized mrag.db
 ```
 
@@ -66,6 +67,7 @@ cd <name>
 ```bash
 mrag doctor   # should show all checks green
 cat mrag.yaml # confirm fts_tokenizer and knowledge_base.id
+cat profiles/context_prompt.txt  # default LLM prompt for contextual augmentation
 ```
 
 ---
@@ -110,6 +112,7 @@ mrag show-extracted <doc-id>   # preview extracted text
 - At least one document has been added (`mrag add` completed)
 - Ollama is running and the embedding model (default: `bge-m3`) is pulled
 - Qdrant: check `mrag.yaml` — `mode: local` (default) needs nothing; `mode: server` needs a running Qdrant instance
+- If `augmentation.strategy: contextual` is set in the profile: the generation model must also be pulled (`ollama pull gemma4:e4b` or whichever model is configured)
 
 **Steps:**
 
@@ -385,7 +388,7 @@ mrag search "test query"   # works immediately — no mrag reindex needed
 |------|------|
 | `mrag.db` | SQLite — documents, chunks, FTS5 index |
 | `qdrant/` | Pre-built vector data (local mode only) |
-| `profiles/` | Retrieval profile YAML |
+| `profiles/` | Retrieval profile YAML files + `context_prompt.txt` |
 | `data/documents/` | Original files + extracted text |
 
 **If using `mode: server`:** Copy everything except `qdrant/`, start the Qdrant server on the target host, then run `mrag reindex`.
@@ -445,19 +448,84 @@ mrag eval "照度センサーの仕様" --profile default --profile second
 
 ---
 
+## Skill 12 — Enable and tune contextual augmentation
+
+Contextual augmentation runs an Ollama LLM once per chunk during `mrag index` to generate a short context description. This context is prepended to the chunk content before embedding, improving semantic retrieval quality — especially for long documents where individual chunks may lack surrounding context.
+
+**Preconditions:**
+- Inside the project directory
+- Ollama is running and the generation model is pulled: `ollama pull gemma4:e4b`
+
+**Steps:**
+
+```bash
+# 1. Edit the profile to enable contextual augmentation
+nano profiles/default.yaml
+```
+
+Add (or update) the `augmentation` section:
+
+```yaml
+augmentation:
+  strategy: contextual        # was: none
+  provider: ollama
+  model: gemma4:e4b           # any Ollama-compatible chat/generation model
+  endpoint: http://localhost:11434
+```
+
+```bash
+# 2. Rebuild the index with augmentation applied
+mrag reindex
+
+# (or mrag index if the documents haven't been indexed under this profile yet)
+mrag index
+```
+
+**Verify:**
+```bash
+# Check that variant_type is 'contextual' in the DB
+sqlite3 mrag.db "SELECT variant_type, context_text FROM chunk_variants LIMIT 3;"
+```
+
+**Customise the prompt per project:**
+
+```bash
+# View the current prompt
+cat profiles/context_prompt.txt
+
+# Edit to tailor it to your domain (must keep {document} and {chunk} placeholders)
+nano profiles/context_prompt.txt
+
+# After editing, reindex to apply the new prompt to all chunks
+mrag reindex
+```
+
+**Disable augmentation:**
+
+Set `augmentation.strategy: none` in the profile YAML, then run `mrag reindex`. This removes all contextual variants and rebuilds raw variants only.
+
+**Performance note:**
+
+Indexing with `strategy: contextual` is significantly slower than `strategy: none` because it calls the LLM once per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.
+
+---
+
 ## Quick decision guide
 
 ```
-Need to search without Qdrant/Ollama?    →  --strategy keyword
-Need best Japanese retrieval?            →  ensure fts_tokenizer: vaporetto in mrag.yaml
-Zero results from keyword search?        →  check mrag index ran; try single-word query
-Zero results from vector/hybrid?         →  check Ollama running; run mrag doctor
-Qdrant "Collection not found" error?     →  mode: server needs a running Qdrant; or switch to mode: local
-Need to update one document?             →  mrag remove --force <id>; mrag add <file>; mrag index
-Need to rebuild everything?              →  mrag reindex
-Need to expose retrieval over HTTP?      →  mrag serve (from inside project dir)
-Need to inspect retrieval quality?       →  mrag eval "<query>" [--strategy vector]
-Need to migrate project to another host? →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
-Reranker ImportError?                    →  uv pip install -e ".[reranker]"
-mrag not found after uv install?         →  use .venv/bin/mrag or activate the venv
+Need to search without Qdrant/Ollama?          →  --strategy keyword
+Need best Japanese retrieval?                  →  ensure fts_tokenizer: vaporetto in mrag.yaml
+Zero results from keyword search?              →  check mrag index ran; try single-word query
+Zero results from vector/hybrid?               →  check Ollama running; run mrag doctor
+Qdrant "Collection not found" error?           →  mode: server needs a running Qdrant; or switch to mode: local
+Need to update one document?                   →  mrag remove --force <id>; mrag add <file>; mrag index
+Need to rebuild everything?                    →  mrag reindex
+Need to expose retrieval over HTTP?            →  mrag serve (from inside project dir)
+Need to inspect retrieval quality?             →  mrag eval "<query>" [--strategy vector]
+Need to migrate project to another host?       →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
+Want to improve semantic retrieval quality?    →  enable augmentation.strategy: contextual in profile; mrag reindex (see Skill 12)
+Contextual indexing too slow?                  →  use a faster/smaller model in augmentation.model; or disable with strategy: none
+Want to tune the LLM augmentation prompt?      →  edit profiles/context_prompt.txt; run mrag reindex
+Reranker ImportError?                          →  uv pip install -e ".[reranker]"
+mrag not found after uv install?               →  use .venv/bin/mrag or activate the venv
 ```

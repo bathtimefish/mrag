@@ -561,3 +561,242 @@ def test_profile_hash_unaffected_by_name():
     p1 = ProfileConfig(name="alpha")
     p2 = ProfileConfig(name="beta")
     assert p1.compute_hash() == p2.compute_hash()
+
+
+def test_profile_hash_differs_on_augmentation_strategy_change():
+    from mrag.config.profile import ProfileConfig
+    p1 = ProfileConfig(name="a")
+    p2 = ProfileConfig(name="b")
+    p2.augmentation.strategy = "contextual"
+    assert p1.compute_hash() != p2.compute_hash()
+
+
+def test_profile_hash_unaffected_by_rerank_change():
+    """rerank is excluded from the hash because it doesn't affect index data."""
+    from mrag.config.profile import ProfileConfig
+    p1 = ProfileConfig(name="a")
+    p2 = ProfileConfig(name="b")
+    p2.rerank.enabled = True
+    p2.rerank.top_k = 999
+    assert p1.compute_hash() == p2.compute_hash()
+
+
+# ---------------------------------------------------------------------------
+# Augmentation: contextual strategy (unit tests with mocked LLM)
+# ---------------------------------------------------------------------------
+
+def test_augmentation_none_produces_raw_variants(tmp_path: Path, sample_txt: Path):
+    """strategy: none → variant_type='raw', context_text=NULL."""
+    from unittest.mock import patch
+    from mrag.config.project import ProjectConfig, QdrantConfig
+    from mrag.config.profile import ProfileConfig
+
+    db_path = _make_db(tmp_path)
+    project_dir = tmp_path
+
+    (project_dir / "profiles").mkdir()
+    profile = ProfileConfig(name="default")
+    import yaml
+    (project_dir / "profiles" / "default.yaml").write_text(
+        yaml.dump(profile.model_dump()), encoding="utf-8"
+    )
+    (project_dir / "mrag.yaml").write_text(
+        "project:\n  name: t\nknowledge_base:\n  id: kb_t\n  name: T\n"
+        "default_profile: default\nqdrant:\n  mode: local\n",
+        encoding="utf-8",
+    )
+
+    from mrag.config.project import load_project_config
+    from mrag.db.connection import db_connection, open_connection
+    import uuid as _uuid
+
+    doc_id = str(_uuid.uuid4())
+    doc_dir = project_dir / "data" / "documents" / doc_id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "extracted.txt").write_text(sample_txt.read_text(), encoding="utf-8")
+    now = "2026-01-01T00:00:00+00:00"
+    with db_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO documents (id, knowledge_id, filename, original_path, file_hash, "
+            "extracted_text_path, extracted_markdown_path, extracted_hash, source_type, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (doc_id, "kb_t", "sample.txt",
+             f"data/documents/{doc_id}/original.txt",
+             "fh1",
+             f"data/documents/{doc_id}/extracted.txt",
+             f"data/documents/{doc_id}/extracted.txt",
+             "eh1", "txt", "extracted", now, now),
+        )
+
+    config = load_project_config(project_dir)
+    provider = FakeEmbeddingProvider()
+    qdrant = _fake_qdrant_client()
+
+    run_index(
+        project_dir=project_dir,
+        config=config,
+        profile_name="default",
+        embedding_provider=provider,
+        qdrant_client=qdrant,
+    )
+
+    conn = open_connection(db_path)
+    rows = conn.execute("SELECT variant_type, context_text FROM chunk_variants").fetchall()
+    conn.close()
+    assert rows, "expected at least one chunk_variant"
+    for vtype, ctx in rows:
+        assert vtype == "raw"
+        assert ctx is None
+
+
+def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: Path):
+    """strategy: contextual → LLM called per chunk, context_text stored, variant_type='contextual'."""
+    from unittest.mock import patch, MagicMock
+    from mrag.config.project import load_project_config
+    from mrag.config.profile import ProfileConfig, AugmentationConfig
+    from mrag.db.connection import db_connection, open_connection
+    import yaml
+    import uuid as _uuid
+
+    db_path = _make_db(tmp_path)
+    project_dir = tmp_path
+
+    (project_dir / "profiles").mkdir()
+    profile_data = ProfileConfig(name="default").model_dump()
+    profile_data["augmentation"] = {"strategy": "contextual", "provider": "ollama",
+                                     "model": "gemma4:e4b", "endpoint": "http://localhost:11434"}
+    (project_dir / "profiles" / "default.yaml").write_text(
+        yaml.dump(profile_data), encoding="utf-8"
+    )
+    (project_dir / "mrag.yaml").write_text(
+        "project:\n  name: t\nknowledge_base:\n  id: kb_t\n  name: T\n"
+        "default_profile: default\nqdrant:\n  mode: local\n",
+        encoding="utf-8",
+    )
+
+    doc_id = str(_uuid.uuid4())
+    doc_dir = project_dir / "data" / "documents" / doc_id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "extracted.txt").write_text(sample_txt.read_text(), encoding="utf-8")
+    now = "2026-01-01T00:00:00+00:00"
+    with db_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO documents (id, knowledge_id, filename, original_path, file_hash, "
+            "extracted_text_path, extracted_markdown_path, extracted_hash, source_type, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (doc_id, "kb_t", "sample.txt",
+             f"data/documents/{doc_id}/original.txt",
+             "fh1",
+             f"data/documents/{doc_id}/extracted.txt",
+             f"data/documents/{doc_id}/extracted.txt",
+             "eh1", "txt", "extracted", now, now),
+        )
+
+    config = load_project_config(project_dir)
+    provider = FakeEmbeddingProvider()
+    qdrant = _fake_qdrant_client()
+
+    fake_context = "This chunk is about testing augmentation."
+
+    with patch("mrag.core.indexing.augmentation.generate_context", return_value=fake_context) as mock_gen:
+        run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=provider,
+            qdrant_client=qdrant,
+        )
+
+    conn = open_connection(db_path)
+    rows = conn.execute("SELECT variant_type, context_text, content_for_embedding FROM chunk_variants").fetchall()
+    conn.close()
+
+    assert rows, "expected at least one chunk_variant"
+    assert mock_gen.call_count == len(rows)
+    for vtype, ctx, cfe in rows:
+        assert vtype == "contextual"
+        assert ctx == fake_context
+        assert cfe.startswith(fake_context + "\n\n")
+
+
+def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample_txt: Path):
+    """When profiles/context_prompt.txt exists, its content is used as the prompt template."""
+    from unittest.mock import patch
+    from mrag.config.project import load_project_config
+    from mrag.config.profile import ProfileConfig
+    from mrag.db.connection import db_connection
+    import yaml
+    import uuid as _uuid
+
+    db_path = _make_db(tmp_path)
+    project_dir = tmp_path
+
+    (project_dir / "profiles").mkdir()
+    profile_data = ProfileConfig(name="default").model_dump()
+    profile_data["augmentation"] = {"strategy": "contextual", "provider": "ollama",
+                                     "model": "gemma4:e4b", "endpoint": "http://localhost:11434"}
+    (project_dir / "profiles" / "default.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
+
+    custom_template = "Custom prompt: doc={document} chunk={chunk}"
+    (project_dir / "profiles" / "context_prompt.txt").write_text(custom_template, encoding="utf-8")
+
+    (project_dir / "mrag.yaml").write_text(
+        "project:\n  name: t\nknowledge_base:\n  id: kb_t\n  name: T\n"
+        "default_profile: default\nqdrant:\n  mode: local\n",
+        encoding="utf-8",
+    )
+
+    doc_id = str(_uuid.uuid4())
+    doc_dir = project_dir / "data" / "documents" / doc_id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "extracted.txt").write_text(sample_txt.read_text(), encoding="utf-8")
+    now = "2026-01-01T00:00:00+00:00"
+    with db_connection(db_path) as conn:
+        conn.execute(
+            "INSERT INTO documents (id, knowledge_id, filename, original_path, file_hash, "
+            "extracted_text_path, extracted_markdown_path, extracted_hash, source_type, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (doc_id, "kb_t", "sample.txt",
+             f"data/documents/{doc_id}/original.txt",
+             "fh1",
+             f"data/documents/{doc_id}/extracted.txt",
+             f"data/documents/{doc_id}/extracted.txt",
+             "eh1", "txt", "extracted", now, now),
+        )
+
+    config = load_project_config(project_dir)
+
+    captured_templates: list[str | None] = []
+
+    def fake_generate(chunk_content, full_text, cfg, prompt_template=None):
+        captured_templates.append(prompt_template)
+        return "context"
+
+    with patch("mrag.core.indexing.augmentation.generate_context", side_effect=fake_generate):
+        run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=FakeEmbeddingProvider(),
+            qdrant_client=_fake_qdrant_client(),
+        )
+
+    assert captured_templates, "generate_context was not called"
+    assert all(t == custom_template for t in captured_templates)
+
+
+def test_init_creates_context_prompt_file(tmp_path: Path):
+    """mrag init must create profiles/context_prompt.txt with the default template."""
+    from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.chdir(tmp_path)
+        result = runner.invoke(app, ["init", "--name", "myproj", "--yes"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    prompt_file = tmp_path / "myproj" / "profiles" / "context_prompt.txt"
+    assert prompt_file.exists(), "profiles/context_prompt.txt not created by mrag init"
+    content = prompt_file.read_text(encoding="utf-8")
+    assert content == DEFAULT_CONTEXT_PROMPT_TEMPLATE
+    assert "{document}" in content
+    assert "{chunk}" in content

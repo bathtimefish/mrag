@@ -19,6 +19,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _load_context_prompt(project_dir: Path) -> str | None:
+    """Read profiles/context_prompt.txt if it exists; return None to use the built-in default."""
+    prompt_path = project_dir / "profiles" / "context_prompt.txt"
+    if prompt_path.exists():
+        return prompt_path.read_text(encoding="utf-8")
+    return None
+
+
 @dataclass
 class IndexResult:
     indexed: int = 0
@@ -51,7 +59,7 @@ def _upsert_profile(db_path: Path, profile: ProfileConfig, knowledge_id: str, pr
         "chunking": profile.chunking.model_dump(),
         "embedding": profile.embedding.model_dump(),
         "retrieval": profile.retrieval.model_dump(),
-        "contextual": profile.contextual.model_dump(),
+        "augmentation": profile.augmentation.model_dump(),
         "keyword": profile.keyword.model_dump(),
         "rerank": profile.rerank.model_dump(),
     }
@@ -170,29 +178,40 @@ def _index_document(
     if not chunks:
         return
 
-    contents = [c.content for c in chunks]
+    # 3. Augment chunks (contextual strategy generates context_text per chunk)
+    context_texts: list[str | None] = [None] * len(chunks)
+    contents_for_embedding: list[str] = [c.content for c in chunks]
+    variant_types: list[str] = ["raw"] * len(chunks)
 
-    # 3. Embed (with optional cache)
+    if profile.augmentation.strategy == "contextual":
+        from mrag.core.indexing.augmentation import augment_chunks
+        prompt_template = _load_context_prompt(project_dir)
+        ctx_list = augment_chunks(chunks, text, profile.augmentation, prompt_template)
+        for i, ctx in enumerate(ctx_list):
+            context_texts[i] = ctx
+            contents_for_embedding[i] = ctx + "\n\n" + chunks[i].content
+            variant_types[i] = "contextual"
+
+    # 4. Embed (with optional cache)
     if use_cache:
         from mrag.core.embedding.cache import EmbeddingCache
         cache = EmbeddingCache(cache_dir=cache_dir, db_path=db_path)
         model_id = provider.get_model_id() if provider._dimension else None
         if model_id is None:
-            # Need to discover dimension first
-            vectors = provider.embed(contents)
+            vectors = provider.embed(contents_for_embedding)
         else:
-            vectors = cache.get_or_embed(contents, model_id, provider.embed)
+            vectors = cache.get_or_embed(contents_for_embedding, model_id, provider.embed)
     else:
-        vectors = provider.embed(contents)
+        vectors = provider.embed(contents_for_embedding)
 
     model_id = provider.get_model_id()
 
-    # 4. Cleanup old data
+    # 6. Cleanup old data
     _cleanup_document(db_path, doc["id"], profile.name, doc["knowledge_id"], qdrant_client, col_name, tokenizer)
 
     now = _now_iso()
 
-    # 5. Insert new chunks + variants
+    # 7. Insert new chunks + variants
     chunk_ids: list[str] = []
     variant_ids: list[str] = []
     point_ids: list[str] = []
@@ -222,7 +241,7 @@ def _index_document(
                 ),
             )
 
-        for chunk_id, chunk in zip(chunk_ids, chunks):
+        for i, (chunk_id, chunk) in enumerate(zip(chunk_ids, chunks)):
             variant_id = str(uuid.uuid4())
             point_id = str(uuid.uuid4())
             variant_ids.append(variant_id)
@@ -233,15 +252,16 @@ def _index_document(
                     variant_type, content_for_embedding, context_text,
                     embedding_model_id, qdrant_point_id, qdrant_collection,
                     metadata_json, created_at)
-                   VALUES (?,?,?,?,?,?,?,NULL,?,?,?,NULL,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?)""",
                 (
                     variant_id,
                     doc["knowledge_id"],
                     doc["id"],
                     chunk_id,
                     profile.name,
-                    "raw",
-                    chunk.content,
+                    variant_types[i],
+                    contents_for_embedding[i],
+                    context_texts[i],
                     model_id,
                     point_id,
                     col_name,
@@ -261,7 +281,7 @@ def _index_document(
                 doc["id"],
             )
 
-    # 6. Upsert Qdrant
+    # 8. Upsert Qdrant
     if qdrant_client is not None:
         points = [
             {

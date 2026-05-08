@@ -13,6 +13,7 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 - **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
 - **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
 - **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
+- **コンテキスト拡張（Contextual Augmentation）** — インデックス時に Ollama LLM でチャンクごとのコンテキスト文を生成（Anthropic contextual retrieval パターン）。プロジェクトごとに `profiles/context_prompt.txt` でプロンプトをカスタマイズ可能
 - **リランキング** — 検索後に CrossEncoder（sentence-transformers）による再スコアリングをオプションで適用。`--no-rerank` でリクエスト単位の無効化も可能
 - **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
 - **FastAPI サーバー** — オプションの Bearer トークン認証付きで HTTP API として公開可能
@@ -103,6 +104,7 @@ cd my-project
 
 - `mrag.yaml` — プロジェクト設定
 - `profiles/default.yaml` — 検索プロファイル
+- `profiles/context_prompt.txt` — コンテキスト拡張用の LLM プロンプトテンプレート（編集可能）
 - `mrag.db` — SQLite データベース
 - `data/`、`qdrant/`、`cache/` などのサポートディレクトリ
 
@@ -397,6 +399,9 @@ retrieval:
   keyword_top_k: 20
   fusion: rrf
 
+augmentation:
+  strategy: none            # none（デフォルト）| contextual
+
 keyword:
   provider: sqlite_fts5
   tokenizer: vaporetto       # init 時に自動設定。vaporetto 未検出時は trigram
@@ -479,6 +484,44 @@ rerank:
 
 `mrag search`・`mrag eval`・`mrag serve` の `--no-rerank` オプションで実行時に無効化できます。
 
+### コンテキスト拡張（Contextual Augmentation）
+
+`augmentation.strategy: contextual` を設定すると、`mrag index` 実行時にチャンクごとに Ollama LLM を呼び出してコンテキスト説明文を生成します。この説明文はチャンク内容の前に付加されてから embedding されるため、個々のチャンクがドキュメント全体のどの部分に関するものかをモデルが理解しやすくなり、セマンティック検索の精度が向上します。
+
+```yaml
+augmentation:
+  strategy: contextual        # none（デフォルト）| contextual
+  provider: ollama
+  model: gemma4:e4b           # 生成モデル — embedding.model とは別
+  endpoint: http://localhost:11434
+```
+
+[Anthropic contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) パターンに基づいた実装です。生成モデル（`gemma4:e4b`）は Embedding モデル（`bge-m3`）とは独立しています。
+
+**重要な仕様:**
+
+- `strategy: none`（デフォルト）— LLM 呼び出しなし。インデックス速度に影響なし
+- キーワード検索（FTS5）は常に元のチャンク内容をインデックスします — ベクター検索のみが拡張の影響を受けます
+- `augmentation.strategy` を変更するとプロファイルハッシュが変わるため、次回の `mrag index` で全チャンクが再インデックスされます
+- `strategy: contextual` でのインデックスは遅くなります（1チャンクにつき1回の LLM 呼び出し）
+
+**プロジェクトごとのプロンプトカスタマイズ:**
+
+`mrag init` 実行時に `profiles/context_prompt.txt` がデフォルトのプロンプトテンプレートで生成されます。このファイルを編集することで、ドメインに特化した指示を LLM に与えられます：
+
+```bash
+# 現在のプロンプトを確認
+cat profiles/context_prompt.txt
+
+# 編集（{document} と {chunk} プレースホルダーは必ず残すこと）
+nano profiles/context_prompt.txt
+
+# 新しいプロンプトを反映してインデックスを再構築
+mrag reindex
+```
+
+プロンプトファイルはインデックス時に自動的に読み込まれます。編集内容は `mrag reindex` を実行するまで既存チャンクには反映されません。
+
 ---
 
 ## アーキテクチャ
@@ -486,8 +529,9 @@ rerank:
 ```
 mrag CLI
   ├── mrag add      → テキスト抽出 → SQLite（documents テーブル）
-  ├── mrag index    → チャンキング → Embedding（Ollama） → SQLite（chunks）+ Qdrant + FTS5
-  └── mrag search   → キーワード（FTS5 BM25）+ ベクター（Qdrant）→ RRF 融合 → 結果
+  ├── mrag index    → チャンキング → [コンテキスト拡張（LLM、任意）] → Embedding（Ollama）
+  │                              → SQLite（chunks + chunk_variants）+ Qdrant + FTS5
+  └── mrag search   → キーワード（FTS5 BM25）+ ベクター（Qdrant）→ RRF 融合 → [リランカー] → 結果
 
 mrag serve  → FastAPI → 同じ検索パイプラインを HTTP で公開
 ```
@@ -503,20 +547,21 @@ mrag serve  → FastAPI → 同じ検索パイプラインを HTTP で公開
 
 ```
 my-project/
-├── mrag.yaml                  # プロジェクト設定（名前、KB ID、トークナイザー、Qdrant 接続先）
-├── mrag.db                    # SQLite データベース
+├── mrag.yaml                    # プロジェクト設定（名前、KB ID、トークナイザー、Qdrant 接続先）
+├── mrag.db                      # SQLite データベース
 ├── profiles/
-│   └── default.yaml           # 検索プロファイル
+│   ├── default.yaml             # 検索プロファイル
+│   └── context_prompt.txt       # コンテキスト拡張用 LLM プロンプト（編集可能）
 ├── data/
 │   └── documents/
 │       └── <doc-id>/
-│           ├── original.pdf   # 元ファイルのコピー
-│           ├── extracted.txt  # 抽出されたプレーンテキスト
-│           ├── extracted.md   # 抽出された Markdown
+│           ├── original.pdf     # 元ファイルのコピー
+│           ├── extracted.txt    # 抽出されたプレーンテキスト
+│           ├── extracted.md     # 抽出された Markdown
 │           └── extraction_meta.json
-├── qdrant/                    # Qdrant ベクターストレージ（mode: local 時にここへ保存）
+├── qdrant/                      # Qdrant ベクターストレージ（mode: local 時にここへ保存）
 └── cache/
-    └── embeddings/            # Embedding キャッシュ（任意）
+    └── embeddings/              # Embedding キャッシュ（任意）
 ```
 
 ---
@@ -569,7 +614,7 @@ mrag search "クエリ"   # mrag reindex 不要
 |------|------|
 | `mrag.yaml` | プロジェクト設定 |
 | `mrag.db` | SQLite（ドキュメント・チャンク・FTS5 インデックス） |
-| `profiles/` | 検索プロファイル YAML |
+| `profiles/` | 検索プロファイル YAML + `context_prompt.txt` |
 | `data/documents/` | 元ファイル + 抽出テキスト |
 | `qdrant/` | Qdrant ベクターデータ（local モード時） |
 

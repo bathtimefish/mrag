@@ -32,10 +32,10 @@ class EmbeddingConfig(BaseModel):
     cache: EmbeddingCacheConfig = Field(default_factory=EmbeddingCacheConfig)
 
 
-class ContextualConfig(BaseModel):
-    enabled: bool = False
+class AugmentationConfig(BaseModel):
+    strategy: str = "none"        # none | contextual | raptor | ...
     provider: str = "ollama"
-    model: str = "qwen3.5:latest"
+    model: str = "gemma4:e4b"
     endpoint: str = "http://localhost:11434"
 
 
@@ -68,7 +68,7 @@ class ProfileConfig(BaseModel):
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
-    contextual: ContextualConfig = Field(default_factory=ContextualConfig)
+    augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     keyword: KeywordConfig = Field(default_factory=KeywordConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
 
@@ -82,7 +82,7 @@ class ProfileConfig(BaseModel):
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(),
             "retrieval": self.retrieval.model_dump(),
-            "contextual": self.contextual.model_dump(),
+            "augmentation": self.augmentation.model_dump(),
             "keyword": self.keyword.model_dump(),
         }
         canonical = json.dumps(relevant, sort_keys=True, ensure_ascii=False)

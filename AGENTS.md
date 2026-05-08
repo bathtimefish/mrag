@@ -19,13 +19,14 @@ One project = one knowledge base. Do not mix documents from unrelated domains in
 
 ```
 <project-dir>/
-├── mrag.yaml                  # Project config — read this to understand the project
-├── mrag.db                    # SQLite database — source of truth
+├── mrag.yaml                    # Project config — read this to understand the project
+├── mrag.db                      # SQLite database — source of truth
 ├── profiles/
-│   └── default.yaml           # Retrieval profile (chunking, embedding, search)
-├── data/documents/<doc-id>/   # Per-document: original file + extracted text
-├── qdrant/                    # Qdrant storage
-└── cache/embeddings/          # Optional embedding cache
+│   ├── default.yaml             # Retrieval profile (chunking, embedding, search)
+│   └── context_prompt.txt       # Editable LLM prompt for contextual augmentation
+├── data/documents/<doc-id>/     # Per-document: original file + extracted text
+├── qdrant/                      # Qdrant storage
+└── cache/embeddings/            # Optional embedding cache
 ```
 
 **Always `cd` into the project directory** before running any mrag command. All commands resolve `mrag.yaml` and `mrag.db` relative to the current working directory.
@@ -93,6 +94,14 @@ ollama serve           # must be running
 ollama pull bge-m3     # must be pulled before first index
 ```
 
+If a profile has `augmentation.strategy: contextual`, the **generation model** must also be pulled before indexing:
+
+```bash
+ollama pull gemma4:e4b   # default augmentation model
+```
+
+The augmentation model is separate from the embedding model — it generates a short context text per chunk at index time. Embedding still uses `bge-m3` (or whatever is set in `embedding.model`).
+
 ### Do not change the tokenizer after `mrag init`
 
 The FTS5 tokenizer (`vaporetto` or `trigram`) is chosen at init time and stored in `mrag.yaml`. Changing it after indexing causes MATCH failures. To change tokenizer: `mrag reindex` after updating the profile YAML.
@@ -154,6 +163,41 @@ Install the reranker dependency:
 ```bash
 uv pip install -e ".[reranker]"
 ```
+
+---
+
+## Contextual Augmentation
+
+When `augmentation.strategy: contextual` is set in a profile, mrag calls an Ollama LLM once per chunk during `mrag index` to generate a short context description. This context text is prepended to the chunk content before embedding, improving semantic retrieval without changing keyword search.
+
+```yaml
+augmentation:
+  strategy: contextual   # none (default) | contextual
+  provider: ollama
+  model: gemma4:e4b      # generation model — separate from embedding.model
+  endpoint: http://localhost:11434
+```
+
+**Key behaviour:**
+- `strategy: none` (default) — no LLM call, indexing runs at normal speed
+- `strategy: contextual` — one Ollama `/api/generate` call per chunk; expect slower indexing depending on model and document size
+- FTS5 keyword index always stores the original chunk content — keyword search is unaffected by augmentation
+- `variant_type` in the database is `contextual` (vs `raw` for non-augmented chunks)
+- Changing `augmentation.strategy` changes the `profile_hash`, which triggers full re-indexing on the next `mrag index`
+
+**Customising the prompt:**
+
+`mrag init` creates `profiles/context_prompt.txt` with the default prompt template. Edit this file to tune the LLM's instructions for your domain. The template must contain `{document}` and `{chunk}` placeholders.
+
+```bash
+# Preview the default prompt
+cat profiles/context_prompt.txt
+
+# Edit to match your domain (e.g. Japanese technical documents)
+nano profiles/context_prompt.txt
+```
+
+Changes to `context_prompt.txt` are picked up at the next `mrag index` run. Since the prompt is not part of `profile_hash`, editing it does not automatically trigger re-indexing — run `mrag reindex` manually if you want all existing chunks re-augmented with the new prompt.
 
 ---
 
@@ -225,8 +269,11 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | `mrag.yaml not found` | Not in project directory | `cd <project-dir>` |
 | Zero search results | `mrag index` not run, or wrong tokenizer | Run `mrag index`; check `fts_tokenizer` in `mrag.yaml` |
 | `Collection not found` error | Qdrant server not running (`mode: server`) | Start Qdrant, or switch to `mode: local` |
-| Indexing fails with connection error | Ollama not running or model not pulled | `ollama serve` + `ollama pull bge-m3` |
+| Indexing fails with connection error | Ollama not running or embedding model not pulled | `ollama serve` + `ollama pull bge-m3` |
+| Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e4b` (or whatever `augmentation.model` is set to) |
+| `mrag index` very slow | `augmentation.strategy: contextual` calls LLM once per chunk | Expected; use `strategy: none` to skip augmentation |
 | Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
 | Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |
+| Contextual prompt not taking effect | `context_prompt.txt` edited but no reindex run | Run `mrag reindex` to re-augment all chunks with the new prompt |
