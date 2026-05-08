@@ -101,6 +101,26 @@ mrag add manual.pdf notes.txt
 
 Documents are extracted and stored in `data/documents/`. Supported formats: PDF, plain text, Markdown.
 
+**Extractor options (PDF only)**
+
+| Extractor | Option | Notes |
+|-----------|--------|-------|
+| PyMuPDF | `--extractor pymupdf` | Default. Fast text-layer extraction. Warns if the PDF appears to be scanned/image-based. |
+| Marker | `--extractor marker` | High-accuracy extraction for complex layouts. Requires `pip install "mrag[marker]"`. |
+
+```bash
+# Use the default extractor (PyMuPDF)
+mrag add report.pdf
+
+# Use Marker for a scanned or complex-layout PDF
+mrag add scanned.pdf --extractor marker
+
+# Re-add an already-registered document (overwrites extracted content)
+mrag add report.pdf --force
+```
+
+The default extractor can be set project-wide in `mrag.yaml` under `default_extraction.pdf.provider`.
+
 ### 3. Build the index
 
 ```bash
@@ -146,7 +166,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | Command | Description |
 |---------|-------------|
 | `mrag init [--name NAME]` | Create a new project in a subdirectory |
-| `mrag add <file> [file…]` | Ingest documents (extract & store; no indexing) |
+| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P]` | Differential index (skips up-to-date docs) |
 | `mrag reindex [--profile P]` | Force-rebuild the entire index for a profile |
 | `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`) |

@@ -102,6 +102,26 @@ mrag add manual.pdf notes.txt
 
 ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。
 
+**エクストラクターオプション（PDF のみ）**
+
+| エクストラクター | オプション | 説明 |
+|--------------|----------|------|
+| PyMuPDF | `--extractor pymupdf` | デフォルト。テキストレイヤーの高速抽出。スキャン/画像ベースの PDF と判定された場合は警告を出力する。 |
+| Marker | `--extractor marker` | 複雑なレイアウトに対応した高精度抽出。`pip install "mrag[marker]"` が必要。 |
+
+```bash
+# デフォルトエクストラクター（PyMuPDF）を使用
+mrag add report.pdf
+
+# スキャン PDF や複雑なレイアウトの PDF に Marker を使用
+mrag add scanned.pdf --extractor marker
+
+# 登録済みのドキュメントを再追加（抽出内容を上書き）
+mrag add report.pdf --force
+```
+
+プロジェクト全体のデフォルトエクストラクターは `mrag.yaml` の `default_extraction.pdf.provider` で設定できます。
+
 ### 3. インデックスを構築する
 
 ```bash
@@ -147,7 +167,7 @@ mrag serve
 | コマンド | 説明 |
 |---------|------|
 | `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
-| `mrag add <file> [file…]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
+| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P]` | 差分インデックス（最新のドキュメントはスキップ） |
 | `mrag reindex [--profile P]` | プロファイルのインデックスを強制再構築 |
 | `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`） |
