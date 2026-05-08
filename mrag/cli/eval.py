@@ -1,0 +1,315 @@
+import statistics
+from pathlib import Path
+from typing import List, Optional
+
+import typer
+from rich import box
+from rich.console import Console
+from rich.table import Table
+
+from mrag.config.profile import load_profile
+from mrag.config.project import load_project_config
+from mrag.core.embedding.ollama import OllamaEmbeddingProvider
+from mrag.core.retrieval.base import RetrievalResult
+from mrag.core.retrieval.hybrid import hybrid_search
+from mrag.core.retrieval.keyword import keyword_search
+from mrag.core.retrieval.vector import vector_search
+from mrag.db.connection import find_db, open_connection
+from mrag.db.qdrant import collection_name, make_client, normalize_name
+
+console = Console()
+
+
+def _run_search(
+    query: str,
+    profile_name: str,
+    project_dir: Path,
+    config,
+    top_k: int,
+    strategy: Optional[str],
+    no_rerank: bool,
+) -> tuple[list[RetrievalResult], str, bool]:
+    prof = load_profile(profile_name, project_dir)
+    db_path = find_db(project_dir)
+    retrieval_strategy = strategy or prof.retrieval.strategy
+    tokenizer = config.fts_tokenizer
+
+    use_rerank = prof.rerank.enabled and not no_rerank
+    retrieval_top_k = prof.rerank.top_n if use_rerank else top_k
+
+    if retrieval_strategy == "keyword":
+        results = keyword_search(
+            query_text=query,
+            knowledge_id=config.knowledge_id,
+            profile_name=profile_name,
+            db_path=db_path,
+            top_k=retrieval_top_k,
+            tokenizer=tokenizer,
+        )
+    else:
+        provider = OllamaEmbeddingProvider(
+            model=prof.embedding.model,
+            endpoint=prof.embedding.endpoint,
+        )
+        qdrant_client = make_client(host=config.qdrant.host, port=config.qdrant.port)
+        col = collection_name(
+            config.knowledge_id,
+            profile_name,
+            normalize_name(prof.embedding.model),
+        )
+        if retrieval_strategy == "vector":
+            results = vector_search(
+                query_text=query,
+                knowledge_id=config.knowledge_id,
+                profile_name=profile_name,
+                db_path=db_path,
+                embedding_provider=provider,
+                qdrant_client=qdrant_client,
+                col_name=col,
+                top_k=retrieval_top_k,
+            )
+        else:
+            results = hybrid_search(
+                query_text=query,
+                knowledge_id=config.knowledge_id,
+                profile_name=profile_name,
+                db_path=db_path,
+                embedding_provider=provider,
+                qdrant_client=qdrant_client,
+                col_name=col,
+                dense_top_k=prof.retrieval.dense_top_k,
+                keyword_top_k=prof.retrieval.keyword_top_k,
+                top_k=retrieval_top_k,
+                fusion=prof.retrieval.fusion,
+                tokenizer=tokenizer,
+            )
+
+    reranked = False
+    if use_rerank and results:
+        from mrag.core.reranking import get_reranker
+        reranker = get_reranker(prof.rerank)
+        results = reranker.rerank(query, results)[:top_k]
+        reranked = True
+    else:
+        results = results[:top_k]
+
+    return results, retrieval_strategy, reranked
+
+
+def _fetch_filenames(db_path: Path, results: list[RetrievalResult]) -> dict[str, str]:
+    if not results:
+        return {}
+    doc_ids = list({r.document_id for r in results})
+    conn = open_connection(db_path)
+    rows = conn.execute(
+        "SELECT id, filename FROM documents WHERE id IN (%s)"
+        % ",".join("?" * len(doc_ids)),
+        doc_ids,
+    ).fetchall()
+    conn.close()
+    return {r["id"]: r["filename"] for r in rows}
+
+
+def detect_duplicates(results: list[RetrievalResult]) -> set[str]:
+    """Return chunk_ids whose content is identical to another result's content."""
+    seen: dict[str, str] = {}
+    dupes: set[str] = set()
+    for r in results:
+        key = r.content.strip()
+        if key in seen:
+            dupes.add(r.chunk_id)
+            dupes.add(seen[key])
+        else:
+            seen[key] = r.chunk_id
+    return dupes
+
+
+def _print_single_profile(
+    query: str,
+    profile_name: str,
+    results: list[RetrievalResult],
+    strategy: str,
+    reranked: bool,
+    filename_map: dict[str, str],
+) -> None:
+    duplicates = detect_duplicates(results)
+
+    console.print()
+    console.print(f"[bold]Query:[/bold] {query}")
+    console.print(
+        f"[bold]Profile:[/bold] {profile_name}  "
+        f"[bold]Strategy:[/bold] {strategy}  "
+        f"[bold]Reranked:[/bold] {'yes' if reranked else 'no'}"
+    )
+    console.rule()
+
+    if not results:
+        console.print("[yellow]No results found.[/yellow]")
+        return
+
+    for i, r in enumerate(results, 1):
+        filename = filename_map.get(r.document_id, r.document_id[:8])
+        retrieval_score = r.metadata.get("retrieval_score")
+        score_str = f"score=[cyan]{r.score:.4f}[/cyan]"
+        if retrieval_score is not None:
+            score_str += f"  (retrieval=[dim]{retrieval_score:.4f}[/dim])"
+        dupe_flag = "  [yellow]⚠ duplicate content[/yellow]" if r.chunk_id in duplicates else ""
+
+        console.print(f"[bold]\\[{i}][/bold] {score_str}{dupe_flag}")
+        console.print(
+            f"    doc=[green]{filename}[/green]  "
+            f"chunk=[dim]{r.chunk_id[:8]}...[/dim]"
+        )
+        console.print(f"    {r.content[:200].replace(chr(10), ' ')}")
+        console.print()
+
+    scores = [r.score for r in results]
+    stdev = statistics.stdev(scores) if len(scores) > 1 else 0.0
+    console.print(
+        f"[bold]Score stats:[/bold]  "
+        f"min=[cyan]{min(scores):.4f}[/cyan]  "
+        f"max=[cyan]{max(scores):.4f}[/cyan]  "
+        f"mean=[cyan]{statistics.mean(scores):.4f}[/cyan]  "
+        f"σ=[cyan]{stdev:.4f}[/cyan]"
+    )
+    console.print()
+
+    doc_counts: dict[str, int] = {}
+    for r in results:
+        name = filename_map.get(r.document_id, r.document_id[:8])
+        doc_counts[name] = doc_counts.get(name, 0) + 1
+
+    bar_max = max(doc_counts.values())
+    console.print("[bold]Document distribution:[/bold]")
+    for name, count in sorted(doc_counts.items(), key=lambda x: -x[1]):
+        bar = "█" * max(1, int(count / bar_max * 20))
+        console.print(f"  [green]{name:<40}[/green] {bar} {count}")
+
+
+def _print_profile_diff(
+    profile_results: dict[str, tuple[list[RetrievalResult], str, bool]],
+) -> None:
+    profile_names = list(profile_results.keys())
+    chunk_lists = {
+        name: [r.chunk_id for r in results]
+        for name, (results, _, _) in profile_results.items()
+    }
+    max_k = max(len(lst) for lst in chunk_lists.values())
+
+    table = Table(
+        title="Profile Diff: " + " vs ".join(profile_names),
+        box=box.SIMPLE_HEAD,
+        show_lines=False,
+    )
+    table.add_column("Rank", style="bold", width=4, justify="right")
+    for name in profile_names:
+        _, strategy, reranked = profile_results[name]
+        suffix = "  reranked" if reranked else ""
+        table.add_column(f"{name}\n({strategy}{suffix})", min_width=26)
+
+    for rank in range(max_k):
+        ids_at_rank = [
+            chunk_lists[name][rank] if rank < len(chunk_lists[name]) else None
+            for name in profile_names
+        ]
+        non_none = [cid for cid in ids_at_rank if cid is not None]
+        all_same = len(set(non_none)) == 1 and len(non_none) == len(profile_names)
+
+        cells = [str(rank + 1)]
+        for name, chunk_id in zip(profile_names, ids_at_rank):
+            if chunk_id is None:
+                cells.append("[dim]—[/dim]")
+                continue
+            results, _, _ = profile_results[name]
+            r = results[rank]
+            indicator = " [green]✓[/green]" if all_same else ""
+            cells.append(
+                f"{chunk_id[:8]}...{indicator}\n[dim]score={r.score:.4f}[/dim]"
+            )
+        table.add_row(*cells)
+
+    console.print()
+    console.print(table)
+
+
+def eval_cmd(
+    query: str = typer.Argument(..., help="Search query to evaluate"),
+    profile: List[str] = typer.Option([], "--profile", "-p", help="Profile name (repeatable for diff)"),
+    top_k: int = typer.Option(10, "--top-k", "-k", help="Number of results per profile"),
+    strategy: Optional[str] = typer.Option(
+        None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
+    ),
+    no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
+) -> None:
+    """Evaluate retrieval quality: scores, duplicates, document distribution, multi-profile diff."""
+    project_dir = Path.cwd()
+
+    try:
+        config = load_project_config(project_dir)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    profile_names = list(profile) if profile else [config.default_profile]
+
+    for p in profile_names:
+        try:
+            load_profile(p, project_dir)
+        except FileNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    if len(profile_names) > 1:
+        models = {p: load_profile(p, project_dir).embedding.model for p in profile_names}
+        if len(set(models.values())) > 1:
+            console.print(
+                "[yellow]Warning:[/yellow] Profiles use different embedding models — "
+                "scores are not directly comparable."
+            )
+            for p, m in models.items():
+                console.print(f"  {p}: {m}")
+
+    db_path = find_db(project_dir)
+    profile_results: dict[str, tuple[list[RetrievalResult], str, bool]] = {}
+
+    for p in profile_names:
+        try:
+            results, used_strategy, reranked = _run_search(
+                query=query,
+                profile_name=p,
+                project_dir=project_dir,
+                config=config,
+                top_k=top_k,
+                strategy=strategy,
+                no_rerank=no_rerank,
+            )
+        except (ConnectionError, RuntimeError, ImportError) as e:
+            console.print(f"[red]Error[/red] (profile={p}): {e}")
+            raise typer.Exit(1)
+        profile_results[p] = (results, used_strategy, reranked)
+
+    if len(profile_names) == 1:
+        p = profile_names[0]
+        results, used_strategy, reranked = profile_results[p]
+        filename_map = _fetch_filenames(db_path, results)
+        _print_single_profile(
+            query=query,
+            profile_name=p,
+            results=results,
+            strategy=used_strategy,
+            reranked=reranked,
+            filename_map=filename_map,
+        )
+    else:
+        for p in profile_names:
+            results, used_strategy, reranked = profile_results[p]
+            filename_map = _fetch_filenames(db_path, results)
+            _print_single_profile(
+                query=query,
+                profile_name=p,
+                results=results,
+                strategy=used_strategy,
+                reranked=reranked,
+                filename_map=filename_map,
+            )
+        _print_profile_diff(profile_results)

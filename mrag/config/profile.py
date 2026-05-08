@@ -73,14 +73,17 @@ class ProfileConfig(BaseModel):
     rerank: RerankConfig = Field(default_factory=RerankConfig)
 
     def compute_hash(self) -> str:
-        """SHA256 of retrieval-relevant fields, used for differential indexing."""
+        """SHA256 of index-affecting fields, used for differential indexing.
+
+        rerank is intentionally excluded: it is applied at retrieval time and
+        does not affect stored chunks, embeddings, or FTS5 data.
+        """
         relevant = {
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(),
             "retrieval": self.retrieval.model_dump(),
             "contextual": self.contextual.model_dump(),
             "keyword": self.keyword.model_dump(),
-            "rerank": self.rerank.model_dump(),
         }
         canonical = json.dumps(relevant, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode()).hexdigest()
