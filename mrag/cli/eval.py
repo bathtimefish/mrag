@@ -51,7 +51,12 @@ def _run_search(
             model=prof.embedding.model,
             endpoint=prof.embedding.endpoint,
         )
-        qdrant_client = make_client(host=config.qdrant.host, port=config.qdrant.port)
+        qdrant_client = make_client(
+            mode=config.qdrant.mode,
+            host=config.qdrant.host,
+            port=config.qdrant.port,
+            path=project_dir / "qdrant",
+        )
         col = collection_name(
             config.knowledge_id,
             profile_name,

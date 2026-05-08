@@ -17,7 +17,7 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 - **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
 - **FastAPI サーバー** — オプションの Bearer トークン認証付きで HTTP API として公開可能
 - **Dify 対応** — `mrag serve` は [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) 仕様を実装済み。アダプター不要で Dify の外部ナレッジソースとして利用可能
-- **完全ローカル** — クラウド依存なし。Qdrant はローカルサーバーとして動作
+- **Qdrant 依存ゼロ** — デフォルトでプロセス内組み込み動作（`mode: local`）。Docker や外部サーバー不要。必要時のみ `mode: server` に切り替え可能。
 
 ---
 
@@ -27,7 +27,7 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 |--------------|------|
 | Python 3.11+ | |
 | [Ollama](https://ollama.com) | 起動済みであること。デフォルトで `bge-m3` を使用 |
-| [Qdrant](https://qdrant.tech) | `localhost:6333` でローカルサーバーが起動済みであること |
+| [Qdrant](https://qdrant.tech) | **任意** — `mode: server` 時のみ必要。デフォルトの `mode: local` はプロセス内で動作するため Docker 不要。 |
 | `libsqlite_vaporetto` | 任意。日本語形態素解析を有効にする |
 | `apsw >= 3.43` | vaporetto トークナイザー使用時のみ必要 |
 
@@ -85,6 +85,8 @@ ollama pull bge-m3
 ```
 
 `bge-m3` は日本語・英語を含む多言語対応の Embedding モデルです（1024 次元）。プロファイル YAML を編集することで、Ollama に対応した任意のモデルに変更できます。
+
+> **Qdrant の Docker セットアップは不要です。** mrag はデフォルトで `qdrant.mode: local` を使用し、Qdrant をプロセス内に組み込んで動作させます。ベクターデータはプロジェクトの `qdrant/` ディレクトリに保存されます。Docker が必要なのは `qdrant.mode: server` を明示的に設定した場合のみです。
 
 ---
 
@@ -491,7 +493,7 @@ mrag serve  → FastAPI → 同じ検索パイプラインを HTTP で公開
 ```
 
 - **SQLite** — ドキュメント、チャンク、プロファイル、FTS5 インデックスの信頼できる唯一のソース
-- **Qdrant** — 再構築可能なベクターインデックス（`mrag reindex` で SQLite から再作成）
+- **Qdrant** — 再構築可能なベクターインデックス（`mrag reindex` で SQLite から再作成）。`mode: local`（デフォルト）ではプロセス内組み込み動作、`mode: server` では外部サーバーに接続。
 - **FTS5 トークナイザー** — vaporetto（日本語形態素解析）または trigram（汎用）
 - **apsw** — vaporetto 使用時に必須。macOS での SQLite 拡張ローディングを担う
 
@@ -512,10 +514,68 @@ my-project/
 │           ├── extracted.txt  # 抽出されたプレーンテキスト
 │           ├── extracted.md   # 抽出された Markdown
 │           └── extraction_meta.json
-├── qdrant/                    # Qdrant ストレージ
+├── qdrant/                    # Qdrant ベクターストレージ（mode: local 時にここへ保存）
 └── cache/
     └── embeddings/            # Embedding キャッシュ（任意）
 ```
+
+---
+
+## Qdrant モード
+
+`mrag.yaml` の `qdrant` セクションで動作モードを設定します：
+
+```yaml
+# デフォルト — Docker 不要
+qdrant:
+  mode: local
+
+# 外部サーバー — 起動中の Qdrant インスタンスが必要
+qdrant:
+  mode: server
+  host: localhost
+  port: 6333
+```
+
+| モード | Qdrant プロセス | データ保存先 | 用途 |
+|--------|---------------|------------|------|
+| `local`（デフォルト） | プロセス内組み込み | プロジェクト内の `qdrant/` | 開発・CI・軽量デプロイ |
+| `server` | 外部（Docker またはネイティブ） | Qdrant サーバーが管理 | 本番・複数プロジェクト共有 |
+
+`mrag init` は常に `mode: local` を生成します。`mode` キーが存在しない既存プロジェクトは後方互換のため `mode: server` として扱われます。
+
+---
+
+## 別ホストへの移行
+
+`mode: local` ではすべての Qdrant データがプロジェクトディレクトリ内に保存されるため、移行はディレクトリのコピーだけで完了します。`mrag reindex` は不要です。
+
+```bash
+# 移行元ホストでアーカイブを作成
+tar -czf my-project.tar.gz my-project/
+
+# 移行先ホストへ転送
+scp my-project.tar.gz user@target-host:~/
+
+# 移行先ホストで展開してすぐに使用
+tar -xzf my-project.tar.gz
+cd my-project
+mrag search "クエリ"   # mrag reindex 不要
+```
+
+**転送対象:**
+
+| パス | 内容 |
+|------|------|
+| `mrag.yaml` | プロジェクト設定 |
+| `mrag.db` | SQLite（ドキュメント・チャンク・FTS5 インデックス） |
+| `profiles/` | 検索プロファイル YAML |
+| `data/documents/` | 元ファイル + 抽出テキスト |
+| `qdrant/` | Qdrant ベクターデータ（local モード時） |
+
+> **前提条件:** 移行先ホストで同じ Embedding モデルを持つ Ollama が起動していること（新規インデックスやベクター検索時に必要）。既存ドキュメントは `qdrant/` に事前構築済みのベクターが含まれるため、再 Embedding なしで即座に検索できます。
+
+`mode: server` を使用している場合は `qdrant/` を除いてコピーし、移行先で Qdrant サーバーを起動してから `mrag reindex` を実行してください。
 
 ---
 

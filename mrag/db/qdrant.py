@@ -1,5 +1,6 @@
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 from qdrant_client import QdrantClient
@@ -21,10 +22,17 @@ def collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str
     return f"mrag_{kb}_{profile}_{model}"
 
 
-def make_client(host: str = "localhost", port: int = 6333) -> QdrantClient:
+def make_client(
+    mode: str = "server",
+    host: str = "localhost",
+    port: int = 6333,
+    path: Path | None = None,
+) -> QdrantClient:
+    if mode == "local":
+        qdrant_path = path or Path("./qdrant")
+        return QdrantClient(path=str(qdrant_path))
     try:
         client = QdrantClient(host=host, port=port)
-        # Probe connectivity
         client.get_collections()
         return client
     except Exception as e:

@@ -42,7 +42,12 @@ def create_app(
         if _qdrant_client is not None:
             qdrant = _qdrant_client
         else:
-            qdrant = make_client(host=config.qdrant.host, port=config.qdrant.port)
+            qdrant = make_client(
+                mode=config.qdrant.mode,
+                host=config.qdrant.host,
+                port=config.qdrant.port,
+                path=project_dir / "qdrant",
+            )
 
         col = collection_name(
             config.knowledge_id,

@@ -68,14 +68,23 @@ mrag init --name my-kb   # creates /workspace/my-kb/my-kb — double nesting
 
 `mrag add` only extracts text. Searching before `mrag index` returns zero results.
 
-### Qdrant must be running for `mrag index` and `mrag serve`
+### Qdrant mode determines whether an external server is needed
 
-```bash
-# Start Qdrant (Docker)
-docker run -d -p 6333:6333 qdrant/qdrant
+Check `mrag.yaml` for the `qdrant.mode` value before starting any indexing task.
+
+```yaml
+qdrant:
+  mode: local    # default — no external process required
 ```
 
-If Qdrant is unavailable, `mrag index` fails. `mrag search --strategy keyword` still works without Qdrant.
+| Mode | Requirement |
+|------|------------|
+| `local` (default) | Nothing — Qdrant runs embedded in-process; data stored in `./qdrant/` |
+| `server` | A running Qdrant server: `docker run -d -p 6333:6333 qdrant/qdrant` |
+
+`mrag init` always creates `mode: local`. Projects without a `mode` key default to `server`.
+
+`mrag search --strategy keyword` works without Qdrant in either mode.
 
 ### Ollama and the embedding model must be available for `mrag index`
 
@@ -215,7 +224,7 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 |---------|-------|-----|
 | `mrag.yaml not found` | Not in project directory | `cd <project-dir>` |
 | Zero search results | `mrag index` not run, or wrong tokenizer | Run `mrag index`; check `fts_tokenizer` in `mrag.yaml` |
-| `Collection not found` error | Qdrant not running | Start Qdrant |
+| `Collection not found` error | Qdrant server not running (`mode: server`) | Start Qdrant, or switch to `mode: local` |
 | Indexing fails with connection error | Ollama not running or model not pulled | `ollama serve` + `ollama pull bge-m3` |
 | Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |

@@ -66,7 +66,10 @@ def search(
             )
             try:
                 qdrant_client = make_client(
-                    host=config.qdrant.host, port=config.qdrant.port
+                    mode=config.qdrant.mode,
+                    host=config.qdrant.host,
+                    port=config.qdrant.port,
+                    path=project_dir / "qdrant",
                 )
             except ConnectionError as e:
                 console.print(f"[red]Error:[/red] {e}")
