@@ -342,6 +342,63 @@ keyword:
 
 Create additional profiles by placing new YAML files in `profiles/` and indexing with `--profile <name>`.
 
+### Chunking Strategies
+
+The `chunking.strategy` field controls how documents are split into chunks before indexing. Two strategies are available:
+
+| Strategy | Description |
+|----------|-------------|
+| `recursive` | Splits text recursively by separator hierarchy (paragraphs → line breaks → sentences). Best for plain text and PDF. **Default.** |
+| `markdown_recursive` | Splits first by Markdown heading structure, then applies recursive splitting within each section. Use with `source_format: markdown`. |
+
+**Configuration fields:**
+
+```yaml
+chunking:
+  strategy: recursive       # recursive | markdown_recursive
+  source_format: text       # text | markdown
+  chunk_size: 800           # target chunk size in characters
+  overlap: 120              # overlap between adjacent chunks in characters
+```
+
+**Choosing a strategy:**
+
+- **`recursive`** — use for plain text and PDF. Works well across all languages including Japanese.
+- **`markdown_recursive`** — use when documents have clear heading structure (e.g. technical docs, wikis exported as Markdown). Preserves section context within each chunk, which tends to improve retrieval precision.
+
+> **Note:** Changing `chunking.strategy`, `chunk_size`, or `overlap` invalidates the existing index. Run `mrag reindex` after any chunking change to rebuild from scratch.
+
+### Retrieval Strategies
+
+The `retrieval.strategy` field in a profile controls how search is performed. Three strategies are available:
+
+| Strategy | Description |
+|----------|-------------|
+| `hybrid` | Combines keyword (BM25) and vector search results using Reciprocal Rank Fusion (RRF). **Default and recommended for most use cases.** |
+| `keyword` | Full-text search only, using SQLite FTS5 BM25 scoring. Fast; no embedding required at query time. |
+| `vector` | Dense vector search only, via Qdrant cosine similarity. Good for semantic/paraphrase queries where exact terms may differ. |
+
+**Configuration fields per strategy:**
+
+```yaml
+retrieval:
+  strategy: hybrid      # hybrid | keyword | vector
+  top_k: 8              # final number of results returned
+  dense_top_k: 20       # candidates fetched from Qdrant before fusion (hybrid/vector)
+  keyword_top_k: 20     # candidates fetched from FTS5 before fusion (hybrid/keyword)
+  fusion: rrf           # fusion algorithm (rrf is the only supported option)
+```
+
+`dense_top_k` and `keyword_top_k` are only used when the corresponding sub-search is active. Setting them higher than `top_k` gives the fusion step more candidates to re-rank, which generally improves result quality at a small latency cost.
+
+**Choosing a strategy:**
+
+- **`hybrid`** — best default. Handles both exact-term queries (e.g. product codes, Japanese keywords) and semantic queries robustly.
+- **`keyword`** — use when queries are expected to contain exact terms from the documents (e.g. part numbers, error codes). Also useful when Ollama / Qdrant is unavailable at query time.
+- **`vector`** — use when queries are phrased differently from the source text (e.g. questions about concepts rather than exact wording). Requires Ollama to be running at query time.
+
+> **Note:** The strategy is set per **profile**, not globally. You can maintain multiple profiles with different strategies and switch between them at index/query time with `--profile <name>`.
+
 ---
 
 ## Architecture
