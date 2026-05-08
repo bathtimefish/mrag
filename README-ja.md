@@ -33,14 +33,19 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 
 ## インストール
 
+mrag はソースからインストールします。[uv](https://docs.astral.sh/uv/) の使用を推奨します。
+
 ```bash
-pip install mrag
+git clone https://github.com/bathtimefish/mrag.git
+cd mrag
+uv venv
+uv pip install -e "."
 ```
 
 ### vaporetto を使う場合（日本語ドキュメントに推奨）
 
 ```bash
-pip install mrag[vaporetto]
+uv pip install -e ".[vaporetto]"
 ```
 
 次に、`libsqlite_vaporetto.dylib`（macOS）または `libsqlite_vaporetto.so`（Linux）を以下のディレクトリに配置します：
@@ -55,7 +60,13 @@ pip install mrag[vaporetto]
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
 
-> **注意:** macOS のシステム `sqlite3` は `OMIT_LOAD_EXTENSION` フラグ付きでビルドされているため、vaporetto を使用するには `apsw`（拡張ローディングを常にサポートする代替 SQLite バインディング）が必要です。`pip install mrag[vaporetto]` を実行すると自動的にインストールされます。
+> **注意:** macOS のシステム `sqlite3` は `OMIT_LOAD_EXTENSION` フラグ付きでビルドされているため、vaporetto を使用するには `apsw`（拡張ローディングを常にサポートする代替 SQLite バインディング）が必要です。`uv pip install -e ".[vaporetto]"` を実行すると自動的にインストールされます。
+
+### Marker を使う場合（スキャン PDF・複雑なレイアウトの PDF 向け）
+
+```bash
+uv pip install -e ".[marker]"
+```
 
 ### デフォルト Embedding モデルの取得
 
@@ -107,7 +118,7 @@ mrag add manual.pdf notes.txt
 | エクストラクター | オプション | 説明 |
 |--------------|----------|------|
 | PyMuPDF | `--extractor pymupdf` | デフォルト。テキストレイヤーの高速抽出。スキャン/画像ベースの PDF と判定された場合は警告を出力する。 |
-| Marker | `--extractor marker` | 複雑なレイアウトに対応した高精度抽出。`pip install "mrag[marker]"` が必要。 |
+| Marker | `--extractor marker` | 複雑なレイアウトに対応した高精度抽出。`uv pip install -e ".[marker]"` が必要。 |
 
 ```bash
 # デフォルトエクストラクター（PyMuPDF）を使用

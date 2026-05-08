@@ -33,14 +33,19 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 
 ## Installation
 
+mrag is installed from source. [uv](https://docs.astral.sh/uv/) is recommended.
+
 ```bash
-pip install mrag
+git clone https://github.com/bathtimefish/mrag.git
+cd mrag
+uv venv
+uv pip install -e "."
 ```
 
 ### With vaporetto (recommended for Japanese documents)
 
 ```bash
-pip install mrag[vaporetto]
+uv pip install -e ".[vaporetto]"
 ```
 
 Then place `libsqlite_vaporetto.dylib` (macOS) or `libsqlite_vaporetto.so` (Linux) in:
@@ -55,7 +60,13 @@ Or point to a custom path via the environment variable:
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
 
-> **Note:** On macOS, the system `sqlite3` is compiled with `OMIT_LOAD_EXTENSION`, so vaporetto requires `apsw` — the alternative SQLite binding that always supports extension loading. `pip install mrag[vaporetto]` installs it automatically.
+> **Note:** On macOS, the system `sqlite3` is compiled with `OMIT_LOAD_EXTENSION`, so vaporetto requires `apsw` — the alternative SQLite binding that always supports extension loading. `uv pip install -e ".[vaporetto]"` installs it automatically.
+
+### With Marker (for scanned / complex-layout PDFs)
+
+```bash
+uv pip install -e ".[marker]"
+```
 
 ### Pull the default embedding model
 
@@ -106,7 +117,7 @@ Documents are extracted and stored in `data/documents/`. Supported formats: PDF,
 | Extractor | Option | Notes |
 |-----------|--------|-------|
 | PyMuPDF | `--extractor pymupdf` | Default. Fast text-layer extraction. Warns if the PDF appears to be scanned/image-based. |
-| Marker | `--extractor marker` | High-accuracy extraction for complex layouts. Requires `pip install "mrag[marker]"`. |
+| Marker | `--extractor marker` | High-accuracy extraction for complex layouts. Requires `uv pip install -e ".[marker]"`. |
 
 ```bash
 # Use the default extractor (PyMuPDF)
