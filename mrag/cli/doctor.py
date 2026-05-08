@@ -24,6 +24,18 @@ def _check(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
         return False
 
 
+def _check_warn(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
+    """Like _check but uses WARN instead of ERROR on failure (for optional components)."""
+    try:
+        ok, msg = fn()
+        badge = _OK if ok else _WARN
+        console.print(f"  {badge}  {label}: {msg}")
+        return ok
+    except Exception as e:
+        console.print(f"  {_WARN}  {label}: {e}")
+        return False
+
+
 def _check_sqlite_version() -> tuple[bool, str]:
     ver_str = sqlite3.sqlite_version
     parts = [int(x) for x in ver_str.split(".")]
@@ -46,10 +58,13 @@ def _check_fts5_trigram() -> tuple[bool, str]:
 
 
 def _check_vaporetto() -> tuple[bool, str]:
-    spec = importlib.util.find_spec("sqlite_vaporetto")
-    if spec:
-        return True, "sqlite-vaporetto found"
-    return False, "not installed (optional — used for Japanese tokenization)"
+    from mrag.db.tokenizer import find_vaporetto_lib, probe_vaporetto
+    lib = find_vaporetto_lib()
+    if lib is None:
+        return False, "library not found (optional — place libsqlite_vaporetto in ~/.mrag/extensions/)"
+    if not probe_vaporetto(lib):
+        return False, f"found at {lib} but failed to load (check apsw installation)"
+    return True, f"ready ({lib.name})"
 
 
 def _check_qdrant(host: str, port: int) -> tuple[bool, str]:
@@ -105,7 +120,19 @@ def doctor() -> None:
     console.print("[bold]SQLite[/bold]")
     _check("version (3.35.0+)", _check_sqlite_version)
     _check("FTS5 trigram tokenizer", _check_fts5_trigram)
-    _check("sqlite-vaporetto (optional)", _check_vaporetto)
+
+    # Determine if vaporetto is required by the current project config
+    try:
+        from mrag.config.project import load_project_config
+        _cfg_for_tokenizer = load_project_config(project_dir)
+        vaporetto_required = _cfg_for_tokenizer.fts_tokenizer == "vaporetto"
+    except Exception:
+        vaporetto_required = False
+
+    if vaporetto_required:
+        _check("sqlite-vaporetto (required by project)", _check_vaporetto)
+    else:
+        _check_warn("sqlite-vaporetto (optional)", _check_vaporetto)
 
     console.print()
     console.print("[bold]Project[/bold]")
@@ -145,4 +172,4 @@ def doctor() -> None:
 
     console.print()
     console.print("[bold]Optional packages[/bold]")
-    _check("marker-pdf", _check_marker)
+    _check_warn("marker-pdf", _check_marker)
