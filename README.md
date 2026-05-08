@@ -13,6 +13,8 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 - **Multilingual embeddings** — defaults to `bge-m3` via [Ollama](https://ollama.com) (any Ollama-compatible model works)
 - **Differential indexing** — re-running `mrag index` skips already-indexed documents
 - **Retrieval profiles** — per-project YAML profiles control chunking, embedding, and retrieval strategy independently
+- **Reranking** — optional CrossEncoder reranking (sentence-transformers) after retrieval; disabled per-request with `--no-rerank`
+- **Retrieval evaluation** — `mrag eval` inspects retrieval quality: scores, duplicates, document distribution, multi-profile diff
 - **FastAPI server** — expose the knowledge base as an HTTP API with optional Bearer-token authentication
 - **Dify compatible** — `mrag serve` implements the [Dify External Knowledge API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) spec; use mrag as an external knowledge source in Dify with no extra adapter
 - **Pure local stack** — no cloud dependencies; Qdrant runs as a local server
@@ -67,6 +69,14 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```bash
 uv pip install -e ".[marker]"
 ```
+
+### With Reranker (CrossEncoder reranking)
+
+```bash
+uv pip install -e ".[reranker]"
+```
+
+Enables `rerank.enabled: true` in profile YAML. Uses `sentence-transformers` CrossEncoder models. The default model is `hotchpotch/japanese-reranker-cross-encoder-small-v1`.
 
 ### Pull the default embedding model
 
@@ -160,12 +170,30 @@ mrag search "temperature sensing" --strategy vector
 
 # Limit results
 mrag search "Bluetooth LE" --top-k 3
+
+# Disable reranking for this search
+mrag search "熱電対の温度測定" --no-rerank
 ```
 
-### 5. Serve as an API
+### 5. Evaluate retrieval quality (optional)
+
+```bash
+mrag eval "熱電対の温度測定"
+```
+
+Shows scores, duplicate chunks, document distribution, and optionally compares multiple profiles:
+
+```bash
+mrag eval "熱電対の温度測定" --profile default --profile second --strategy vector
+```
+
+### 6. Serve as an API
 
 ```bash
 mrag serve
+
+# Disable reranking for all API requests
+mrag serve --no-rerank
 ```
 
 Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-reference) below.
@@ -180,8 +208,9 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P]` | Differential index (skips up-to-date docs) |
 | `mrag reindex [--profile P]` | Force-rebuild the entire index for a profile |
-| `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`) |
-| `mrag serve` | Start FastAPI server (`--host`, `--port`) |
+| `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |
+| `mrag eval <query>` | Evaluate retrieval quality (`--profile P`, `--strategy S`, `--top-k N`, `--no-rerank`) |
+| `mrag serve` | Start FastAPI server (`--host`, `--port`, `--no-rerank`) |
 | `mrag remove <doc-id>` | Dry-run removal (use `--force` to actually delete) |
 | `mrag profiles list` | List profiles registered in the database |
 | `mrag profiles show <name>` | Show profile configuration |
@@ -429,6 +458,23 @@ retrieval:
 - **`vector`** — use when queries are phrased differently from the source text (e.g. questions about concepts rather than exact wording). Requires Ollama to be running at query time.
 
 > **Note:** The strategy is set per **profile**, not globally. You can maintain multiple profiles with different strategies and switch between them at index/query time with `--profile <name>`.
+
+### Reranking
+
+When `rerank.enabled: true`, mrag runs a CrossEncoder reranker after retrieval to improve result ordering. The reranker fetches `top_n` candidates, re-scores them, and returns `top_k` results.
+
+```yaml
+rerank:
+  enabled: true
+  provider: sentence-transformers
+  model: hotchpotch/japanese-reranker-cross-encoder-small-v1
+  top_n: 30      # candidates fetched before reranking
+  top_k: 8       # final results after reranking
+```
+
+Reranking is applied at query time only — changing `rerank` settings never triggers re-indexing. Requires `uv pip install -e ".[reranker]"`.
+
+Disable at runtime with `--no-rerank` on `mrag search`, `mrag eval`, or `mrag serve`.
 
 ---
 
