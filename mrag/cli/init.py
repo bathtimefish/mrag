@@ -6,6 +6,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
+from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db.connection import db_connection
 from mrag.db.migrate import apply_schema
 from mrag.db.tokenizer import detect_best_tokenizer, TOKENIZER_VAPORETTO
@@ -61,8 +62,8 @@ embedding:
   cache:
     enabled: false
 
-contextual:
-  enabled: false
+augmentation:
+  strategy: none
 
 keyword:
   provider: sqlite_fts5
@@ -135,6 +136,12 @@ def init(
     )
     console.print("[green]✓[/green] Generated profiles/default.yaml")
 
+    (project_dir / "profiles" / "context_prompt.txt").write_text(
+        DEFAULT_CONTEXT_PROMPT_TEMPLATE,
+        encoding="utf-8",
+    )
+    console.print("[green]✓[/green] Generated profiles/context_prompt.txt")
+
     # Initialize DB with the chosen FTS tokenizer
     if fts_tokenizer == TOKENIZER_VAPORETTO and lib_path:
         from mrag.db.apsw_compat import ApswConnection
@@ -158,7 +165,9 @@ def init(
             "  [dim]mrag add <file>[/dim]          Add documents\n"
             "  [dim]mrag index[/dim]               Build retrieval index\n"
             "  [dim]mrag search <query>[/dim]      Search documents\n"
-            "  [dim]mrag doctor[/dim]              Check environment",
+            "  [dim]mrag doctor[/dim]              Check environment\n\n"
+            "Contextual augmentation prompt:\n"
+            "  [dim]profiles/context_prompt.txt[/dim]  Edit to tune per-project",
             title="mrag init",
             border_style="green",
         )
