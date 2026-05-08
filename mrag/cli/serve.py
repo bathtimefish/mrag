@@ -16,6 +16,7 @@ def serve(
     profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Profile name"),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
     port: int = typer.Option(8000, "--port", help="Bind port"),
+    no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking for all API requests"),
 ) -> None:
     """Start the MRAG API server."""
     import uvicorn
@@ -33,7 +34,7 @@ def serve(
     profile_name = profile or config.default_profile
 
     try:
-        load_profile(profile_name, project_dir)
+        prof = load_profile(profile_name, project_dir)
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
@@ -50,16 +51,32 @@ def serve(
         console.print(f"[red]Error:[/red] Qdrant not reachable: {e}")
         raise typer.Exit(1)
 
+    reranker = None
+    if prof.rerank.enabled and not no_rerank:
+        from mrag.core.reranking import get_reranker
+        try:
+            console.print(f"Loading reranker: [bold]{prof.rerank.model}[/bold]...")
+            reranker = get_reranker(prof.rerank)
+            console.print("[green]✓[/green] Reranker loaded")
+        except ImportError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
     app = create_app(
         project_dir=project_dir,
         profile_name=profile_name,
         config=config,
+        reranker=reranker,
     )
 
+    rerank_status = "disabled (--no-rerank)" if no_rerank else (
+        "enabled" if prof.rerank.enabled else "disabled (profile)"
+    )
     console.print(
         f"[green]Starting MRAG API server[/green] on [cyan]http://{host}:{port}[/cyan]"
     )
     console.print(f"Profile: [bold]{profile_name}[/bold]  |  Docs: http://{host}:{port}/docs")
     console.print(f"Knowledge ID: [bold]{config.knowledge_id}[/bold]")
+    console.print(f"Reranking: [bold]{rerank_status}[/bold]")
 
     uvicorn.run(app, host=host, port=port)

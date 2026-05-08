@@ -23,6 +23,7 @@ def search(
     strategy: Optional[str] = typer.Option(
         None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
     ),
+    no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
 ) -> None:
     """Search the knowledge base."""
     project_dir = Path.cwd()
@@ -43,8 +44,10 @@ def search(
 
     db_path = find_db(project_dir)
     retrieval_strategy = strategy or prof.retrieval.strategy
-
     tokenizer = config.fts_tokenizer
+
+    use_rerank = prof.rerank.enabled and not no_rerank
+    retrieval_top_k = prof.rerank.top_n if use_rerank else top_k
 
     try:
         if retrieval_strategy == "keyword":
@@ -53,7 +56,7 @@ def search(
                 knowledge_id=config.knowledge_id,
                 profile_name=profile_name,
                 db_path=db_path,
-                top_k=top_k,
+                top_k=retrieval_top_k,
                 tokenizer=tokenizer,
             )
         else:
@@ -84,7 +87,7 @@ def search(
                     embedding_provider=provider,
                     qdrant_client=qdrant_client,
                     col_name=col,
-                    top_k=top_k,
+                    top_k=retrieval_top_k,
                 )
             else:  # hybrid (default)
                 results = hybrid_search(
@@ -97,13 +100,22 @@ def search(
                     col_name=col,
                     dense_top_k=prof.retrieval.dense_top_k,
                     keyword_top_k=prof.retrieval.keyword_top_k,
-                    top_k=top_k,
+                    top_k=retrieval_top_k,
                     fusion=prof.retrieval.fusion,
                     tokenizer=tokenizer,
                 )
     except (ConnectionError, RuntimeError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+    if use_rerank and results:
+        try:
+            from mrag.core.reranking import get_reranker
+            reranker = get_reranker(prof.rerank)
+            results = reranker.rerank(query, results)[:top_k]
+        except ImportError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
 
     if not results:
         console.print("[yellow]No results found.[/yellow]")

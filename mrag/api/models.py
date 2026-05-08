@@ -23,6 +23,7 @@ class RetrieveResponse(BaseModel):
     query: str
     profile: str
     strategy: str
+    reranked: bool
     results: list[ChunkResult]
 
 

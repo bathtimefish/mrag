@@ -85,6 +85,9 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
     top_k = req.retrieval_setting.top_k
     score_threshold = req.retrieval_setting.score_threshold
     tokenizer = config.fts_tokenizer
+    reranker = state.reranker
+
+    retrieval_top_k = prof.rerank.top_n if reranker is not None else top_k
 
     if strategy == "keyword":
         results = keyword_search(
@@ -92,7 +95,7 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
             knowledge_id=config.knowledge_id,
             profile_name=state.profile_name,
             db_path=state.db_path,
-            top_k=top_k,
+            top_k=retrieval_top_k,
             tokenizer=tokenizer,
         )
     elif strategy == "vector":
@@ -104,7 +107,7 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
             embedding_provider=state.embedding_provider,
             qdrant_client=state.qdrant_client,
             col_name=state.col_name,
-            top_k=top_k,
+            top_k=retrieval_top_k,
         )
     else:  # hybrid
         results = hybrid_search(
@@ -117,10 +120,13 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
             col_name=state.col_name,
             dense_top_k=prof.retrieval.dense_top_k,
             keyword_top_k=prof.retrieval.keyword_top_k,
-            top_k=top_k,
+            top_k=retrieval_top_k,
             fusion=prof.retrieval.fusion,
             tokenizer=tokenizer,
         )
+
+    if reranker is not None and results:
+        results = reranker.rerank(req.query, results)[:top_k]
 
     doc_ids = list({r.document_id for r in results})
     conn = open_connection(state.db_path)

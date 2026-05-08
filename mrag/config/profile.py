@@ -47,8 +47,8 @@ class KeywordConfig(BaseModel):
 
 class RerankConfig(BaseModel):
     enabled: bool = False
-    provider: str = "ollama"
-    model: str = "qwen3.5:latest"
+    provider: str = "sentence-transformers"
+    model: str = "hotchpotch/japanese-reranker-cross-encoder-small-v1"
     top_n: int = 30
     top_k: int = 8
 
