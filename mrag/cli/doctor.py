@@ -152,7 +152,9 @@ def doctor() -> None:
 
     console.print()
     console.print("[bold]Qdrant[/bold]")
-    if cfg:
+    if cfg and cfg.qdrant.mode == "local":
+        console.print(f"  {_OK}  mode: local (embedded — no server required)")
+    elif cfg:
         _check(f"server ({cfg.qdrant.host}:{cfg.qdrant.port})", lambda: _check_qdrant(cfg.qdrant.host, cfg.qdrant.port))
     else:
         _check("server (localhost:6333)", lambda: _check_qdrant("localhost", 6333))

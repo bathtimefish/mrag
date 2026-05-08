@@ -36,8 +36,8 @@ mrag <command>
 **Preconditions:**
 - `mrag` CLI is installed via `uv pip install -e "."` (binary at `.venv/bin/mrag`)
 - Ollama is running and `bge-m3` is pulled
-- Qdrant is running on `localhost:6333`
 - You are in the **parent directory** (not inside the intended project directory)
+- Qdrant: **not required** — `mrag init` generates `mode: local` by default (embedded, no Docker)
 
 **Steps:**
 
@@ -108,8 +108,8 @@ mrag show-extracted <doc-id>   # preview extracted text
 **Preconditions:**
 - Inside the project directory
 - At least one document has been added (`mrag add` completed)
-- Qdrant is running on `localhost:6333`
 - Ollama is running and the embedding model (default: `bge-m3`) is pulled
+- Qdrant: check `mrag.yaml` — `mode: local` (default) needs nothing; `mode: server` needs a running Qdrant instance
 
 **Steps:**
 
@@ -144,7 +144,7 @@ mrag search "test" --strategy keyword --top-k 1
 **Preconditions:**
 - Inside the project directory
 - `mrag index` has completed at least once
-- For `vector` or `hybrid` strategy: Qdrant and Ollama must be running
+- For `vector` or `hybrid` strategy: Ollama must be running; Qdrant is embedded automatically for `mode: local`
 
 **Steps:**
 
@@ -251,7 +251,7 @@ curl -s http://127.0.0.1:8000/api/v1/documents \
 **Preconditions:**
 - Inside the project directory
 - `mrag index` has completed at least once
-- Qdrant and Ollama must be running (for vector/hybrid retrieval)
+- Ollama must be running (for vector/hybrid retrieval); Qdrant is embedded automatically for `mode: local`
 
 **Steps:**
 
@@ -358,7 +358,47 @@ This is useful to verify that a PDF is readable and produces meaningful text bef
 
 ---
 
-## Skill 10 — Evaluate retrieval quality
+## Skill 10 — Migrate a project to another host
+
+Use this skill to move a `mode: local` project to a different machine without re-indexing.
+
+**Preconditions:**
+- The project uses `qdrant.mode: local` (check `mrag.yaml`)
+- Target host has mrag installed and Ollama running with the same embedding model
+
+**Steps:**
+
+```bash
+# On the source host
+tar -czf my-project.tar.gz my-project/
+scp my-project.tar.gz user@target-host:~/
+
+# On the target host
+tar -xzf my-project.tar.gz
+cd my-project
+mrag search "test query"   # works immediately — no mrag reindex needed
+```
+
+**What is included in the archive:**
+
+| Path | Role |
+|------|------|
+| `mrag.db` | SQLite — documents, chunks, FTS5 index |
+| `qdrant/` | Pre-built vector data (local mode only) |
+| `profiles/` | Retrieval profile YAML |
+| `data/documents/` | Original files + extracted text |
+
+**If using `mode: server`:** Copy everything except `qdrant/`, start the Qdrant server on the target host, then run `mrag reindex`.
+
+**Verify after migration:**
+```bash
+mrag doctor          # check environment
+mrag search "test"   # confirm results return
+```
+
+---
+
+## Skill 11 — Evaluate retrieval quality
 
 Use `mrag eval` to inspect retrieval results for a query without running a full search pipeline. It shows scores, duplicate chunks, document distribution, and can compare multiple profiles side-by-side.
 
@@ -411,11 +451,13 @@ mrag eval "照度センサーの仕様" --profile default --profile second
 Need to search without Qdrant/Ollama?    →  --strategy keyword
 Need best Japanese retrieval?            →  ensure fts_tokenizer: vaporetto in mrag.yaml
 Zero results from keyword search?        →  check mrag index ran; try single-word query
-Zero results from vector/hybrid?         →  check Qdrant + Ollama running; run mrag doctor
+Zero results from vector/hybrid?         →  check Ollama running; run mrag doctor
+Qdrant "Collection not found" error?     →  mode: server needs a running Qdrant; or switch to mode: local
 Need to update one document?             →  mrag remove --force <id>; mrag add <file>; mrag index
 Need to rebuild everything?              →  mrag reindex
 Need to expose retrieval over HTTP?      →  mrag serve (from inside project dir)
 Need to inspect retrieval quality?       →  mrag eval "<query>" [--strategy vector]
+Need to migrate project to another host? →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
 Reranker ImportError?                    →  uv pip install -e ".[reranker]"
 mrag not found after uv install?         →  use .venv/bin/mrag or activate the venv
 ```

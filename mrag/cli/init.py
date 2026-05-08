@@ -30,9 +30,7 @@ default_extraction:
     output_format: text
 
 qdrant:
-  mode: server
-  host: localhost
-  port: 6333
+  mode: local
 """
 
 _DEFAULT_PROFILE_YAML_TEMPLATE = """\

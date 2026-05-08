@@ -45,11 +45,16 @@ def serve(
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
-    try:
-        make_client(host=config.qdrant.host, port=config.qdrant.port)
-    except ConnectionError as e:
-        console.print(f"[red]Error:[/red] Qdrant not reachable: {e}")
-        raise typer.Exit(1)
+    if config.qdrant.mode != "local":
+        try:
+            make_client(
+                mode=config.qdrant.mode,
+                host=config.qdrant.host,
+                port=config.qdrant.port,
+            )
+        except ConnectionError as e:
+            console.print(f"[red]Error:[/red] Qdrant not reachable: {e}")
+            raise typer.Exit(1)
 
     reranker = None
     if prof.rerank.enabled and not no_rerank:

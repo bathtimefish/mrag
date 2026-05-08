@@ -100,7 +100,10 @@ def remove(
     if qdrant_by_col:
         try:
             qdrant_client = make_client(
-                host=config.qdrant.host, port=config.qdrant.port
+                mode=config.qdrant.mode,
+                host=config.qdrant.host,
+                port=config.qdrant.port,
+                path=project_dir / "qdrant",
             )
             for col, point_ids in qdrant_by_col.items():
                 from qdrant_client.models import PointIdsList

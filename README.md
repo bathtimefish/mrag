@@ -17,7 +17,7 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 - **Retrieval evaluation** — `mrag eval` inspects retrieval quality: scores, duplicates, document distribution, multi-profile diff
 - **FastAPI server** — expose the knowledge base as an HTTP API with optional Bearer-token authentication
 - **Dify compatible** — `mrag serve` implements the [Dify External Knowledge API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) spec; use mrag as an external knowledge source in Dify with no extra adapter
-- **Pure local stack** — no cloud dependencies; Qdrant runs as a local server
+- **Zero-dependency Qdrant** — runs embedded in-process by default (`mode: local`); no Docker or external server required. Switch to `mode: server` when needed.
 
 ---
 
@@ -27,7 +27,7 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 |-----------|-------|
 | Python 3.11+ | |
 | [Ollama](https://ollama.com) | Must be running; `bge-m3` pulled by default |
-| [Qdrant](https://qdrant.tech) | Local server on `localhost:6333` |
+| [Qdrant](https://qdrant.tech) | **Optional** — only needed for `mode: server`. Default `mode: local` runs Qdrant in-process; no Docker required. |
 | `libsqlite_vaporetto` | Optional; enables Japanese morphological tokenization |
 | `apsw >= 3.43` | Required only when using the vaporetto tokenizer |
 
@@ -85,6 +85,8 @@ ollama pull bge-m3
 ```
 
 `bge-m3` is a multilingual model (1024-dim) that works well across Japanese, English, and other languages. Any Ollama-compatible embedding model can be substituted in the profile YAML.
+
+> **No Docker needed for Qdrant.** mrag defaults to `qdrant.mode: local`, which runs Qdrant embedded in-process and stores data in the project's `qdrant/` directory. Docker is only required if you explicitly set `qdrant.mode: server`.
 
 ---
 
@@ -490,7 +492,7 @@ mrag serve  → FastAPI → same retrieval pipeline over HTTP
 ```
 
 - **SQLite** — source of truth for documents, chunks, profiles, and FTS5 index
-- **Qdrant** — rebuildable vector index (`mrag reindex` recreates it from SQLite)
+- **Qdrant** — rebuildable vector index (`mrag reindex` recreates it from SQLite). Runs embedded (`mode: local`, default) or as an external server (`mode: server`).
 - **FTS5 tokenizer** — vaporetto (Japanese morphological) or trigram (universal)
 - **apsw** — required for vaporetto; provides SQLite extension loading on macOS
 
@@ -511,10 +513,68 @@ my-project/
 │           ├── extracted.txt  # extracted plain text
 │           ├── extracted.md   # extracted markdown
 │           └── extraction_meta.json
-├── qdrant/                    # Qdrant storage (when using embedded mode)
+├── qdrant/                    # Qdrant vector storage (mode: local writes here)
 └── cache/
     └── embeddings/            # optional embedding cache
 ```
+
+---
+
+## Qdrant Modes
+
+mrag supports two Qdrant operation modes, configured in `mrag.yaml`:
+
+```yaml
+# Default — no Docker required
+qdrant:
+  mode: local
+
+# External server — requires a running Qdrant instance
+qdrant:
+  mode: server
+  host: localhost
+  port: 6333
+```
+
+| Mode | Qdrant process | Data location | Use case |
+|------|---------------|---------------|---------|
+| `local` (default) | Embedded in-process | `qdrant/` inside the project directory | Development, CI, lightweight deployments |
+| `server` | External (Docker or native) | Managed by the Qdrant server | Production, multi-project shared indexing |
+
+`mrag init` always generates `mode: local`. Existing projects without a `mode` key are treated as `mode: server` for backward compatibility.
+
+---
+
+## Migrating a Project to Another Host
+
+Because `mode: local` stores all Qdrant data inside the project directory, migration is a simple directory copy — no re-indexing required.
+
+```bash
+# On the source host: archive the project
+tar -czf my-project.tar.gz my-project/
+
+# Transfer to the target host
+scp my-project.tar.gz user@target-host:~/
+
+# On the target host: extract and use immediately
+tar -xzf my-project.tar.gz
+cd my-project
+mrag search "query"   # works without mrag reindex
+```
+
+**What gets transferred:**
+
+| Path | Contents |
+|------|---------|
+| `mrag.yaml` | Project config |
+| `mrag.db` | SQLite — documents, chunks, FTS5 index |
+| `profiles/` | Retrieval profile YAML files |
+| `data/documents/` | Original files + extracted text |
+| `qdrant/` | Qdrant vector data (local mode only) |
+
+> **Prerequisite:** Ollama with the same embedding model must be available on the target host for new indexing or vector/hybrid searches. The `qdrant/` data already contains the pre-built vectors, so existing documents can be searched immediately without re-embedding.
+
+If you are using `mode: server`, copy everything except `qdrant/` and run `mrag reindex` on the target host after starting the Qdrant server.
 
 ---
 

@@ -336,8 +336,10 @@ def run_index(
 
     if qdrant_client is None:
         qdrant_client = make_client(
+            mode=config.qdrant.mode,
             host=config.qdrant.host,
             port=config.qdrant.port,
+            path=project_dir / "qdrant",
         )
 
     ensure_collection(qdrant_client, col_name, embedding_provider.get_dimension())
