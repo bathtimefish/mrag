@@ -38,6 +38,9 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     retrieval_strategy = req.strategy or prof.retrieval.strategy
     top_k = req.top_k
     tokenizer = config.fts_tokenizer
+    reranker = state.reranker
+
+    retrieval_top_k = prof.rerank.top_n if reranker is not None else top_k
 
     try:
         if retrieval_strategy == "keyword":
@@ -46,7 +49,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
                 knowledge_id=config.knowledge_id,
                 profile_name=profile_name,
                 db_path=db_path,
-                top_k=top_k,
+                top_k=retrieval_top_k,
                 tokenizer=tokenizer,
             )
         elif retrieval_strategy == "vector":
@@ -58,7 +61,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
                 embedding_provider=state.embedding_provider,
                 qdrant_client=state.qdrant_client,
                 col_name=state.col_name,
-                top_k=top_k,
+                top_k=retrieval_top_k,
             )
         else:  # hybrid
             results = hybrid_search(
@@ -71,12 +74,17 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
                 col_name=state.col_name,
                 dense_top_k=prof.retrieval.dense_top_k,
                 keyword_top_k=prof.retrieval.keyword_top_k,
-                top_k=top_k,
+                top_k=retrieval_top_k,
                 fusion=prof.retrieval.fusion,
                 tokenizer=tokenizer,
             )
     except (ConnectionError, RuntimeError) as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+    reranked = False
+    if reranker is not None and results:
+        results = reranker.rerank(req.query, results)[:top_k]
+        reranked = True
 
     doc_ids = list({r.document_id for r in results})
     conn = open_connection(db_path)
@@ -104,6 +112,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
         query=req.query,
         profile=profile_name,
         strategy=retrieval_strategy,
+        reranked=reranked,
         results=chunk_results,
     )
 

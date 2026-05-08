@@ -45,6 +45,8 @@ mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents.
 4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results.
 
+Use **`mrag eval <query>`** at any time after indexing to inspect retrieval quality: scores, duplicate chunks, document distribution, and multi-profile comparison.
+
 ---
 
 ## Critical constraints
@@ -124,6 +126,26 @@ mrag search "接点出力のON制御"  # phrase: exact token sequence
 
 The default strategy is set in `profiles/default.yaml` under `retrieval.strategy`.
 
+## Reranking
+
+When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sentence-transformers) after retrieval. The reranker fetches `rerank.top_n` candidates then re-scores and returns `rerank.top_k` results.
+
+Reranking is **retrieval-time only** — it does not affect the stored index. Changing `rerank` settings in a profile YAML takes effect on the next search without re-indexing.
+
+To disable reranking at runtime:
+
+```bash
+mrag search "query" --no-rerank      # single search
+mrag eval "query" --no-rerank        # evaluation run
+mrag serve --no-rerank               # entire server session
+```
+
+Install the reranker dependency:
+
+```bash
+uv pip install -e ".[reranker]"
+```
+
 ---
 
 ## Document IDs
@@ -197,3 +219,5 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | Indexing fails with connection error | Ollama not running or model not pulled | `ollama serve` + `ollama pull bge-m3` |
 | Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
+| `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
+| Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |

@@ -73,6 +73,10 @@ keyword:
 
 rerank:
   enabled: false
+  provider: sentence-transformers
+  model: hotchpotch/japanese-reranker-cross-encoder-small-v1
+  top_n: 30
+  top_k: 8
 """
 
 

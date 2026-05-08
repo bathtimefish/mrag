@@ -13,6 +13,8 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 - **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
 - **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
 - **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
+- **リランキング** — 検索後に CrossEncoder（sentence-transformers）による再スコアリングをオプションで適用。`--no-rerank` でリクエスト単位の無効化も可能
+- **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
 - **FastAPI サーバー** — オプションの Bearer トークン認証付きで HTTP API として公開可能
 - **Dify 対応** — `mrag serve` は [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) 仕様を実装済み。アダプター不要で Dify の外部ナレッジソースとして利用可能
 - **完全ローカル** — クラウド依存なし。Qdrant はローカルサーバーとして動作
@@ -67,6 +69,14 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```bash
 uv pip install -e ".[marker]"
 ```
+
+### リランカーを使う場合（CrossEncoder による再スコアリング）
+
+```bash
+uv pip install -e ".[reranker]"
+```
+
+プロファイル YAML で `rerank.enabled: true` を設定すると有効になります。`sentence-transformers` の CrossEncoder モデルを使用します。デフォルトモデルは `hotchpotch/japanese-reranker-cross-encoder-small-v1` です。
 
 ### デフォルト Embedding モデルの取得
 
@@ -161,12 +171,30 @@ mrag search "temperature sensing" --strategy vector
 
 # 件数を指定
 mrag search "Bluetooth LE" --top-k 3
+
+# リランキングを無効化して検索
+mrag search "熱電対の温度測定" --no-rerank
 ```
 
-### 5. API サーバーとして起動する
+### 5. 検索品質を評価する（任意）
+
+```bash
+mrag eval "熱電対の温度測定"
+```
+
+スコア分布・重複チャンク・ドキュメント分布を表示します。複数プロファイルの比較も可能です：
+
+```bash
+mrag eval "熱電対の温度測定" --profile default --profile second --strategy vector
+```
+
+### 6. API サーバーとして起動する
 
 ```bash
 mrag serve
+
+# すべての API リクエストでリランキングを無効化
+mrag serve --no-rerank
 ```
 
 `http://127.0.0.1:8000` で FastAPI サーバーが起動します。詳細は [API リファレンス](#api-リファレンス) を参照してください。
@@ -181,8 +209,9 @@ mrag serve
 | `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P]` | 差分インデックス（最新のドキュメントはスキップ） |
 | `mrag reindex [--profile P]` | プロファイルのインデックスを強制再構築 |
-| `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`） |
-| `mrag serve` | FastAPI サーバー起動（`--host`、`--port`） |
+| `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`） |
+| `mrag eval <query>` | 検索品質評価（`--profile P`、`--strategy S`、`--top-k N`、`--no-rerank`） |
+| `mrag serve` | FastAPI サーバー起動（`--host`、`--port`、`--no-rerank`） |
 | `mrag remove <doc-id>` | ドライラン削除（実際に削除するには `--force`） |
 | `mrag profiles list` | DBに登録済みのプロファイル一覧 |
 | `mrag profiles show <name>` | プロファイルの設定を表示 |
@@ -430,6 +459,23 @@ retrieval:
 - **`vector`** — クエリが文書の表現と異なる言い回しの場合に有効（概念に関する質問など）。クエリ時に Ollama が起動している必要があります。
 
 > **注意:** ストラテジーはグローバル設定ではなく**プロファイル単位**で設定します。異なるストラテジーを持つ複数のプロファイルを用意し、`--profile <name>` で切り替えることができます。
+
+### リランキング
+
+`rerank.enabled: true` を設定すると、検索後に CrossEncoder による再スコアリングが行われ、結果の順序が改善されます。`top_n` 件の候補を取得してから再スコアし、最終的に `top_k` 件を返します。
+
+```yaml
+rerank:
+  enabled: true
+  provider: sentence-transformers
+  model: hotchpotch/japanese-reranker-cross-encoder-small-v1
+  top_n: 30      # リランキング前に取得する候補数
+  top_k: 8       # リランキング後に返す件数
+```
+
+リランキングはクエリ時にのみ適用されます。`rerank` の設定を変更しても再インデックスは不要です。使用には `uv pip install -e ".[reranker]"` が必要です。
+
+`mrag search`・`mrag eval`・`mrag serve` の `--no-rerank` オプションで実行時に無効化できます。
 
 ---
 

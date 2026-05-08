@@ -24,6 +24,7 @@ def create_app(
     config: ProjectConfig,
     _embedding_provider: BaseEmbeddingProvider | None = None,
     _qdrant_client=None,
+    reranker=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -56,6 +57,7 @@ def create_app(
         app.state.embedding_provider = provider
         app.state.qdrant_client = qdrant
         app.state.col_name = col
+        app.state.reranker = reranker
 
         yield
 

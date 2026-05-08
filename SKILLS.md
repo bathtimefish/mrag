@@ -6,10 +6,35 @@ For background concepts and constraints, see [AGENTS.md](AGENTS.md).
 
 ---
 
+## Important: mrag command path (venv setup)
+
+When mrag is installed with `uv venv` + `uv pip install -e "."`, the `mrag` executable is located at:
+
+```
+.venv/bin/mrag
+```
+
+This path is relative to the repository root where `uv venv` was run. If the shell's `PATH` does not include `.venv/bin`, invoke mrag with the full path:
+
+```bash
+/path/to/mrag-repo/.venv/bin/mrag <command>
+```
+
+Or activate the venv first:
+
+```bash
+source .venv/bin/activate
+mrag <command>
+```
+
+**Always confirm the correct mrag binary** before running any skill. Using a globally installed or mismatched mrag can silently operate on the wrong project.
+
+---
+
 ## Skill 1 — Initialize a new project
 
 **Preconditions:**
-- `mrag` CLI is installed (`pip install mrag` or `pip install mrag[vaporetto]`)
+- `mrag` CLI is installed via `uv pip install -e "."` (binary at `.venv/bin/mrag`)
 - Ollama is running and `bge-m3` is pulled
 - Qdrant is running on `localhost:6333`
 - You are in the **parent directory** (not inside the intended project directory)
@@ -132,6 +157,9 @@ mrag search "<query>" --strategy keyword --top-k 5
 
 # Vector search (dense — requires Qdrant + Ollama)
 mrag search "<query>" --strategy vector --top-k 5
+
+# Disable reranking for this search (even if enabled in the profile)
+mrag search "<query>" --no-rerank
 ```
 
 **Query syntax for keyword/hybrid strategy:**
@@ -236,6 +264,9 @@ mrag serve --host 0.0.0.0 --port 8080
 
 # With authentication
 MRAG_API_KEY=your-secret-key mrag serve
+
+# Disable reranking for all requests (overrides profile rerank.enabled)
+mrag serve --no-rerank
 ```
 
 **Verify the server is ready:**
@@ -327,14 +358,64 @@ This is useful to verify that a PDF is readable and produces meaningful text bef
 
 ---
 
+## Skill 10 — Evaluate retrieval quality
+
+Use `mrag eval` to inspect retrieval results for a query without running a full search pipeline. It shows scores, duplicate chunks, document distribution, and can compare multiple profiles side-by-side.
+
+**Preconditions:**
+- Inside the project directory
+- `mrag index` has completed at least once
+- For `vector` or `hybrid` strategy: Qdrant and Ollama must be running
+
+**Steps:**
+
+```bash
+# Basic evaluation (uses default profile and its configured strategy)
+mrag eval "照度センサーの仕様"
+
+# Force a specific strategy regardless of profile setting
+mrag eval "照度センサーの仕様" --strategy keyword
+mrag eval "照度センサーの仕様" --strategy vector
+
+# Change number of results
+mrag eval "照度センサーの仕様" --top-k 20
+
+# Disable reranking for this run
+mrag eval "照度センサーの仕様" --no-rerank
+
+# Compare two profiles side-by-side
+mrag eval "照度センサーの仕様" --profile default --profile second
+```
+
+**Output sections:**
+- Per-result: score, document filename, chunk ID, content preview, duplicate warning if content matches another result
+- **Score stats** — min / max / mean / σ across results
+- **Document distribution** — bar chart of how many chunks came from each document
+- **Profile Diff table** (multi-profile mode) — rank-by-rank chunk comparison with ✓ for identical placements
+
+**Interpreting scores by strategy:**
+
+| Strategy | Score range | σ typical | Use for |
+|----------|-------------|-----------|---------|
+| `keyword` | 0 – 20+ (BM25) | varies widely | Exact keyword match quality |
+| `vector` | 0.0 – 1.0 (cosine) | 0.01 – 0.10 | Semantic relevance, score gaps |
+| `hybrid` | 0.01 – 0.02 (RRF) | ≈ 0.001 | Rank ordering only; scores are not meaningful in absolute terms |
+
+> When hybrid scores look flat (σ ≈ 0.001), this is normal RRF behaviour. Use `--strategy vector` to see discriminative cosine scores.
+
+---
+
 ## Quick decision guide
 
 ```
-Need to search without Qdrant/Ollama?  →  --strategy keyword
-Need best Japanese retrieval?          →  ensure fts_tokenizer: vaporetto in mrag.yaml
-Zero results from keyword search?      →  check mrag index ran; try single-word query
-Zero results from vector/hybrid?       →  check Qdrant + Ollama running; run mrag doctor
-Need to update one document?           →  mrag remove --force <id>; mrag add <file>; mrag index
-Need to rebuild everything?            →  mrag reindex
-Need to expose retrieval over HTTP?    →  mrag serve (from inside project dir)
+Need to search without Qdrant/Ollama?    →  --strategy keyword
+Need best Japanese retrieval?            →  ensure fts_tokenizer: vaporetto in mrag.yaml
+Zero results from keyword search?        →  check mrag index ran; try single-word query
+Zero results from vector/hybrid?         →  check Qdrant + Ollama running; run mrag doctor
+Need to update one document?             →  mrag remove --force <id>; mrag add <file>; mrag index
+Need to rebuild everything?              →  mrag reindex
+Need to expose retrieval over HTTP?      →  mrag serve (from inside project dir)
+Need to inspect retrieval quality?       →  mrag eval "<query>" [--strategy vector]
+Reranker ImportError?                    →  uv pip install -e ".[reranker]"
+mrag not found after uv install?         →  use .venv/bin/mrag or activate the venv
 ```

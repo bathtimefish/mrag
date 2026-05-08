@@ -11,6 +11,7 @@ from mrag.cli.serve import serve
 from mrag.cli.remove import remove
 from mrag.cli.profiles import profiles_app
 from mrag.cli.doctor import doctor
+from mrag.cli.eval import eval_cmd
 
 app = typer.Typer(
     name="mrag",
@@ -35,4 +36,5 @@ app.command("search")(search)
 app.command("serve")(serve)
 app.command("remove")(remove)
 app.command("doctor")(doctor)
+app.command("eval")(eval_cmd)
 app.add_typer(profiles_app, name="profiles")
