@@ -5,7 +5,7 @@ Currently implemented:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import httpx
 
@@ -63,11 +63,20 @@ def augment_chunks(
     full_text: str,
     config: "AugmentationConfig",
     prompt_template: str | None = None,
+    on_chunk: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """Return a list of context_text strings (one per chunk).
 
     Each string is the LLM-generated context for that chunk.
     prompt_template is forwarded to generate_context; None uses the default.
+    on_chunk(current_1based, total) is called after each chunk completes.
     Raises on first LLM error; callers should catch and handle.
     """
-    return [generate_context(c.content, full_text, config, prompt_template) for c in chunks]
+    results = []
+    total = len(chunks)
+    for i, c in enumerate(chunks):
+        ctx = generate_context(c.content, full_text, config, prompt_template)
+        results.append(ctx)
+        if on_chunk:
+            on_chunk(i + 1, total)
+    return results

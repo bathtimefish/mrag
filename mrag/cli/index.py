@@ -34,6 +34,7 @@ def index(
             config=config,
             profile_name=profile_name,
             document_ids=doc_ids,
+            console=console,
         )
     except (FileNotFoundError, ConnectionError) as e:
         console.print(f"[red]Error:[/red] {e}")

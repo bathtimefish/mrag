@@ -3,6 +3,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from mrag.config.profile import ProfileConfig, load_profile
 from mrag.config.project import ProjectConfig
@@ -14,9 +15,16 @@ from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.qdrant import collection_name, delete_points, ensure_collection, make_client, upsert_points
 
+if TYPE_CHECKING:
+    from rich.console import Console
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _now_ts() -> str:
+    return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
 def _load_context_prompt(project_dir: Path) -> str | None:
@@ -158,6 +166,8 @@ def _index_document(
     use_cache: bool,
     cache_dir: Path,
     tokenizer: str = "trigram",
+    on_doc_start: Callable[[int], None] | None = None,
+    on_chunk_augmented: Callable[[int, int], None] | None = None,
 ) -> None:
     # 1. Read extracted content
     source_format = profile.chunking.source_format
@@ -178,6 +188,9 @@ def _index_document(
     if not chunks:
         return
 
+    if on_doc_start:
+        on_doc_start(len(chunks))
+
     # 3. Augment chunks (contextual strategy generates context_text per chunk)
     context_texts: list[str | None] = [None] * len(chunks)
     contents_for_embedding: list[str] = [c.content for c in chunks]
@@ -186,7 +199,8 @@ def _index_document(
     if profile.augmentation.strategy == "contextual":
         from mrag.core.indexing.augmentation import augment_chunks
         prompt_template = _load_context_prompt(project_dir)
-        ctx_list = augment_chunks(chunks, text, profile.augmentation, prompt_template)
+        ctx_list = augment_chunks(chunks, text, profile.augmentation, prompt_template,
+                                  on_chunk=on_chunk_augmented)
         for i, ctx in enumerate(ctx_list):
             context_texts[i] = ctx
             contents_for_embedding[i] = ctx + "\n\n" + chunks[i].content
@@ -310,6 +324,7 @@ def run_index(
     force: bool = False,
     embedding_provider: BaseEmbeddingProvider | None = None,
     qdrant_client=None,
+    console: "Console | None" = None,
 ) -> IndexResult:
     db_path = find_db(project_dir)
     profile = load_profile(profile_name, project_dir)
@@ -369,11 +384,40 @@ def run_index(
 
     tokenizer = config.fts_tokenizer
 
-    for doc, reason in docs_to_index:
+    n = len(docs_to_index)
+    for idx, (doc, reason) in enumerate(docs_to_index, 1):
+        filename = doc.get("filename", doc["id"])
+        if console:
+            console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] {filename}")
+
         _set_indexing_status(
             db_path, doc["id"], profile_name, doc["knowledge_id"],
             doc["file_hash"], doc["extracted_hash"], profile_hash,
         )
+
+        on_doc_start: Callable[[int], None] | None = None
+        on_chunk_augmented: Callable[[int, int], None] | None = None
+        if console:
+            strategy = profile.augmentation.strategy
+
+            def _make_start_cb(fn: str) -> Callable[[int], None]:
+                def _cb(chunk_count: int) -> None:
+                    next_step = "augmenting" if strategy == "contextual" else "embedding"
+                    console.print(
+                        f"[dim]{_now_ts()}[/dim]         {chunk_count} chunks → {next_step}"
+                    )
+                return _cb
+            on_doc_start = _make_start_cb(filename)
+
+            if strategy == "contextual":
+                def _make_chunk_cb(fn: str) -> Callable[[int, int], None]:
+                    def _cb(cur: int, tot: int) -> None:
+                        console.print(
+                            f"[dim]{_now_ts()}[/dim]         augmenting [cyan]{cur:3d}[/cyan]/[cyan]{tot}[/cyan]  [dim]{fn}[/dim]"
+                        )
+                    return _cb
+                on_chunk_augmented = _make_chunk_cb(filename)
+
         try:
             _index_document(
                 doc=doc,
@@ -387,12 +431,18 @@ def run_index(
                 use_cache=use_cache,
                 cache_dir=cache_dir,
                 tokenizer=tokenizer,
+                on_doc_start=on_doc_start,
+                on_chunk_augmented=on_chunk_augmented,
             )
             _set_indexed_status(db_path, doc["id"], profile_name)
+            if console:
+                console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [green]✓[/green] {filename}")
             result.indexed += 1
         except Exception as exc:
             msg = str(exc)
             _set_error_status(db_path, doc["id"], profile_name, msg)
+            if console:
+                console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [red]✗[/red] {filename}: {msg}")
             result.errors.append((doc["id"], msg))
 
     return result
