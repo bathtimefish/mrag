@@ -4,8 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mrag"
-version = "0.2.0"
+version = "0.3.0"
 description = "Micro RAG — A lightweight, local-first retrieval runtime"
+license = { text = "MIT OR Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",
