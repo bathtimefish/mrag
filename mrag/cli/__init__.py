@@ -1,3 +1,6 @@
+from importlib.metadata import version as _pkg_version
+from typing import Optional
+
 import typer
 
 from mrag.cli.init import init
@@ -20,8 +23,18 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(_pkg_version("mrag"))
+        raise typer.Exit()
+
+
 @app.callback()
-def _main() -> None:
+def _main(
+    version: Optional[bool] = typer.Option(
+        None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."
+    ),
+) -> None:
     """Micro RAG — A lightweight, local-first retrieval runtime."""
 
 
