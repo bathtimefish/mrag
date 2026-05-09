@@ -10,6 +10,7 @@ from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.retrieval.hybrid import hybrid_search
 from mrag.core.retrieval.keyword import keyword_search
 from mrag.core.retrieval.vector import vector_search
+from mrag.cli.eval import print_score_stats_and_distribution
 from mrag.db.connection import find_db, open_connection
 from mrag.db.qdrant import collection_name, make_client, normalize_name
 
@@ -143,3 +144,5 @@ def search(
         )
         console.print(f"    {preview}")
         console.print()
+
+    print_score_stats_and_distribution(results, filename_map, console)

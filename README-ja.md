@@ -186,11 +186,9 @@ mrag search "installation guide" --no-rerank
 
 ### 5. 検索品質を評価する（任意）
 
-```bash
-mrag eval "installation guide"
-```
+`mrag search` はクエリごとにスコア統計（min/max/mean/σ）とドキュメント分布を出力します。σ が低い場合はクエリが曖昧すぎるサイン、高い場合は上位チャンクが明確に突出していることを示します。
 
-スコア分布・重複チャンク・ドキュメント分布を表示します。複数プロファイルの比較も可能です：
+より詳細な分析（重複チャンク検出・プロファイル比較）には `mrag eval` を使います：
 
 ```bash
 mrag eval "installation guide" --profile default --profile second --strategy vector
