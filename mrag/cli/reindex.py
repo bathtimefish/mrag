@@ -38,6 +38,7 @@ def reindex(
             project_dir=project_dir,
             config=config,
             profile_name=profile_name,
+            console=console,
         )
     except (FileNotFoundError, ConnectionError) as e:
         console.print(f"[red]Error:[/red] {e}")
