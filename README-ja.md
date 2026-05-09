@@ -169,10 +169,10 @@ mrag index
 
 ```bash
 # ハイブリッド（デフォルト）
-mrag search "熱電対の温度測定"
+mrag search "installation guide"
 
 # キーワードのみ
-mrag search "接点出力 ON OFF" --strategy keyword
+mrag search "error handling retry" --strategy keyword
 
 # ベクターのみ
 mrag search "temperature sensing" --strategy vector
@@ -181,19 +181,19 @@ mrag search "temperature sensing" --strategy vector
 mrag search "Bluetooth LE" --top-k 3
 
 # リランキングを無効化して検索
-mrag search "熱電対の温度測定" --no-rerank
+mrag search "installation guide" --no-rerank
 ```
 
 ### 5. 検索品質を評価する（任意）
 
 ```bash
-mrag eval "熱電対の温度測定"
+mrag eval "installation guide"
 ```
 
 スコア分布・重複チャンク・ドキュメント分布を表示します。複数プロファイルの比較も可能です：
 
 ```bash
-mrag eval "熱電対の温度測定" --profile default --profile second --strategy vector
+mrag eval "installation guide" --profile default --profile second --strategy vector
 ```
 
 ### 6. API サーバーとして起動する
@@ -242,7 +242,7 @@ mrag serve --no-rerank
 
 ```json
 {
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "strategy": "hybrid",
   "top_k": 5,
   "profile": "default"
@@ -256,7 +256,7 @@ mrag serve --no-rerank
 
 ```json
 {
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "profile": "default",
   "strategy": "hybrid",
   "results": [
@@ -265,7 +265,7 @@ mrag serve --no-rerank
       "document_id": "...",
       "filename": "manual.pdf",
       "score": 6.39,
-      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "content": "…access control policy defines the permitted operations…",
       "metadata": {}
     }
   ]
@@ -319,7 +319,7 @@ Authorization: Bearer your-secret-key
 ```json
 {
   "knowledge_id": "<your-knowledge-id>",
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "retrieval_setting": {
     "top_k": 5,
     "score_threshold": 0.5
@@ -337,7 +337,7 @@ Authorization: Bearer your-secret-key
 {
   "records": [
     {
-      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "content": "…access control policy defines the permitted operations…",
       "score": 0.87,
       "title": "manual.pdf",
       "metadata": {}

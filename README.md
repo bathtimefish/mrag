@@ -168,10 +168,10 @@ Re-running `mrag index` after adding new files only processes the new documents.
 
 ```bash
 # Hybrid (default)
-mrag search "熱電対の温度測定"
+mrag search "installation guide"
 
 # Keyword only
-mrag search "接点出力 ON OFF" --strategy keyword
+mrag search "error handling retry" --strategy keyword
 
 # Vector only
 mrag search "temperature sensing" --strategy vector
@@ -180,19 +180,19 @@ mrag search "temperature sensing" --strategy vector
 mrag search "Bluetooth LE" --top-k 3
 
 # Disable reranking for this search
-mrag search "熱電対の温度測定" --no-rerank
+mrag search "installation guide" --no-rerank
 ```
 
 ### 5. Evaluate retrieval quality (optional)
 
 ```bash
-mrag eval "熱電対の温度測定"
+mrag eval "installation guide"
 ```
 
 Shows scores, duplicate chunks, document distribution, and optionally compares multiple profiles:
 
 ```bash
-mrag eval "熱電対の温度測定" --profile default --profile second --strategy vector
+mrag eval "installation guide" --profile default --profile second --strategy vector
 ```
 
 ### 6. Serve as an API
@@ -241,7 +241,7 @@ Retrieve chunks from the knowledge base.
 
 ```json
 {
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "strategy": "hybrid",
   "top_k": 5,
   "profile": "default"
@@ -255,7 +255,7 @@ Retrieve chunks from the knowledge base.
 
 ```json
 {
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "profile": "default",
   "strategy": "hybrid",
   "results": [
@@ -264,7 +264,7 @@ Retrieve chunks from the knowledge base.
       "document_id": "...",
       "filename": "manual.pdf",
       "score": 6.39,
-      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "content": "…access control policy defines the permitted operations…",
       "metadata": {}
     }
   ]
@@ -318,7 +318,7 @@ Requests without a valid key return `401 Unauthorized`.
 ```json
 {
   "knowledge_id": "<your-knowledge-id>",
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "retrieval_setting": {
     "top_k": 5,
     "score_threshold": 0.5
@@ -336,7 +336,7 @@ Requests without a valid key return `401 Unauthorized`.
 {
   "records": [
     {
-      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "content": "…access control policy defines the permitted operations…",
       "score": 0.87,
       "title": "manual.pdf",
       "metadata": {}
