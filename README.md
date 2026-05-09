@@ -2,23 +2,21 @@
 
 **A lightweight, local-first retrieval runtime for building RAG pipelines.**
 
-mrag is a minimal, disposable, project-scoped RAG tool. One command initialises a self-contained knowledge base; another indexes your documents; a third lets you search — from the CLI or over HTTP. Everything is stored locally: SQLite is the source of truth, Qdrant holds the vector index and can be rebuilt at any time.
+mrag is a CLI for building and operating small-scale RAG knowledge bases. It provides everything from document indexing to search, with a variety of strategies for building custom RAG pipelines to fit your needs. Skills for AI agents let you expose your knowledge base to any AI agent.
 
 ---
 
 ## Features
 
 - **Hybrid retrieval** — keyword (FTS5 BM25), vector (dense), or RRF-fused hybrid
-- **Japanese-first tokenization** — auto-detects [sqlite-vaporetto](https://github.com/daac-tools/sqlite-vaporetto) (morphological); falls back to SQLite's built-in trigram tokenizer
+- **Japanese tokenizer for SQLite** — supports [sqlite-vaporetto](https://github.com/daac-tools/sqlite-vaporetto) (morphological analysis)
 - **Multilingual embeddings** — defaults to `bge-m3` via [Ollama](https://ollama.com) (any Ollama-compatible model works)
 - **Differential indexing** — re-running `mrag index` skips already-indexed documents
 - **Retrieval profiles** — per-project YAML profiles control chunking, embedding, and retrieval strategy independently
 - **Contextual augmentation** — optional index-time LLM context generation per chunk (Anthropic contextual retrieval pattern); prompt is editable per project via `profiles/context_prompt.txt`
 - **Reranking** — optional CrossEncoder reranking (sentence-transformers) after retrieval; disabled per-request with `--no-rerank`
 - **Retrieval evaluation** — `mrag eval` inspects retrieval quality: scores, duplicates, document distribution, multi-profile diff
-- **FastAPI server** — expose the knowledge base as an HTTP API with optional Bearer-token authentication
-- **Dify compatible** — `mrag serve` implements the [Dify External Knowledge API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) spec; use mrag as an external knowledge source in Dify with no extra adapter
-- **Zero-dependency Qdrant** — runs embedded in-process by default (`mode: local`); no Docker or external server required. Switch to `mode: server` when needed.
+- **Dify External Knowledge API** — `mrag serve` starts a [Dify External Knowledge API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) server; use mrag as an external knowledge source in Dify
 
 ---
 
@@ -27,10 +25,8 @@ mrag is a minimal, disposable, project-scoped RAG tool. One command initialises 
 | Component | Notes |
 |-----------|-------|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | Must be running; `bge-m3` pulled by default |
-| [Qdrant](https://qdrant.tech) | **Optional** — only needed for `mode: server`. Default `mode: local` runs Qdrant in-process; no Docker required. |
-| `libsqlite_vaporetto` | Optional; enables Japanese morphological tokenization |
-| `apsw >= 3.43` | Required only when using the vaporetto tokenizer |
+| [Ollama](https://ollama.com) | `ollama serve` must be running; uses `bge-m3` and `gemma4:e4b` |
+| [Qdrant](https://qdrant.tech) | Docker-based Qdrant required only for `mode: server` |
 
 ---
 
@@ -42,20 +38,34 @@ mrag is installed from source. [uv](https://docs.astral.sh/uv/) is recommended.
 git clone https://github.com/bathtimefish/mrag.git
 cd mrag
 uv venv
-uv pip install -e "."
+uv pip install -e ".[vaporetto,reranker]"
 ```
 
-### With vaporetto (recommended for Japanese documents)
+This installs mrag with Japanese morphological tokenization (`vaporetto`) and CrossEncoder reranking (`reranker`) included as standard.
 
-```bash
-uv pip install -e ".[vaporetto]"
-```
+### Vaporetto native library
 
-Then place `libsqlite_vaporetto.dylib` (macOS) or `libsqlite_vaporetto.so` (Linux) in:
+The `vaporetto` extra installs `apsw` (required for SQLite extension loading on macOS), but the native shared library must be placed separately:
 
-```
-~/.mrag/extensions/
-```
+1. Go to [sqlite-vaporetto releases](https://github.com/hotchpotch/sqlite-vaporetto/releases) and download the latest **`-with-model.tar.gz`** for your OS and architecture.
+
+   | OS / arch | File |
+   |-----------|------|
+   | macOS (Apple Silicon) | `sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz` |
+   | macOS (Intel) | `sqlite-vaporetto-vX.Y.Z-macos-x86_64-with-model.tar.gz` |
+   | Linux (x86_64) | `sqlite-vaporetto-vX.Y.Z-linux-x86_64-with-model.tar.gz` |
+
+   > Use the **`-with-model`** variant — it includes the tokenization model data required for Japanese morphological analysis.
+
+2. Extract the archive and place the shared library in `~/.mrag/extensions/`:
+
+   ```bash
+   tar -xzf sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz
+   EXTRACTED_DIR=$(tar -tzf sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz | head -1 | cut -d/ -f1)
+   mkdir -p ~/.mrag/extensions
+   cp "${EXTRACTED_DIR}/libsqlite_vaporetto.dylib" ~/.mrag/extensions/   # macOS
+   # cp "${EXTRACTED_DIR}/libsqlite_vaporetto.so" ~/.mrag/extensions/    # Linux
+   ```
 
 Or point to a custom path via the environment variable:
 
@@ -63,21 +73,15 @@ Or point to a custom path via the environment variable:
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
 
-> **Note:** On macOS, the system `sqlite3` is compiled with `OMIT_LOAD_EXTENSION`, so vaporetto requires `apsw` — the alternative SQLite binding that always supports extension loading. `uv pip install -e ".[vaporetto]"` installs it automatically.
+If vaporetto is not available at `mrag init` time, mrag falls back to the trigram tokenizer automatically. Run `mrag doctor` to confirm which tokenizer was detected.
 
-### With Marker (for scanned / complex-layout PDFs)
+### With Marker (optional, for scanned / complex-layout PDFs)
 
 ```bash
 uv pip install -e ".[marker]"
 ```
 
-### With Reranker (CrossEncoder reranking)
-
-```bash
-uv pip install -e ".[reranker]"
-```
-
-Enables `rerank.enabled: true` in profile YAML. Uses `sentence-transformers` CrossEncoder models. The default model is `hotchpotch/japanese-reranker-cross-encoder-small-v1`.
+Enables `--extractor marker` in `mrag add` for high-accuracy extraction of scanned or complex-layout PDFs.
 
 ### Pull the default embedding model
 
