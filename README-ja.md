@@ -2,23 +2,21 @@
 
 **ローカルファーストの軽量 RAG 検索ランタイム**
 
-mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG ツールです。コマンド1つで自己完結型のナレッジベースを作成し、ドキュメントをインデックスして、CLI または HTTP API で検索できます。すべてのデータはローカルに保存され、SQLite が信頼できる唯一のソースです。Qdrant のベクターインデックスはいつでも再構築できます。
+mragは小規模なRAGナレッジベースを作成、運用するためのCLIです。ドキュメントのインデックス化から検索までの機能を提供し、ニーズに応じたカスタムRAGを作成するための様々なストラテジーを提供します。AIエージェント向けのskillを使って様々なAIエージェントにナレッジベースを提供できます。
 
 ---
 
 ## 特徴
 
 - **ハイブリッド検索** — キーワード（FTS5 BM25）、ベクター（密ベクトル）、RRF 融合ハイブリッドの3方式に対応
-- **日本語対応トークナイザー** — [sqlite-vaporetto](https://github.com/daac-tools/sqlite-vaporetto)（形態素解析）を自動検出し、見つからない場合は SQLite 組み込みの trigram トークナイザーにフォールバック
+- **Sqlite用日本語対応トークナイザー** — [sqlite-vaporetto](https://github.com/daac-tools/sqlite-vaporetto)（形態素解析）に対応
 - **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
 - **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
 - **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
 - **コンテキスト拡張（Contextual Augmentation）** — インデックス時に Ollama LLM でチャンクごとのコンテキスト文を生成（Anthropic contextual retrieval パターン）。プロジェクトごとに `profiles/context_prompt.txt` でプロンプトをカスタマイズ可能
 - **リランキング** — 検索後に CrossEncoder（sentence-transformers）による再スコアリングをオプションで適用。`--no-rerank` でリクエスト単位の無効化も可能
 - **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
-- **FastAPI サーバー** — オプションの Bearer トークン認証付きで HTTP API として公開可能
-- **Dify 対応** — `mrag serve` は [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) 仕様を実装済み。アダプター不要で Dify の外部ナレッジソースとして利用可能
-- **Qdrant 依存ゼロ** — デフォルトでプロセス内組み込み動作（`mode: local`）。Docker や外部サーバー不要。必要時のみ `mode: server` に切り替え可能。
+- **Dify 外部ナレッジAPI対応** — `mrag serve` で [Dify 外部ナレッジ API](https://docs.dify.ai/ja/use-dify/knowledge/external-knowledge-api) サーバーを起動。Dify の外部ナレッジソースとして利用可能
 
 ---
 
@@ -27,10 +25,8 @@ mrag は、シンプルで使い捨て可能なプロジェクト単位の RAG �
 | コンポーネント | 備考 |
 |--------------|------|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | 起動済みであること。デフォルトで `bge-m3` を使用 |
-| [Qdrant](https://qdrant.tech) | **任意** — `mode: server` 時のみ必要。デフォルトの `mode: local` はプロセス内で動作するため Docker 不要。 |
-| `libsqlite_vaporetto` | 任意。日本語形態素解析を有効にする |
-| `apsw >= 3.43` | vaporetto トークナイザー使用時のみ必要 |
+| [Ollama](https://ollama.com) | `ollama serve` が起動済みであること。`bge-m3`、`gemma4:e4b` を使用 |
+| [Qdrant](https://qdrant.tech) | `mode: server` 時のみ docker 版 Qdrant が必要 |
 
 ---
 
@@ -42,20 +38,34 @@ mrag はソースからインストールします。[uv](https://docs.astral.sh
 git clone https://github.com/bathtimefish/mrag.git
 cd mrag
 uv venv
-uv pip install -e "."
+uv pip install -e ".[vaporetto,reranker]"
 ```
 
-### vaporetto を使う場合（日本語ドキュメントに推奨）
+日本語形態素解析（`vaporetto`）と CrossEncoder リランキング（`reranker`）を標準構成として含むインストールコマンドです。
 
-```bash
-uv pip install -e ".[vaporetto]"
-```
+### vaporetto ネイティブライブラリ
 
-次に、`libsqlite_vaporetto.dylib`（macOS）または `libsqlite_vaporetto.so`（Linux）を以下のディレクトリに配置します：
+`vaporetto` extra は `apsw`（macOS での SQLite 拡張ローディングに必要）をインストールしますが、ネイティブ共有ライブラリは別途配置が必要です：
 
-```
-~/.mrag/extensions/
-```
+1. [sqlite-vaporetto releases](https://github.com/hotchpotch/sqlite-vaporetto/releases) から、ご利用の OS・アーキテクチャに対応した最新の **`-with-model.tar.gz`** をダウンロードします。
+
+   | OS / アーキテクチャ | ファイル名 |
+   |-------------------|-----------|
+   | macOS（Apple Silicon） | `sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz` |
+   | macOS（Intel） | `sqlite-vaporetto-vX.Y.Z-macos-x86_64-with-model.tar.gz` |
+   | Linux（x86_64） | `sqlite-vaporetto-vX.Y.Z-linux-x86_64-with-model.tar.gz` |
+
+   > **`-with-model`** バリアントを使用してください。モデルデータが同梱されており、日本語形態素解析に必須です。
+
+2. アーカイブを展開し、共有ライブラリを `~/.mrag/extensions/` に配置します：
+
+   ```bash
+   tar -xzf sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz
+   EXTRACTED_DIR=$(tar -tzf sqlite-vaporetto-vX.Y.Z-macos-aarch64-with-model.tar.gz | head -1 | cut -d/ -f1)
+   mkdir -p ~/.mrag/extensions
+   cp "${EXTRACTED_DIR}/libsqlite_vaporetto.dylib" ~/.mrag/extensions/   # macOS
+   # cp "${EXTRACTED_DIR}/libsqlite_vaporetto.so" ~/.mrag/extensions/    # Linux
+   ```
 
 または環境変数でカスタムパスを指定できます：
 
@@ -63,21 +73,15 @@ uv pip install -e ".[vaporetto]"
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
 
-> **注意:** macOS のシステム `sqlite3` は `OMIT_LOAD_EXTENSION` フラグ付きでビルドされているため、vaporetto を使用するには `apsw`（拡張ローディングを常にサポートする代替 SQLite バインディング）が必要です。`uv pip install -e ".[vaporetto]"` を実行すると自動的にインストールされます。
+`mrag init` 実行時に vaporetto が検出されない場合、trigram トークナイザーに自動フォールバックします。`mrag doctor` で検出状況を確認できます。
 
-### Marker を使う場合（スキャン PDF・複雑なレイアウトの PDF 向け）
+### Marker を使う場合（オプション：スキャン PDF・複雑なレイアウトの PDF 向け）
 
 ```bash
 uv pip install -e ".[marker]"
 ```
 
-### リランカーを使う場合（CrossEncoder による再スコアリング）
-
-```bash
-uv pip install -e ".[reranker]"
-```
-
-プロファイル YAML で `rerank.enabled: true` を設定すると有効になります。`sentence-transformers` の CrossEncoder モデルを使用します。デフォルトモデルは `hotchpotch/japanese-reranker-cross-encoder-small-v1` です。
+スキャン PDF や複雑なレイアウトの PDF に対して高精度な抽出を行う `--extractor marker` オプションが `mrag add` で使えるようになります。
 
 ### デフォルト Embedding モデルの取得
 
