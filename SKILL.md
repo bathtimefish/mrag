@@ -1,4 +1,4 @@
-# SKILLS.md — mrag Skill Procedures
+# SKILL.md — mrag Skill Procedures
 
 Concrete, step-by-step procedures for AI agents operating mrag. Each skill lists preconditions, exact commands, expected output, and verification steps.
 
@@ -134,6 +134,30 @@ mrag reindex
 
 `Skipped` count shows documents whose content and profile hash have not changed since last indexing.
 
+If any documents failed (e.g. Ollama timeout during contextual augmentation), the summary line shows:
+```
+✓ Indexed: 11  Skipped: 0
+Error (2ba41462-...): Empty context response from Ollama: ...
+```
+
+Failed documents remain in `error` status and are automatically retried on the next `mrag index` run. No manual intervention is needed other than re-running the command.
+
+**Log output to file (recommended for large corpora):**
+
+When indexing many documents, redirect output to a log file so that errors are preserved for later review:
+
+```bash
+mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+```
+
+This streams output to the terminal in real time and simultaneously writes to a timestamped log file. After the run, check for errors with:
+
+```bash
+grep "Error" mrag-index-*.log
+```
+
+Re-run `mrag index` to retry only the failed documents — successfully indexed documents are skipped automatically.
+
 **Verify:**
 ```bash
 mrag search "test" --strategy keyword --top-k 1
@@ -171,13 +195,13 @@ mrag search "<query>" --no-rerank
 |------------|-----------|
 | `word1 word2` | AND — chunks containing both terms |
 | `"exact phrase"` | Phrase match |
-| `熱電対 概要` | AND for Japanese (space = AND) |
-| `熱電対の概要` | Phrase for Japanese (no space = adjacent tokens) |
+| `product overview` | AND — chunks containing both terms |
+| `"product overview"` | Phrase match |
 
 **Expected output:**
 ```
 [1] score=6.39  doc=manual.pdf  chunk=eb0495d2...
-    …接点出力ポートに対してON/OFF制御を…
+    …access control policy defines the permitted operations…
 ```
 
 **If zero results:**
@@ -201,7 +225,7 @@ mrag search "<query>" --no-rerank
 curl -s -X POST http://127.0.0.1:8000/api/v1/retrieve \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "接点出力の制御方法",
+    "query": "access control policy",
     "strategy": "hybrid",
     "top_k": 5
   }'
@@ -210,7 +234,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/retrieve \
 **Response shape:**
 ```json
 {
-  "query": "接点出力の制御方法",
+  "query": "access control policy",
   "profile": "default",
   "strategy": "hybrid",
   "results": [
@@ -219,7 +243,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/retrieve \
       "document_id": "91f28863-...",
       "filename": "manual.pdf",
       "score": 6.39,
-      "content": "…接点出力ポートに対してON/OFF制御を…",
+      "content": "…access control policy defines the permitted operations…",
       "metadata": {}
     }
   ]
@@ -414,20 +438,20 @@ Use `mrag eval` to inspect retrieval results for a query without running a full 
 
 ```bash
 # Basic evaluation (uses default profile and its configured strategy)
-mrag eval "照度センサーの仕様"
+mrag eval "device configuration options"
 
 # Force a specific strategy regardless of profile setting
-mrag eval "照度センサーの仕様" --strategy keyword
-mrag eval "照度センサーの仕様" --strategy vector
+mrag eval "device configuration options" --strategy keyword
+mrag eval "device configuration options" --strategy vector
 
 # Change number of results
-mrag eval "照度センサーの仕様" --top-k 20
+mrag eval "device configuration options" --top-k 20
 
 # Disable reranking for this run
-mrag eval "照度センサーの仕様" --no-rerank
+mrag eval "device configuration options" --no-rerank
 
 # Compare two profiles side-by-side
-mrag eval "照度センサーの仕様" --profile default --profile second
+mrag eval "device configuration options" --profile default --profile second
 ```
 
 **Output sections:**
@@ -510,6 +534,49 @@ Indexing with `strategy: contextual` is significantly slower than `strategy: non
 
 ---
 
+## Skill 13 — Choosing between search and eval
+
+`mrag search` and `mrag eval` both retrieve chunks for a query, but their output is optimised for different purposes. Choosing the right command avoids unnecessary noise and makes downstream reasoning faster.
+
+| | `mrag search` | `mrag eval` |
+|---|---|---|
+| Primary output | Chunk text content | Chunk text + score stats + document distribution |
+| Best for | Reading and synthesising content | Surveying where information lives |
+| Typical follow-up | Summarise, explain, answer from the text | Decide which documents to focus on next |
+
+**Use `mrag search` when:**
+- You want to read the actual chunk content to answer a specific question
+- You need to synthesise or summarise information from the results
+- You already know roughly which documents are relevant
+
+```bash
+mrag search "what are the key challenges for adoption" --top-k 5
+```
+
+**Use `mrag eval` when:**
+- You want to survey the landscape before diving into content — e.g. on a broad or unfamiliar query, run `eval` first to see which documents contain relevant information
+- You want to know which document has the most information on a topic (document distribution bar chart)
+- You want score statistics (min / max / mean / σ) to assess retrieval confidence or compare profiles
+
+```bash
+mrag eval "network security" --top-k 10
+# → Document distribution shows at a glance which files dominate the results
+```
+
+**Recommended two-step workflow for unfamiliar corpora:**
+
+```bash
+# Step 1: survey — understand the distribution
+mrag eval "<broad query>" --top-k 10
+
+# Step 2: read — fetch content from the most relevant document
+mrag search "<focused query>" --top-k 5
+```
+
+> One-line rule: **"read content → search; survey distribution → eval"**
+
+---
+
 ## Quick decision guide
 
 ```
@@ -520,8 +587,11 @@ Zero results from vector/hybrid?               →  check Ollama running; run mr
 Qdrant "Collection not found" error?           →  mode: server needs a running Qdrant; or switch to mode: local
 Need to update one document?                   →  mrag remove --force <id>; mrag add <file>; mrag index
 Need to rebuild everything?                    →  mrag reindex
+Some documents failed during index?           →  re-run mrag index (retries error-status docs only); check logs for details
 Need to expose retrieval over HTTP?            →  mrag serve (from inside project dir)
 Need to inspect retrieval quality?             →  mrag eval "<query>" [--strategy vector]
+Want to read chunk content and synthesise?    →  mrag search (content-focused output)
+Want to survey which docs contain a topic?    →  mrag eval (document distribution + score stats)
 Need to migrate project to another host?       →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
 Want to improve semantic retrieval quality?    →  enable augmentation.strategy: contextual in profile; mrag reindex (see Skill 12)
 Contextual indexing too slow?                  →  use a faster/smaller model in augmentation.model; or disable with strategy: none

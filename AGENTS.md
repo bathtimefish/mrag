@@ -120,8 +120,8 @@ mrag supports two FTS5 tokenizers. The active tokenizer is shown in `mrag.yaml` 
 - **Continuous Japanese text = phrase query** (all tokens must appear adjacent)
 
 ```bash
-mrag search "接点出力 ON OFF"   # AND: chunks containing all three terms
-mrag search "接点出力のON制御"  # phrase: exact token sequence
+mrag search "error handling retry"    # AND: chunks containing all three terms
+mrag search "error handling"          # phrase: exact token sequence
 ```
 
 - Input text is **NFKC-normalized** at both index time and query time. PDF files that use Kangxi radicals (e.g. ⼒ U+2F12) are automatically normalized to standard CJK (力 U+529B).
