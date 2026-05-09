@@ -202,7 +202,18 @@ mrag search "<query>" --no-rerank
 ```
 [1] score=6.39  doc=manual.pdf  chunk=eb0495d2...
     …access control policy defines the permitted operations…
+
+[2] score=5.81  doc=manual-b.pdf  chunk=3fa12c11...
+    …
+
+Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
+
+Document distribution:
+  manual.pdf    ████████████████████ 3
+  manual-b.pdf  ████                 1
 ```
+
+σ (standard deviation of scores) indicates query precision: a **low σ** means results are clustered with similar scores — the query is likely too broad. A **high σ** means a top result clearly stands out — the query is precise. Use this signal to decide whether to refine the query before synthesising an answer.
 
 **If zero results:**
 1. Confirm `mrag index` has been run
@@ -536,44 +547,43 @@ Indexing with `strategy: contextual` is significantly slower than `strategy: non
 
 ## Skill 13 — Choosing between search and eval
 
-`mrag search` and `mrag eval` both retrieve chunks for a query, but their output is optimised for different purposes. Choosing the right command avoids unnecessary noise and makes downstream reasoning faster.
+`mrag search` and `mrag eval` both retrieve chunks and output score stats (min/max/mean/σ) and document distribution. The difference is in the **additional analytical features** `eval` provides on top.
 
 | | `mrag search` | `mrag eval` |
 |---|---|---|
-| Primary output | Chunk text content | Chunk text + score stats + document distribution |
-| Best for | Reading and synthesising content | Surveying where information lives |
-| Typical follow-up | Summarise, explain, answer from the text | Decide which documents to focus on next |
+| Chunk text | ✓ | ✓ |
+| Score stats (min/max/mean/σ) | ✓ | ✓ |
+| Document distribution | ✓ | ✓ |
+| Duplicate chunk detection | — | ✓ |
+| Multi-profile diff | — | ✓ |
+| Typical use | Day-to-day retrieval and synthesis | Index quality analysis, profile tuning |
 
-**Use `mrag search` when:**
-- You want to read the actual chunk content to answer a specific question
-- You need to synthesise or summarise information from the results
-- You already know roughly which documents are relevant
+**Use `mrag search` for day-to-day retrieval.** The σ and document distribution in the output let you immediately judge query precision and information layout without running a separate command.
 
 ```bash
 mrag search "what are the key challenges for adoption" --top-k 5
+# → if σ is low, the query is too broad — try a more specific query
+# → document distribution shows which files contain the most relevant chunks
 ```
 
-**Use `mrag eval` when:**
-- You want to survey the landscape before diving into content — e.g. on a broad or unfamiliar query, run `eval` first to see which documents contain relevant information
-- You want to know which document has the most information on a topic (document distribution bar chart)
-- You want score statistics (min / max / mean / σ) to assess retrieval confidence or compare profiles
+**Use `mrag eval` for index quality analysis:**
+- Detect duplicate chunks (sign of chunking issues)
+- Compare two profiles side-by-side with `--profile A --profile B`
+- Systematic accuracy measurement after reindexing
 
 ```bash
-mrag eval "network security" --top-k 10
-# → Document distribution shows at a glance which files dominate the results
+mrag eval "network security" --profile default --profile v2 --strategy vector
 ```
 
-**Recommended two-step workflow for unfamiliar corpora:**
+**Recommended workflow for unfamiliar corpora:**
 
 ```bash
-# Step 1: survey — understand the distribution
-mrag eval "<broad query>" --top-k 10
+# Step 1: broad query — check σ and distribution to understand the landscape
+mrag search "<broad query>" --top-k 10
 
-# Step 2: read — fetch content from the most relevant document
+# Step 2: if σ is low, refine the query and search again
 mrag search "<focused query>" --top-k 5
 ```
-
-> One-line rule: **"read content → search; survey distribution → eval"**
 
 ---
 
@@ -590,8 +600,9 @@ Need to rebuild everything?                    →  mrag reindex
 Some documents failed during index?           →  re-run mrag index (retries error-status docs only); check logs for details
 Need to expose retrieval over HTTP?            →  mrag serve (from inside project dir)
 Need to inspect retrieval quality?             →  mrag eval "<query>" [--strategy vector]
-Want to read chunk content and synthesise?    →  mrag search (content-focused output)
-Want to survey which docs contain a topic?    →  mrag eval (document distribution + score stats)
+Want to retrieve and synthesise content?      →  mrag search (includes σ + document distribution)
+Query results look unfocused (low σ)?         →  refine the query and re-run mrag search
+Need duplicate detection or profile diff?     →  mrag eval
 Need to migrate project to another host?       →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
 Want to improve semantic retrieval quality?    →  enable augmentation.strategy: contextual in profile; mrag reindex (see Skill 12)
 Contextual indexing too slow?                  →  use a faster/smaller model in augmentation.model; or disable with strategy: none

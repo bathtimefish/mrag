@@ -185,11 +185,9 @@ mrag search "installation guide" --no-rerank
 
 ### 5. Evaluate retrieval quality (optional)
 
-```bash
-mrag eval "installation guide"
-```
+`mrag search` already outputs score stats (min/max/mean/σ) and document distribution after each query. Use σ as a signal: a low σ means results are clustered and the query may be too broad; a high σ means a top result clearly stands out.
 
-Shows scores, duplicate chunks, document distribution, and optionally compares multiple profiles:
+Use `mrag eval` for deeper analysis: duplicate chunk detection and multi-profile comparison:
 
 ```bash
 mrag eval "installation guide" --profile default --profile second --strategy vector

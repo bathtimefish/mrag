@@ -129,6 +129,35 @@ def detect_duplicates(results: list[RetrievalResult]) -> set[str]:
     return dupes
 
 
+def print_score_stats_and_distribution(
+    results: list[RetrievalResult],
+    filename_map: dict[str, str],
+    con: Console,
+) -> None:
+    """Print score statistics and document distribution for a result set."""
+    scores = [r.score for r in results]
+    stdev = statistics.stdev(scores) if len(scores) > 1 else 0.0
+    con.print(
+        f"[bold]Score stats:[/bold]  "
+        f"min=[cyan]{min(scores):.4f}[/cyan]  "
+        f"max=[cyan]{max(scores):.4f}[/cyan]  "
+        f"mean=[cyan]{statistics.mean(scores):.4f}[/cyan]  "
+        f"σ=[cyan]{stdev:.4f}[/cyan]"
+    )
+    con.print()
+
+    doc_counts: dict[str, int] = {}
+    for r in results:
+        name = filename_map.get(r.document_id, r.document_id[:8])
+        doc_counts[name] = doc_counts.get(name, 0) + 1
+
+    bar_max = max(doc_counts.values())
+    con.print("[bold]Document distribution:[/bold]")
+    for name, count in sorted(doc_counts.items(), key=lambda x: -x[1]):
+        bar = "█" * max(1, int(count / bar_max * 20))
+        con.print(f"  [green]{name:<40}[/green] {bar} {count}")
+
+
 def _print_single_profile(
     query: str,
     profile_name: str,
@@ -168,27 +197,7 @@ def _print_single_profile(
         console.print(f"    {r.content[:200].replace(chr(10), ' ')}")
         console.print()
 
-    scores = [r.score for r in results]
-    stdev = statistics.stdev(scores) if len(scores) > 1 else 0.0
-    console.print(
-        f"[bold]Score stats:[/bold]  "
-        f"min=[cyan]{min(scores):.4f}[/cyan]  "
-        f"max=[cyan]{max(scores):.4f}[/cyan]  "
-        f"mean=[cyan]{statistics.mean(scores):.4f}[/cyan]  "
-        f"σ=[cyan]{stdev:.4f}[/cyan]"
-    )
-    console.print()
-
-    doc_counts: dict[str, int] = {}
-    for r in results:
-        name = filename_map.get(r.document_id, r.document_id[:8])
-        doc_counts[name] = doc_counts.get(name, 0) + 1
-
-    bar_max = max(doc_counts.values())
-    console.print("[bold]Document distribution:[/bold]")
-    for name, count in sorted(doc_counts.items(), key=lambda x: -x[1]):
-        bar = "█" * max(1, int(count / bar_max * 20))
-        console.print(f"  [green]{name:<40}[/green] {bar} {count}")
+    print_score_stats_and_distribution(results, filename_map, console)
 
 
 def _print_profile_diff(

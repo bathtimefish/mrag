@@ -44,9 +44,9 @@ mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve
 1. **`mrag init --name <name>`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory.
 2. **`mrag add <file>`** — Extracts text and stores metadata. No indexing yet.
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents.
-4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results.
+4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
 
-Use **`mrag eval <query>`** at any time after indexing to inspect retrieval quality: scores, duplicate chunks, document distribution, and multi-profile comparison.
+Use **`mrag eval <query>`** at any time after indexing for deeper quality inspection: duplicate chunk detection and multi-profile comparison.
 
 ---
 
