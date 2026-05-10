@@ -213,6 +213,14 @@ Document distribution:
   manual-b.pdf  ████                 1
 ```
 
+When the profile uses `strategy: block_aware`, each result that has heading metadata shows an additional `section:` line:
+
+```
+[1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
+    section: SIM7080G > MQTT > KeepAlive
+    MQTT keepalive settings can be configured with AT+CMQTTKEEPALIVE...
+```
+
 σ (standard deviation of scores) indicates query precision: a **low σ** means results are clustered with similar scores — the query is likely too broad. A **high σ** means a top result clearly stands out — the query is precise. Use this signal to decide whether to refine the query before synthesising an answer.
 
 **If zero results:**
@@ -598,23 +606,26 @@ mrag search "<focused query>" --top-k 5
 ## Quick decision guide
 
 ```
-Need to search without Qdrant/Ollama?          →  --strategy keyword
-Need best Japanese retrieval?                  →  ensure fts_tokenizer: vaporetto in mrag.yaml
-Zero results from keyword search?              →  check mrag index ran; try single-word query
-Zero results from vector/hybrid?               →  check Ollama running; run mrag doctor
-Qdrant "Collection not found" error?           →  mode: server needs a running Qdrant; or switch to mode: local
-Need to update one document?                   →  mrag remove --force <id>; mrag add <file>; mrag index
-Need to rebuild everything?                    →  mrag reindex
-Some documents failed during index?           →  re-run mrag index (retries error-status docs only); check logs for details
-Need to expose retrieval over HTTP?            →  mrag serve (from inside project dir)
-Need to inspect retrieval quality?             →  mrag eval "<query>" [--strategy vector]
-Want to retrieve and synthesise content?      →  mrag search (includes σ + document distribution)
-Query results look unfocused (low σ)?         →  refine the query and re-run mrag search
-Need duplicate detection or profile diff?     →  mrag eval
-Need to migrate project to another host?       →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
-Want to improve semantic retrieval quality?    →  enable augmentation.strategy: contextual in profile; mrag reindex (see Skill 12)
-Contextual indexing too slow?                  →  use a faster/smaller model in augmentation.model; or disable with strategy: none
-Want to tune the LLM augmentation prompt?      →  edit profiles/context_prompt.txt; run mrag reindex
-Reranker ImportError?                          →  uv pip install -e ".[reranker]"
-mrag not found after uv install?               →  use .venv/bin/mrag or activate the venv
+Need to search without Qdrant/Ollama?                       →  --strategy keyword
+Need best Japanese retrieval?                               →  ensure fts_tokenizer: vaporetto in mrag.yaml
+Zero results from keyword search?                           →  check mrag index ran; try single-word query
+Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
+Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
+Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index
+Need to rebuild everything?                                 →  mrag reindex
+Some documents failed during index?                         →  re-run mrag index (retries error-status docs only); check logs for details
+Need to expose retrieval over HTTP?                         →  mrag serve (from inside project dir)
+Need to inspect retrieval quality?                          →  mrag eval "<query>" [--strategy vector]
+Want to retrieve and synthesise content?                    →  mrag search (includes σ + document distribution)
+Query results look unfocused (low σ)?                       →  refine the query and re-run mrag search
+Need duplicate detection or profile diff?                   →  mrag eval
+Need to migrate project to another host?                    →  tar the project dir (includes qdrant/); extract on target; no reindex needed (mode: local)
+Want to improve semantic retrieval quality?                 →  enable augmentation.strategy: contextual in profile; mrag reindex (see Skill 12)
+Contextual indexing too slow?                               →  use a faster/smaller model in augmentation.model; or disable with strategy: none
+Want to tune the LLM augmentation prompt?                   →  edit profiles/context_prompt.txt; run mrag reindex
+Reranker ImportError?                                       →  uv pip install -e ".[reranker]"
+mrag not found after uv install?                            →  use .venv/bin/mrag or activate the venv
+Documents have tables or code blocks that get split?        →  use strategy: block_aware + source_format: markdown; mrag reindex
+Want heading breadcrumbs in search results?                 →  use strategy: block_aware; results will show "section: H1 > H2 > H3"
+block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata
 ```

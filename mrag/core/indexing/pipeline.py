@@ -1,3 +1,4 @@
+import json
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
@@ -154,6 +155,21 @@ def _cleanup_document(db_path: Path, document_id: str, profile_name: str,
         )
 
 
+def _chunk_qdrant_meta(chunk) -> dict:
+    """Extract fields from chunk.metadata to include in Qdrant payload."""
+    meta = chunk.metadata
+    result: dict = {}
+    if meta.get("heading_path_text"):
+        result["heading_path_text"] = meta["heading_path_text"]
+    if meta.get("section_id"):
+        result["section_id"] = meta["section_id"]
+    if meta.get("contains_table"):
+        result["contains_table"] = True
+    if meta.get("contains_code"):
+        result["contains_code"] = True
+    return result
+
+
 def _index_document(
     doc: dict,
     profile: ProfileConfig,
@@ -183,6 +199,9 @@ def _index_document(
         profile.chunking.strategy,
         profile.chunking.chunk_size,
         profile.chunking.overlap,
+        preserve_heading_path=profile.chunking.preserve_heading_path,
+        preserve_tables=profile.chunking.preserve_tables,
+        preserve_code_blocks=profile.chunking.preserve_code_blocks,
     )
     chunks = chunker.chunk(text, {"document_id": doc["id"], "profile_name": profile.name})
 
@@ -235,12 +254,16 @@ def _index_document(
         for chunk in chunks:
             chunk_id = str(uuid.uuid4())
             chunk_ids.append(chunk_id)
+            chunk_metadata_json = (
+                json.dumps(chunk.metadata, ensure_ascii=False)
+                if chunk.metadata else None
+            )
             conn.execute(
                 """INSERT INTO chunks
                    (id, knowledge_id, document_id, profile_name, parent_chunk_id,
                     chunk_type, chunk_index, content, source_format,
                     token_count, char_count, metadata_json, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,NULL,?,NULL,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)""",
                 (
                     chunk_id,
                     doc["knowledge_id"],
@@ -252,6 +275,7 @@ def _index_document(
                     chunk.content,
                     source_format,
                     len(chunk.content),
+                    chunk_metadata_json,
                     now,
                     now,
                 ),
@@ -309,6 +333,7 @@ def _index_document(
                     "profile_name": profile.name,
                     "knowledge_id": doc["knowledge_id"],
                     "chunk_index": chunk.chunk_index,
+                    **_chunk_qdrant_meta(chunk),
                 },
             }
             for point_id, chunk_id, chunk, vector in zip(

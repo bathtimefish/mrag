@@ -134,6 +134,41 @@ mrag search "error handling"          # phrase: exact token sequence
 
 ---
 
+## Chunking strategies
+
+The `chunking.strategy` field in a profile controls how documents are split. Three strategies are available:
+
+| Strategy | Best for | Notes |
+|----------|----------|-------|
+| `recursive` | Plain text, PDF | Default; splits by paragraph → line → character |
+| `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
+| `block_aware` | Markdown with tables / code | Parses into typed blocks; tables and fenced code blocks are never split mid-content; attaches heading-path metadata to every chunk |
+
+**`block_aware` profile fields** (under `chunking:`):
+
+```yaml
+chunking:
+  strategy: block_aware
+  source_format: markdown      # must be markdown
+  chunk_size: 800
+  overlap: 120
+  preserve_heading_path: true  # attach H1 > H2 > H3 breadcrumb to each chunk
+  preserve_tables: true        # keep tables atomic — never split mid-row
+  preserve_code_blocks: true   # keep fenced code blocks atomic
+```
+
+When `block_aware` is used, `mrag search` results include a `section:` line showing the heading path of each chunk:
+
+```
+[1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
+    section: SIM7080G > MQTT > KeepAlive
+    MQTT keepalive settings can be configured with AT+CMQTTKEEPALIVE...
+```
+
+Changing any `chunking` field (including `preserve_*`) invalidates the profile hash and triggers full re-indexing on the next `mrag index`.
+
+---
+
 ## Search strategies
 
 | Strategy | Description | Requires |
@@ -288,3 +323,5 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
 | Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |
 | Contextual prompt not taking effect | `context_prompt.txt` edited but no reindex run | Run `mrag reindex` to re-augment all chunks with the new prompt |
+| `mrag search` results have no `section:` line | Profile uses `recursive` or `markdown_recursive`, not `block_aware` | Switch to `strategy: block_aware` + `source_format: markdown` and reindex |
+| Tables or code blocks split across chunks | `block_aware` not used, or `preserve_tables`/`preserve_code_blocks` set to `false` | Set `strategy: block_aware` with both flags `true`; run `mrag reindex` |

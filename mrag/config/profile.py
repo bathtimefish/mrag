@@ -11,6 +11,9 @@ class ChunkingConfig(BaseModel):
     source_format: str = "text"
     chunk_size: int = 800
     overlap: int = 120
+    preserve_heading_path: bool = True
+    preserve_tables: bool = True
+    preserve_code_blocks: bool = True
 
 
 class RetrievalConfig(BaseModel):

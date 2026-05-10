@@ -142,10 +142,13 @@ def search(
     for i, r in enumerate(results, 1):
         filename = filename_map.get(r.document_id, r.document_id[:8])
         preview = r.content[:200].replace("\n", " ")
+        section_text = r.metadata.get("heading_path_text", "")
         console.print(
             f"[bold]\\[{i}][/bold] score=[cyan]{r.score:.4f}[/cyan]  "
             f"doc=[green]{filename}[/green]  chunk=[dim]{r.chunk_id[:8]}...[/dim]"
         )
+        if section_text:
+            console.print(f"    [dim]section:[/dim] {section_text}")
         console.print(f"    {preview}")
         console.print()
 

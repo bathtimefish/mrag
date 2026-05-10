@@ -13,6 +13,7 @@ mragは小規模なRAGナレッジベースを作成、運用するためのCLI�
 - **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
 - **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
 - **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
+- **ブロック認識チャンキング** — Markdown 構造を認識する `block_aware` ストラテジー。テーブルとコードブロックをアトミック単位として保護し、見出しパスのメタデータを各チャンクに付与。`mrag search` の結果に `section: H1 > H2 > H3` パンくず表示を追加
 - **コンテキスト拡張（Contextual Augmentation）** — インデックス時に Ollama LLM でチャンクごとのコンテキスト文を生成（Anthropic contextual retrieval パターン）。プロジェクトごとに `profiles/context_prompt.txt` でプロンプトをカスタマイズ可能
 - **リランキング** — 検索後に CrossEncoder（sentence-transformers）による再スコアリングをオプションで適用。`--no-rerank` でリクエスト単位の無効化も可能
 - **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
@@ -414,29 +415,43 @@ keyword:
 
 ### チャンキングストラテジー
 
-`chunking.strategy` フィールドで、インデックス前にドキュメントをどのように分割するかを制御します。2種類のストラテジーが使用できます：
+`chunking.strategy` フィールドで、インデックス前にドキュメントをどのように分割するかを制御します。3種類のストラテジーが使用できます：
 
 | ストラテジー | 説明 |
 |------------|------|
 | `recursive` | 段落 → 改行 → 文のような区切り文字の階層で再帰的に分割。プレーンテキストおよび PDF に最適。**デフォルト。** |
 | `markdown_recursive` | まず Markdown の見出し構造で分割し、各セクション内でさらに再帰分割。`source_format: markdown` と組み合わせて使用。 |
+| `block_aware` | Markdown ブロック認識型。ドキュメントを見出し・段落・テーブル・コードブロック等の型付きブロックに分解してチャンクを組み立てる。テーブルとコードブロックはアトミック単位として保護（途中で分割しない）。見出しパスをチャンクメタデータに付与し、検索結果に `section:` 表示を追加。`source_format: markdown` と組み合わせて使用。 |
 
 **設定フィールド:**
 
 ```yaml
 chunking:
-  strategy: recursive       # recursive | markdown_recursive
+  strategy: recursive       # recursive | markdown_recursive | block_aware
   source_format: text       # text | markdown
   chunk_size: 800           # チャンクの目標文字数
   overlap: 120              # 隣接チャンク間のオーバーラップ文字数
+  # --- block_aware オプション（strategy: block_aware 時のみ有効）---
+  # preserve_heading_path: true   # 見出しパンくずをチャンクに付与
+  # preserve_tables: true         # テーブルをアトミック単位として保護
+  # preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護
 ```
 
 **ストラテジーの選び方:**
 
 - **`recursive`** — プレーンテキストや PDF に使用。日本語を含む全言語で安定して動作します。
 - **`markdown_recursive`** — 見出し構造が明確なドキュメント（技術仕様書、Markdown でエクスポートした Wiki など）に使用。セクションのコンテキストをチャンク内に保持するため、検索精度が向上しやすいです。
+- **`block_aware`** — テーブル・コードブロック・ネストされた見出しを含む Markdown ドキュメントに使用。テーブルとコードブロックはチャンク境界をまたいで分割されることがありません。すべてのチャンクに見出しパスメタデータが付与され、`mrag search` の結果に `section: H1 > H2 > H3` パンくずが表示されます。
 
-> **注意:** `chunking.strategy`、`chunk_size`、`overlap` を変更すると既存のインデックスが無効になります。チャンキング設定を変更した後は `mrag reindex` で最初から再構築してください。
+**`block_aware` での検索結果表示例:**
+
+```
+[1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
+    section: SIM7080G > MQTT > KeepAlive
+    MQTT の keepalive 設定は AT+CMQTTKEEPALIVE で変更できます...
+```
+
+> **注意:** `chunking.strategy`、`chunk_size`、`overlap`、または `preserve_*` フラグを変更すると既存のインデックスが無効になります。チャンキング設定を変更した後は `mrag reindex` で最初から再構築してください。
 
 ### 検索ストラテジー
 
