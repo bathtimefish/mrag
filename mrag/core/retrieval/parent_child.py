@@ -48,13 +48,16 @@ def resolve_to_parent(
             if pid in seen:
                 continue
             seen.add(pid)
+            child_meta = dict(r.metadata)
+            child_meta["retrieved_child_id"] = r.chunk_id
+            child_meta["retrieval_mode"] = "parent_child"
             resolved.append(
                 RetrievalResult(
                     chunk_id=pid,
                     document_id=r.document_id,
                     content=parent_content.get(pid, r.content),
                     score=r.score,
-                    metadata=r.metadata,
+                    metadata=child_meta,
                 )
             )
         else:

@@ -134,6 +134,67 @@ mrag search "error handling"          # phrase: exact token sequence
 
 ---
 
+## Chunking strategies
+
+The `chunking.strategy` field in a profile controls how documents are split. Four strategies are available:
+
+| Strategy | Best for | Notes |
+|----------|----------|-------|
+| `recursive` | Plain text, PDF | Default; splits by paragraph → line → character |
+| `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
+| `block_aware` | Markdown with tables / code | Parses into typed blocks; tables and code blocks are never split; attaches heading-path to every chunk |
+| `parent_child` | Precise search + rich context | Indexes small child chunks; returns large parent chunks; deduplicates automatically. Must pair with `retrieval.strategy: parent_child`. |
+
+**Block-aware preprocessing (universal)**
+
+Setting `source_format: markdown` and enabling any `preserve_*` option wraps the inner chunker with block-aware preprocessing. This works for **all strategies** — not just `block_aware`:
+
+```yaml
+chunking:
+  strategy: recursive          # or markdown_recursive, parent_child
+  source_format: markdown
+  chunk_size: 800
+  overlap: 120
+  preserve_heading_path: true  # attach H1 > H2 > H3 breadcrumb to each chunk
+  preserve_tables: true        # keep tables atomic — never split mid-row
+  preserve_code_blocks: true   # keep fenced code blocks atomic
+```
+
+The `block_aware` strategy name is a backward-compatible alias for `recursive` + `source_format: markdown` + all preserve options enabled.
+
+When heading-path metadata is present, `mrag search` results include a `section:` line:
+
+```
+[1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
+    section: SIM7080G > MQTT > KeepAlive
+    MQTT keepalive settings can be configured with AT+CMQTTKEEPALIVE...
+```
+
+**Parent-child profile fields** (under `chunking:` and `retrieval:`):
+
+```yaml
+chunking:
+  strategy: parent_child
+  source_format: markdown   # optionally enable block-aware wrapping for child chunks
+  parent:
+    strategy: fixed_size
+    max_chars: 3000
+  child:
+    strategy: recursive
+    chunk_size: 600
+    overlap: 100
+
+retrieval:
+  strategy: parent_child
+  top_k: 8
+  dense_top_k: 60   # must be >= top_k * 3 — multiple children can map to same parent
+  keyword_top_k: 60
+```
+
+Changing any `chunking` field (including `preserve_*`) invalidates the profile hash and triggers full re-indexing on the next `mrag index`.
+
+---
+
 ## Search strategies
 
 | Strategy | Description | Requires |
@@ -141,6 +202,7 @@ mrag search "error handling"          # phrase: exact token sequence
 | `keyword` | FTS5 BM25 full-text search | SQLite only |
 | `vector` | Dense vector similarity (Qdrant) | Qdrant + Ollama |
 | `hybrid` | RRF fusion of keyword + vector (default) | Qdrant + Ollama |
+| `parent_child` | Fetches child chunks, resolves to parent chunks, deduplicates | Qdrant + Ollama; requires `chunking.strategy: parent_child` |
 
 The default strategy is set in `profiles/default.yaml` under `retrieval.strategy`.
 
@@ -288,3 +350,7 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
 | Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |
 | Contextual prompt not taking effect | `context_prompt.txt` edited but no reindex run | Run `mrag reindex` to re-augment all chunks with the new prompt |
+| `mrag search` results have no `section:` line | `preserve_heading_path` not enabled or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_heading_path: true` in chunking config; run `mrag reindex` |
+| Tables or code blocks split across chunks | `preserve_tables`/`preserve_code_blocks` not enabled, or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_tables: true` + `preserve_code_blocks: true`; run `mrag reindex` |
+| `parent_child` profile validation error | `chunking.strategy` and `retrieval.strategy` must both be `parent_child` | Update the profile so both fields are `parent_child` |
+| `parent_child` returning fewer results than `top_k` | `dense_top_k` / `keyword_top_k` too low; deduplication reduces candidates | Increase both to at least `top_k × 3` (e.g. `top_k: 8` → `dense_top_k: 60`) |

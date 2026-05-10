@@ -2,7 +2,7 @@ import sqlite3
 import unicodedata
 from pathlib import Path
 
-from mrag.core.retrieval.base import RetrievalResult, fetch_chunks
+from mrag.core.retrieval.base import RetrievalResult, fetch_chunk_metadata, fetch_chunks
 from mrag.db.connection import open_fts_connection
 from mrag.db.tokenizer import TOKENIZER_TRIGRAM
 
@@ -47,6 +47,7 @@ def keyword_search(
 
     chunk_ids = [r["chunk_id"] for r in rows]
     chunks = fetch_chunks(db_path, chunk_ids)
+    chunk_meta = fetch_chunk_metadata(db_path, chunk_ids)
 
     results: list[RetrievalResult] = []
     for row in rows:
@@ -58,7 +59,7 @@ def keyword_search(
                     document_id=row["document_id"],
                     content=chunks[chunk_id]["content"],
                     score=-row["bm25_score"],
-                    metadata={},
+                    metadata=chunk_meta.get(chunk_id, {}),
                 )
             )
     return results

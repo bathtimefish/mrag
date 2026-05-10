@@ -1,3 +1,4 @@
+import json
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
@@ -7,7 +8,7 @@ from typing import TYPE_CHECKING, Callable
 
 from mrag.config.profile import ProfileConfig, load_profile
 from mrag.config.project import ProjectConfig
-from mrag.core.chunking.base import get_chunker
+from mrag.core.chunking.base import ChunkData, get_chunker
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.indexing.diff import plan_indexing
@@ -154,6 +155,38 @@ def _cleanup_document(db_path: Path, document_id: str, profile_name: str,
         )
 
 
+def _chunk_qdrant_meta(chunk) -> dict:
+    """Extract fields from chunk.metadata to include in Qdrant payload."""
+    meta = chunk.metadata
+    result: dict = {}
+    if meta.get("heading_path_text"):
+        result["heading_path_text"] = meta["heading_path_text"]
+    if meta.get("section_id"):
+        result["section_id"] = meta["section_id"]
+    if meta.get("contains_table"):
+        result["contains_table"] = True
+    if meta.get("contains_code"):
+        result["contains_code"] = True
+    return result
+
+
+def _resolve_parent_ids(
+    chunks: list[ChunkData],
+    chunk_id_list: list[str],
+) -> None:
+    """Parent チャンクの仮 hint ID を実際の UUID に解決する。in-place で更新する。"""
+    hint_to_id: dict[str, str] = {}
+    for chunk, chunk_id in zip(chunks, chunk_id_list):
+        if chunk.chunk_type == "parent":
+            hint = chunk.metadata.pop("_parent_id_hint", "")
+            if hint:
+                hint_to_id[hint] = chunk_id
+
+    for chunk in chunks:
+        if chunk.chunk_type == "child" and chunk.parent_chunk_id in hint_to_id:
+            chunk.parent_chunk_id = hint_to_id[chunk.parent_chunk_id]
+
+
 def _index_document(
     doc: dict,
     profile: ProfileConfig,
@@ -183,32 +216,53 @@ def _index_document(
         profile.chunking.strategy,
         profile.chunking.chunk_size,
         profile.chunking.overlap,
+        preserve_heading_path=profile.chunking.preserve_heading_path,
+        preserve_tables=profile.chunking.preserve_tables,
+        preserve_code_blocks=profile.chunking.preserve_code_blocks,
+        source_format=profile.chunking.source_format,
+        parent_config=profile.chunking.parent,
+        child_config=profile.chunking.child,
     )
     chunks = chunker.chunk(text, {"document_id": doc["id"], "profile_name": profile.name})
 
     if not chunks:
         return
 
-    if on_doc_start:
-        on_doc_start(len(chunks))
+    # 2b. UUID を先払いで割り当て。parent_child の場合は child→parent 参照を解決する。
+    chunk_id_list: list[str] = [str(uuid.uuid4()) for _ in chunks]
+    if profile.chunking.strategy == "parent_child":
+        _resolve_parent_ids(chunks, chunk_id_list)
 
-    # 3. Augment chunks (contextual strategy generates context_text per chunk)
-    context_texts: list[str | None] = [None] * len(chunks)
-    contents_for_embedding: list[str] = [c.content for c in chunks]
-    variant_types: list[str] = ["raw"] * len(chunks)
+    # indexable = variants / FTS / Qdrant の対象（parent chunk を除外）
+    indexable_pairs = [
+        (cid, c)
+        for cid, c in zip(chunk_id_list, chunks)
+        if c.chunk_type in ("chunk", "child")
+    ]
+    indexable_ids: list[str] = [p[0] for p in indexable_pairs]
+    indexable_chunks: list[ChunkData] = [p[1] for p in indexable_pairs]
+
+    if on_doc_start:
+        # parent_child strategy では parent チャンクを除いた数を報告する
+        on_doc_start(len(indexable_chunks))
+
+    # 3. Augment chunks — indexable チャンクのみ（parent は augmentation 対象外）
+    context_texts: list[str | None] = [None] * len(indexable_chunks)
+    contents_for_embedding: list[str] = [c.content for c in indexable_chunks]
+    variant_types: list[str] = ["raw"] * len(indexable_chunks)
 
     if profile.augmentation.strategy == "contextual":
         from mrag.core.indexing.augmentation import augment_chunks
         prompt_template = _load_context_prompt(project_dir)
-        ctx_list = augment_chunks(chunks, text, profile.augmentation, prompt_template,
+        ctx_list = augment_chunks(indexable_chunks, text, profile.augmentation, prompt_template,
                                   on_chunk=on_chunk_augmented,
                                   on_chunk_retry=on_chunk_retry)
         for i, ctx in enumerate(ctx_list):
             context_texts[i] = ctx
-            contents_for_embedding[i] = ctx + "\n\n" + chunks[i].content
+            contents_for_embedding[i] = ctx + "\n\n" + indexable_chunks[i].content
             variant_types[i] = "contextual"
 
-    # 4. Embed (with optional cache)
+    # 4. Embed (with optional cache) — indexable チャンクのみ
     if use_cache:
         from mrag.core.embedding.cache import EmbeddingCache
         cache = EmbeddingCache(cache_dir=cache_dir, db_path=db_path)
@@ -227,20 +281,21 @@ def _index_document(
 
     now = _now_iso()
 
-    # 7. Insert new chunks + variants
-    chunk_ids: list[str] = []
+    # 7. Insert chunks (ALL — parent も含む) + variants (indexable のみ)
     variant_ids: list[str] = []
     point_ids: list[str] = []
     with db_connection(db_path) as conn:
-        for chunk in chunks:
-            chunk_id = str(uuid.uuid4())
-            chunk_ids.append(chunk_id)
+        for chunk_id, chunk in zip(chunk_id_list, chunks):
+            chunk_metadata_json = (
+                json.dumps(chunk.metadata, ensure_ascii=False)
+                if chunk.metadata else None
+            )
             conn.execute(
                 """INSERT INTO chunks
                    (id, knowledge_id, document_id, profile_name, parent_chunk_id,
                     chunk_type, chunk_index, content, source_format,
                     token_count, char_count, metadata_json, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,NULL,?,NULL,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)""",
                 (
                     chunk_id,
                     doc["knowledge_id"],
@@ -252,12 +307,13 @@ def _index_document(
                     chunk.content,
                     source_format,
                     len(chunk.content),
+                    chunk_metadata_json,
                     now,
                     now,
                 ),
             )
 
-        for i, (chunk_id, chunk) in enumerate(zip(chunk_ids, chunks)):
+        for i, (chunk_id, chunk) in enumerate(zip(indexable_ids, indexable_chunks)):
             variant_id = str(uuid.uuid4())
             point_id = str(uuid.uuid4())
             variant_ids.append(variant_id)
@@ -285,9 +341,9 @@ def _index_document(
                 ),
             )
 
-    # Insert FTS chunks using tokenizer-aware connection
+    # Insert FTS chunks — indexable のみ
     with fts_db_connection(db_path, tokenizer) as fts_conn:
-        for chunk_id, chunk in zip(chunk_ids, chunks):
+        for chunk_id, chunk in zip(indexable_ids, indexable_chunks):
             fts_db.insert_chunk(
                 fts_conn,
                 chunk.content,
@@ -297,7 +353,7 @@ def _index_document(
                 doc["id"],
             )
 
-    # 8. Upsert Qdrant
+    # 8. Upsert Qdrant — indexable のみ
     if qdrant_client is not None:
         points = [
             {
@@ -309,10 +365,11 @@ def _index_document(
                     "profile_name": profile.name,
                     "knowledge_id": doc["knowledge_id"],
                     "chunk_index": chunk.chunk_index,
+                    **_chunk_qdrant_meta(chunk),
                 },
             }
             for point_id, chunk_id, chunk, vector in zip(
-                point_ids, chunk_ids, chunks, vectors
+                point_ids, indexable_ids, indexable_chunks, vectors
             )
         ]
         upsert_points(qdrant_client, col_name, points)

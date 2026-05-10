@@ -480,6 +480,46 @@ def test_resolve_to_parent_deduplicates(indexed_project):
     assert resolved[0].chunk_id == parent_id
 
 
+def test_resolve_to_parent_sets_retrieved_child_id(indexed_project):
+    """resolved result must carry retrieved_child_id in metadata."""
+    db_path = indexed_project.db_path
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    doc_id = conn.execute("SELECT id FROM documents LIMIT 1").fetchone()[0]
+    now = "2026-01-01T00:00:00+00:00"
+    kb = indexed_project.config.knowledge_id
+
+    parent_id = str(uuid.uuid4())
+    child_id = str(uuid.uuid4())
+
+    conn.execute(
+        "INSERT INTO chunks (id, knowledge_id, document_id, profile_name, chunk_type, "
+        "chunk_index, content, source_format, char_count, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (parent_id, kb, doc_id, "default", "parent", 0, "parent body", "text", 11, now, now),
+    )
+    conn.execute(
+        "INSERT INTO chunks (id, knowledge_id, document_id, profile_name, parent_chunk_id, "
+        "chunk_type, chunk_index, content, source_format, char_count, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (child_id, kb, doc_id, "default", parent_id, "child", 1, "child body", "text", 10, now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    results = [RetrievalResult(chunk_id=child_id, document_id=doc_id, content="child body", score=0.9)]
+    resolved = resolve_to_parent(results, db_path)
+
+    assert resolved[0].metadata.get("retrieved_child_id") == child_id
+    assert resolved[0].metadata.get("retrieval_mode") == "parent_child"
+
+
+def test_resolve_to_parent_empty_input(indexed_project):
+    resolved = resolve_to_parent([], indexed_project.db_path)
+    assert resolved == []
+
+
 # ---------------------------------------------------------------------------
 # 6-6: mrag search CLI
 # ---------------------------------------------------------------------------

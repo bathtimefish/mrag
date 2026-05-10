@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,3 +27,24 @@ def fetch_chunks(db_path: Path, chunk_ids: list[str]) -> dict[str, dict]:
         return {dict(r)["id"]: dict(r) for r in rows}
     finally:
         conn.close()
+
+
+def fetch_chunk_metadata(db_path: Path, chunk_ids: list[str]) -> dict[str, dict]:
+    """Return {chunk_id: metadata_dict} by bulk-selecting metadata_json from chunks."""
+    if not chunk_ids:
+        return {}
+    from mrag.db.connection import open_connection
+    conn = open_connection(db_path)
+    try:
+        placeholders = ",".join("?" * len(chunk_ids))
+        rows = conn.execute(
+            f"SELECT id, metadata_json FROM chunks WHERE id IN ({placeholders})",
+            chunk_ids,
+        ).fetchall()
+    finally:
+        conn.close()
+    result: dict[str, dict] = {}
+    for row in rows:
+        raw = row["metadata_json"]
+        result[row["id"]] = json.loads(raw) if raw else {}
+    return result
