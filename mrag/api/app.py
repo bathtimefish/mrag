@@ -37,6 +37,10 @@ def create_app(
             provider = OllamaEmbeddingProvider(
                 model=prof.embedding.model,
                 endpoint=prof.embedding.endpoint,
+                max_attempts=prof.embedding.retry.max_attempts,
+                initial_delay=prof.embedding.retry.initial_delay_seconds,
+                backoff_multiplier=prof.embedding.retry.backoff_multiplier,
+                max_delay=prof.embedding.retry.max_delay_seconds,
             )
 
         if _qdrant_client is not None:

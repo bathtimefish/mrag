@@ -768,7 +768,7 @@ def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample
 
     captured_templates: list[str | None] = []
 
-    def fake_generate(chunk_content, full_text, cfg, prompt_template=None):
+    def fake_generate(chunk_content, full_text, cfg, prompt_template=None, on_retry=None):
         captured_templates.append(prompt_template)
         return "context"
 

@@ -506,6 +506,27 @@ augmentation:
 - キーワード検索（FTS5）は常に元のチャンク内容をインデックスします — ベクター検索のみが拡張の影響を受けます
 - `augmentation.strategy` を変更するとプロファイルハッシュが変わるため、次回の `mrag index` で全チャンクが再インデックスされます
 - `strategy: contextual` でのインデックスは遅くなります（1チャンクにつき1回の LLM 呼び出し）
+- 一時的な Ollama タイムアウトや HTTP 5xx エラーはエクスポネンシャルバックオフで自動リトライされます。ログの `↻ retry` 行で状況を確認できます
+- チャンク数が 300 以上のドキュメントはインデックス時に `⚠ large document` 警告を表示します（情報提供のみ、エラーではありません）
+
+**リトライ設定（任意）:**
+
+デフォルトのリトライポリシー（3回試行、初回遅延 2 秒、×2 バックオフ、上限 30 秒）はほとんどの環境で適切です。必要に応じてプロファイルごとに上書きできます：
+
+```yaml
+augmentation:
+  strategy: contextual
+  provider: ollama
+  model: gemma4:e4b
+  endpoint: http://localhost:11434
+  retry:
+    max_attempts: 5
+    initial_delay_seconds: 3.0
+    backoff_multiplier: 2.0
+    max_delay_seconds: 60.0
+```
+
+同じ `retry` ブロックは `embedding` にも設定できます。`retry` の変更はプロファイルハッシュに影響しないため、インデックスの再構築は不要です。
 
 **プロジェクトごとのプロンプトカスタマイズ:**
 

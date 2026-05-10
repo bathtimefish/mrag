@@ -506,6 +506,11 @@ augmentation:
   provider: ollama
   model: gemma4:e4b           # any Ollama-compatible chat/generation model
   endpoint: http://localhost:11434
+  # retry:                    # optional — defaults shown below
+  #   max_attempts: 3
+  #   initial_delay_seconds: 2.0
+  #   backoff_multiplier: 2.0
+  #   max_delay_seconds: 30.0
 ```
 
 ```bash
@@ -539,9 +544,12 @@ mrag reindex
 
 Set `augmentation.strategy: none` in the profile YAML, then run `mrag reindex`. This removes all contextual variants and rebuilds raw variants only.
 
-**Performance note:**
+**Performance and reliability notes:**
 
-Indexing with `strategy: contextual` is significantly slower than `strategy: none` because it calls the LLM once per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.
+- Indexing with `strategy: contextual` is significantly slower than `strategy: none` — one LLM call per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.
+- Transient Ollama timeouts and HTTP 5xx errors are retried automatically (default: 3 attempts, exponential backoff). Watch for `↻ retry` lines in the log.
+- Documents with **300 or more chunks** trigger a `⚠ large document` warning at index time. This is informational — retry is active and the index will proceed. For very large documents, consider raising `augmentation.retry.max_attempts`.
+- The `embedding` section supports the same `retry` block for controlling embedding call retry behaviour.
 
 ---
 

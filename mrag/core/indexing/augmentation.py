@@ -7,9 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-import httpx
-
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
+from mrag.core.ollama_client import ollama_post
 
 if TYPE_CHECKING:
     from mrag.config.profile import AugmentationConfig
@@ -24,38 +23,34 @@ def generate_context(
     full_text: str,
     config: "AugmentationConfig",
     prompt_template: str | None = None,
+    on_retry: Callable[[int, int, Exception], None] | None = None,
 ) -> str:
     """Call LLM to generate a short context description for a single chunk.
 
     prompt_template: format string with {document} and {chunk} placeholders.
     Falls back to DEFAULT_CONTEXT_PROMPT_TEMPLATE when None.
+    on_retry(attempt, max_attempts, exc) is called before each retry sleep.
     """
     template = prompt_template or DEFAULT_CONTEXT_PROMPT_TEMPLATE
     document_excerpt = full_text[:_MAX_DOC_CHARS]
     prompt = template.format(document=document_excerpt, chunk=chunk_content)
-    endpoint = config.endpoint.rstrip("/")
-    try:
-        resp = httpx.post(
-            f"{endpoint}/api/generate",
-            json={"model": config.model, "prompt": prompt, "stream": False},
-            timeout=120.0,
-        )
-        resp.raise_for_status()
-    except httpx.ConnectError as e:
-        raise ConnectionError(
-            f"Cannot connect to Ollama at {endpoint}. "
-            "Is Ollama running? (ollama serve)"
-        ) from e
-    except httpx.HTTPStatusError as e:
-        raise RuntimeError(
-            f"Ollama returned HTTP {e.response.status_code}: {e.response.text}"
-        ) from e
 
-    data = resp.json()
-    context_text = data.get("response", "").strip()
-    if not context_text:
-        raise RuntimeError(f"Empty context response from Ollama: {data}")
-    return context_text
+    def _validate(data: dict) -> None:
+        if not data.get("response", "").strip():
+            raise RuntimeError(f"Empty context response from Ollama: {data}")
+
+    data = ollama_post(
+        config.endpoint,
+        "/api/generate",
+        {"model": config.model, "prompt": prompt, "stream": False},
+        max_attempts=config.retry.max_attempts,
+        initial_delay=config.retry.initial_delay_seconds,
+        backoff_multiplier=config.retry.backoff_multiplier,
+        max_delay=config.retry.max_delay_seconds,
+        validate=_validate,
+        on_retry=on_retry,
+    )
+    return data["response"].strip()
 
 
 def augment_chunks(
@@ -64,19 +59,32 @@ def augment_chunks(
     config: "AugmentationConfig",
     prompt_template: str | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
+    on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None,
 ) -> list[str]:
     """Return a list of context_text strings (one per chunk).
 
     Each string is the LLM-generated context for that chunk.
     prompt_template is forwarded to generate_context; None uses the default.
     on_chunk(current_1based, total) is called after each chunk completes.
-    Raises on first LLM error; callers should catch and handle.
+    on_chunk_retry(chunk_cur, chunk_total, attempt, max_attempts, exc) is called
+      before each retry sleep so callers can log retry events.
+    Raises on LLM error after retries exhausted; callers should catch and handle.
     """
     results = []
     total = len(chunks)
     for i, c in enumerate(chunks):
-        ctx = generate_context(c.content, full_text, config, prompt_template)
+        cur = i + 1
+
+        on_retry: Callable[[int, int, Exception], None] | None = None
+        if on_chunk_retry is not None:
+            def _make_on_retry(chunk_cur: int) -> Callable[[int, int, Exception], None]:
+                def _cb(attempt: int, max_attempts: int, exc: Exception) -> None:
+                    on_chunk_retry(chunk_cur, total, attempt, max_attempts, exc)
+                return _cb
+            on_retry = _make_on_retry(cur)
+
+        ctx = generate_context(c.content, full_text, config, prompt_template, on_retry=on_retry)
         results.append(ctx)
         if on_chunk:
-            on_chunk(i + 1, total)
+            on_chunk(cur, total)
     return results
