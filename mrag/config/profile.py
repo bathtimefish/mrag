@@ -3,7 +3,18 @@ import json
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class ParentConfig(BaseModel):
+    strategy: str = "fixed_size"   # "fixed_size" | "section"
+    max_chars: int = 3000
+
+
+class ChildConfig(BaseModel):
+    strategy: str = "recursive"
+    chunk_size: int = 600
+    overlap: int = 100
 
 
 class ChunkingConfig(BaseModel):
@@ -14,6 +25,9 @@ class ChunkingConfig(BaseModel):
     preserve_heading_path: bool = True
     preserve_tables: bool = True
     preserve_code_blocks: bool = True
+    # v0.3 追加 — parent_child strategy でのみ使用
+    parent: ParentConfig = Field(default_factory=ParentConfig)
+    child: ChildConfig = Field(default_factory=ChildConfig)
 
 
 class RetrievalConfig(BaseModel):
@@ -83,6 +97,24 @@ class ProfileConfig(BaseModel):
     augmentation: AugmentationConfig = Field(default_factory=AugmentationConfig)
     keyword: KeywordConfig = Field(default_factory=KeywordConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
+
+    @model_validator(mode="after")
+    def _validate_parent_child_consistency(self) -> "ProfileConfig":
+        c_is_pc = self.chunking.strategy == "parent_child"
+        r_is_pc = self.retrieval.strategy == "parent_child"
+        if c_is_pc and not r_is_pc:
+            raise ValueError(
+                "chunking.strategy is 'parent_child' but retrieval.strategy is "
+                f"'{self.retrieval.strategy}'. "
+                "Both must be 'parent_child' when using parent-child retrieval."
+            )
+        if r_is_pc and not c_is_pc:
+            raise ValueError(
+                "retrieval.strategy is 'parent_child' but chunking.strategy is "
+                f"'{self.chunking.strategy}'. "
+                "Both must be 'parent_child' when using parent-child retrieval."
+            )
+        return self
 
     def compute_hash(self) -> str:
         """SHA256 of index-affecting fields, used for differential indexing.

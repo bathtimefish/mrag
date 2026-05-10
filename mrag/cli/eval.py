@@ -77,6 +77,24 @@ def _run_search(
                 col_name=col,
                 top_k=retrieval_top_k,
             )
+        elif retrieval_strategy == "parent_child":
+            results = hybrid_search(
+                query_text=query,
+                knowledge_id=config.knowledge_id,
+                profile_name=profile_name,
+                db_path=db_path,
+                embedding_provider=provider,
+                qdrant_client=qdrant_client,
+                col_name=col,
+                dense_top_k=prof.retrieval.dense_top_k,
+                keyword_top_k=prof.retrieval.keyword_top_k,
+                top_k=retrieval_top_k * 3,
+                fusion=prof.retrieval.fusion,
+                tokenizer=tokenizer,
+            )
+            from mrag.core.retrieval.parent_child import resolve_to_parent
+            results = resolve_to_parent(results, db_path)
+            results = results[:retrieval_top_k]
         else:
             results = hybrid_search(
                 query_text=query,

@@ -2,15 +2,34 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mrag.core.chunking.base import ChunkData
 from mrag.core.chunking.block_parser import ATOMIC_TYPES, BLOCK_CODE, BLOCK_TABLE, BlockData
+
+if TYPE_CHECKING:
+    from mrag.core.chunking.base import BaseChunker
 
 
 def _make_section_id(heading_path: list[str]) -> str:
     parts = [re.sub(r"[^\w]+", "-", h.lower()).strip("-") for h in heading_path]
     return "/".join(parts)
+
+
+def _inject_heading_path(
+    metadata: dict[str, Any],
+    heading_path: list[str],
+    start_line: int | None = None,
+    end_line: int | None = None,
+) -> None:
+    metadata["heading_path"] = heading_path
+    metadata["heading_path_text"] = " > ".join(heading_path)
+    metadata["section_title"] = heading_path[-1] if heading_path else ""
+    metadata["section_id"] = _make_section_id(heading_path)
+    if start_line is not None:
+        metadata["section_start_line"] = start_line
+    if end_line is not None:
+        metadata["section_end_line"] = end_line
 
 
 class ChunkAssembler:
@@ -31,7 +50,17 @@ class ChunkAssembler:
         blocks: list[BlockData],
         base_metadata: dict[str, Any] | None = None,
         preserve_heading_path: bool = True,
+        text_chunker: "BaseChunker | None" = None,
     ) -> list[ChunkData]:
+        """Assemble BlockData list into ChunkData list.
+
+        Args:
+            text_chunker: When provided, non-atomic text groups are passed to this
+                chunker for splitting instead of being emitted as a single chunk.
+                This enables any chunking strategy (recursive, parent_child, …) to
+                benefit from block-aware table/code preservation and heading-path
+                metadata injection.
+        """
         base_metadata = base_metadata or {}
         result: list[ChunkData] = []
         group: list[BlockData] = []
@@ -41,9 +70,16 @@ class ChunkAssembler:
             nonlocal chunk_idx, group
             if not group:
                 return
-            chunk = self._group_to_chunk(group, chunk_idx, base_metadata, preserve_heading_path)
-            result.append(chunk)
-            chunk_idx += 1
+            if text_chunker is not None:
+                sub = self._group_to_chunks_via_chunker(
+                    group, chunk_idx, base_metadata, preserve_heading_path, text_chunker
+                )
+                result.extend(sub)
+                chunk_idx += len(sub)
+            else:
+                chunk = self._group_to_chunk(group, chunk_idx, base_metadata, preserve_heading_path)
+                result.append(chunk)
+                chunk_idx += 1
             group = []
 
         for block in blocks:
@@ -73,6 +109,37 @@ class ChunkAssembler:
         flush_group()
         return result
 
+    def _group_to_chunks_via_chunker(
+        self,
+        group: list[BlockData],
+        start_idx: int,
+        base_metadata: dict[str, Any],
+        preserve_heading_path: bool,
+        text_chunker: "BaseChunker",
+    ) -> list[ChunkData]:
+        """Split a text-block group using an inner chunker, then inject heading metadata."""
+        joined = "\n\n".join(b.content for b in group)
+        heading_path = group[-1].heading_path if group else []
+        block_types = sorted({b.block_type for b in group})
+
+        contains_table = any(b.block_type == BLOCK_TABLE for b in group)
+        contains_code = any(b.block_type == BLOCK_CODE for b in group)
+
+        sub_chunks = text_chunker.chunk(joined, base_metadata)
+        for i, sc in enumerate(sub_chunks):
+            sc.chunk_index = start_idx + i
+            sc.metadata.setdefault("block_types", block_types)
+            sc.metadata["contains_table"] = contains_table
+            sc.metadata["contains_code"] = contains_code
+            if preserve_heading_path and heading_path:
+                _inject_heading_path(
+                    sc.metadata,
+                    heading_path,
+                    group[0].start_line,
+                    group[-1].end_line,
+                )
+        return sub_chunks
+
     def _group_to_chunk(
         self,
         group: list[BlockData],
@@ -95,20 +162,10 @@ class ChunkAssembler:
         )
 
         heading_path = group[-1].heading_path if group else []
-        heading_path_text = " > ".join(heading_path) if heading_path else ""
-        section_id = _make_section_id(heading_path) if heading_path else ""
-        section_title = heading_path[-1] if heading_path else ""
 
         metadata: dict[str, Any] = dict(base_metadata)
         if preserve_heading_path and heading_path:
-            metadata.update({
-                "heading_path": heading_path,
-                "heading_path_text": heading_path_text,
-                "section_title": section_title,
-                "section_id": section_id,
-                "section_start_line": group[0].start_line,
-                "section_end_line": group[-1].end_line,
-            })
+            _inject_heading_path(metadata, heading_path, group[0].start_line, group[-1].end_line)
         metadata.update({
             "block_types": block_types,
             "contains_table": contains_table,

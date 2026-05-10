@@ -13,7 +13,8 @@ mrag is a CLI for building and operating small-scale RAG knowledge bases. It pro
 - **Multilingual embeddings** — defaults to `bge-m3` via [Ollama](https://ollama.com) (any Ollama-compatible model works)
 - **Differential indexing** — re-running `mrag index` skips already-indexed documents
 - **Retrieval profiles** — per-project YAML profiles control chunking, embedding, and retrieval strategy independently
-- **Block-aware chunking** — Markdown-aware `block_aware` strategy preserves tables and fenced code blocks as atomic units and attaches heading-path metadata to every chunk; `mrag search` results show `section: H1 > H2 > H3` breadcrumbs
+- **Block-aware chunking** — any chunking strategy can preserve tables, fenced code blocks, and heading-path metadata when `source_format: markdown` is set; `mrag search` results show `section: H1 > H2 > H3` breadcrumbs
+- **Parent-child retrieval** — indexes small child chunks for precision and returns large parent chunks for context; eliminates duplicates automatically
 - **Contextual augmentation** — optional index-time LLM context generation per chunk (Anthropic contextual retrieval pattern); prompt is editable per project via `profiles/context_prompt.txt`
 - **Reranking** — optional CrossEncoder reranking (sentence-transformers) after retrieval; disabled per-request with `--no-rerank`
 - **Retrieval evaluation** — `mrag eval` inspects retrieval quality: scores, duplicates, document distribution, multi-profile diff
@@ -414,35 +415,60 @@ Create additional profiles by placing new YAML files in `profiles/` and indexing
 
 ### Chunking Strategies
 
-The `chunking.strategy` field controls how documents are split into chunks before indexing. Three strategies are available:
+The `chunking.strategy` field controls how documents are split into chunks before indexing. Four strategies are available:
 
 | Strategy | Description |
 |----------|-------------|
 | `recursive` | Splits text recursively by separator hierarchy (paragraphs → line breaks → sentences). Best for plain text and PDF. **Default.** |
 | `markdown_recursive` | Splits first by Markdown heading structure, then applies recursive splitting within each section. Use with `source_format: markdown`. |
 | `block_aware` | Markdown-aware; parses the document into typed blocks (heading, paragraph, table, code block, …) and groups them into chunks. Tables and fenced code blocks are kept intact as atomic units. Heading path is embedded in chunk metadata and shown in search results. Use with `source_format: markdown`. |
+| `parent_child` | Indexes small **child chunks** for precise search and returns large **parent chunks** as context. Eliminates duplicate parent results automatically. Must be paired with `retrieval.strategy: parent_child`. |
 
 **Configuration fields:**
 
 ```yaml
 chunking:
-  strategy: recursive       # recursive | markdown_recursive | block_aware
+  strategy: recursive       # recursive | markdown_recursive | block_aware | parent_child
   source_format: text       # text | markdown
   chunk_size: 800           # target chunk size in characters
   overlap: 120              # overlap between adjacent chunks in characters
-  # --- block_aware options (only active when strategy: block_aware) ---
-  # preserve_heading_path: true   # attach heading breadcrumb to each chunk
-  # preserve_tables: true         # keep tables as atomic units (never split mid-table)
-  # preserve_code_blocks: true    # keep fenced code blocks as atomic units
+  # --- Block-aware options: active for any strategy when source_format: markdown ---
+  preserve_heading_path: true   # attach H1 > H2 > H3 breadcrumb to each chunk
+  preserve_tables: true         # keep tables as atomic units (never split mid-table)
+  preserve_code_blocks: true    # keep fenced code blocks as atomic units
+  # --- parent_child only ---
+  # parent:
+  #   strategy: fixed_size
+  #   max_chars: 3000
+  # child:
+  #   strategy: recursive
+  #   chunk_size: 600
+  #   overlap: 100
 ```
+
+**Block-aware preprocessing (universal)**
+
+Setting `source_format: markdown` and enabling any `preserve_*` option wraps the inner chunker with block-aware preprocessing, regardless of the `strategy` setting. This means `recursive`, `markdown_recursive`, and `parent_child` all benefit from table/code-block preservation and heading-path injection when used with Markdown documents:
+
+```yaml
+chunking:
+  strategy: recursive          # or markdown_recursive, parent_child
+  source_format: markdown      # enables block-aware wrapping
+  preserve_heading_path: true
+  preserve_tables: true
+  preserve_code_blocks: true
+```
+
+The `block_aware` strategy name is kept for backward compatibility and is equivalent to `strategy: recursive` with `source_format: markdown` and all preserve options enabled.
 
 **Choosing a strategy:**
 
 - **`recursive`** — use for plain text and PDF. Works well across all languages including Japanese.
 - **`markdown_recursive`** — use when documents have clear heading structure (e.g. technical docs, wikis exported as Markdown). Preserves section context within each chunk, which tends to improve retrieval precision.
-- **`block_aware`** — use for Markdown documents that contain tables, code blocks, or nested headings. Tables and code blocks are never split across chunk boundaries. Every chunk carries heading-path metadata (`section: H1 > H2 > H3`) which is displayed in `mrag search` results, making it easy to trace a result back to its source section.
+- **`block_aware`** — use for Markdown documents that contain tables, code blocks, or nested headings. Tables and code blocks are never split across chunk boundaries. Every chunk carries heading-path metadata (`section: H1 > H2 > H3`) which is displayed in `mrag search` results.
+- **`parent_child`** — use when you want precise child-chunk matching with richer parent-chunk context in results. Pairs with `retrieval.strategy: parent_child`. Set `dense_top_k` / `keyword_top_k` to at least `top_k × 3` to ensure enough parent candidates after deduplication.
 
-**Search result display with `block_aware`:**
+**Search result display with heading-path metadata:**
 
 ```
 [1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
@@ -454,13 +480,14 @@ chunking:
 
 ### Retrieval Strategies
 
-The `retrieval.strategy` field in a profile controls how search is performed. Three strategies are available:
+The `retrieval.strategy` field in a profile controls how search is performed. Four strategies are available:
 
 | Strategy | Description |
 |----------|-------------|
 | `hybrid` | Combines keyword (BM25) and vector search results using Reciprocal Rank Fusion (RRF). **Default and recommended for most use cases.** |
 | `keyword` | Full-text search only, using SQLite FTS5 BM25 scoring. Fast; no embedding required at query time. |
 | `vector` | Dense vector search only, via Qdrant cosine similarity. Good for semantic/paraphrase queries where exact terms may differ. |
+| `parent_child` | Retrieves child chunks, resolves them to parent chunks, deduplicates, and returns parent-level content. Must be paired with `chunking.strategy: parent_child`. |
 
 **Configuration fields per strategy:**
 
@@ -480,6 +507,7 @@ retrieval:
 - **`hybrid`** — best default. Handles both exact-term queries (e.g. product codes, Japanese keywords) and semantic queries robustly.
 - **`keyword`** — use when queries are expected to contain exact terms from the documents (e.g. part numbers, error codes). Also useful when Ollama / Qdrant is unavailable at query time.
 - **`vector`** — use when queries are phrased differently from the source text (e.g. questions about concepts rather than exact wording). Requires Ollama to be running at query time.
+- **`parent_child`** — use with `chunking.strategy: parent_child` profiles. Searches over small child chunks for precision, then returns deduplicated parent chunks for richer context. Set `dense_top_k` / `keyword_top_k` to at least `top_k × 3` (e.g. `top_k: 8` → `dense_top_k: 60`) to compensate for deduplication reducing the candidate pool.
 
 > **Note:** The strategy is set per **profile**, not globally. You can maintain multiple profiles with different strategies and switch between them at index/query time with `--profile <name>`.
 

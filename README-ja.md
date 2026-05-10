@@ -13,7 +13,8 @@ mragは小規模なRAGナレッジベースを作成、運用するためのCLI�
 - **多言語 Embedding** — デフォルトで [Ollama](https://ollama.com) 経由の `bge-m3` を使用（Ollama 対応モデルであれば差し替え可能）
 - **差分インデックス** — `mrag index` を再実行しても、既インデックス済みのドキュメントはスキップ
 - **検索プロファイル** — プロジェクトごとの YAML ファイルでチャンキング・Embedding・検索戦略を独立して管理
-- **ブロック認識チャンキング** — Markdown 構造を認識する `block_aware` ストラテジー。テーブルとコードブロックをアトミック単位として保護し、見出しパスのメタデータを各チャンクに付与。`mrag search` の結果に `section: H1 > H2 > H3` パンくず表示を追加
+- **ブロック認識チャンキング** — `source_format: markdown` を設定すると、任意のチャンキングストラテジーでテーブル・コードブロックの保護と見出しパスのメタデータ付与が有効になる。`mrag search` の結果に `section: H1 > H2 > H3` パンくず表示を追加
+- **Parent-Child 検索** — 小さなチャイルドチャンクで精度の高い検索を行い、大きなペアレントチャンクをコンテキストとして返す。重複するペアレントを自動的に除去
 - **コンテキスト拡張（Contextual Augmentation）** — インデックス時に Ollama LLM でチャンクごとのコンテキスト文を生成（Anthropic contextual retrieval パターン）。プロジェクトごとに `profiles/context_prompt.txt` でプロンプトをカスタマイズ可能
 - **リランキング** — 検索後に CrossEncoder（sentence-transformers）による再スコアリングをオプションで適用。`--no-rerank` でリクエスト単位の無効化も可能
 - **検索品質評価** — `mrag eval` でスコア分布・重複チャンク・ドキュメント分布・マルチプロファイル比較が可能
@@ -415,35 +416,60 @@ keyword:
 
 ### チャンキングストラテジー
 
-`chunking.strategy` フィールドで、インデックス前にドキュメントをどのように分割するかを制御します。3種類のストラテジーが使用できます：
+`chunking.strategy` フィールドで、インデックス前にドキュメントをどのように分割するかを制御します。4種類のストラテジーが使用できます：
 
 | ストラテジー | 説明 |
 |------------|------|
 | `recursive` | 段落 → 改行 → 文のような区切り文字の階層で再帰的に分割。プレーンテキストおよび PDF に最適。**デフォルト。** |
 | `markdown_recursive` | まず Markdown の見出し構造で分割し、各セクション内でさらに再帰分割。`source_format: markdown` と組み合わせて使用。 |
 | `block_aware` | Markdown ブロック認識型。ドキュメントを見出し・段落・テーブル・コードブロック等の型付きブロックに分解してチャンクを組み立てる。テーブルとコードブロックはアトミック単位として保護（途中で分割しない）。見出しパスをチャンクメタデータに付与し、検索結果に `section:` 表示を追加。`source_format: markdown` と組み合わせて使用。 |
+| `parent_child` | 精度の高い検索のために小さな**チャイルドチャンク**をインデックスし、コンテキストとして大きな**ペアレントチャンク**を返す。重複するペアレントを自動除去。`retrieval.strategy: parent_child` と組み合わせて使用。 |
 
 **設定フィールド:**
 
 ```yaml
 chunking:
-  strategy: recursive       # recursive | markdown_recursive | block_aware
+  strategy: recursive       # recursive | markdown_recursive | block_aware | parent_child
   source_format: text       # text | markdown
   chunk_size: 800           # チャンクの目標文字数
   overlap: 120              # 隣接チャンク間のオーバーラップ文字数
-  # --- block_aware オプション（strategy: block_aware 時のみ有効）---
-  # preserve_heading_path: true   # 見出しパンくずをチャンクに付与
-  # preserve_tables: true         # テーブルをアトミック単位として保護
-  # preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護
+  # --- ブロック認識オプション: source_format: markdown 時に任意のストラテジーで有効 ---
+  preserve_heading_path: true   # 見出しパンくずをチャンクに付与
+  preserve_tables: true         # テーブルをアトミック単位として保護
+  preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護
+  # --- parent_child のみ ---
+  # parent:
+  #   strategy: fixed_size
+  #   max_chars: 3000
+  # child:
+  #   strategy: recursive
+  #   chunk_size: 600
+  #   overlap: 100
 ```
+
+**ブロック認識前処理（全ストラテジーで使用可能）**
+
+`source_format: markdown` を設定し、いずれかの `preserve_*` オプションを有効にすると、`strategy` の設定に関わらず内側のチャンカーにブロック認識前処理が適用されます。つまり `recursive`・`markdown_recursive`・`parent_child` のいずれも、Markdown ドキュメントで使用する際にテーブル/コードブロック保護と見出しパス付与の恩恵を受けられます：
+
+```yaml
+chunking:
+  strategy: recursive          # または markdown_recursive, parent_child
+  source_format: markdown      # ブロック認識ラッピングを有効化
+  preserve_heading_path: true
+  preserve_tables: true
+  preserve_code_blocks: true
+```
+
+`block_aware` ストラテジー名は後方互換のために残されており、`strategy: recursive` + `source_format: markdown` + 全 preserve オプション有効と同等です。
 
 **ストラテジーの選び方:**
 
 - **`recursive`** — プレーンテキストや PDF に使用。日本語を含む全言語で安定して動作します。
 - **`markdown_recursive`** — 見出し構造が明確なドキュメント（技術仕様書、Markdown でエクスポートした Wiki など）に使用。セクションのコンテキストをチャンク内に保持するため、検索精度が向上しやすいです。
 - **`block_aware`** — テーブル・コードブロック・ネストされた見出しを含む Markdown ドキュメントに使用。テーブルとコードブロックはチャンク境界をまたいで分割されることがありません。すべてのチャンクに見出しパスメタデータが付与され、`mrag search` の結果に `section: H1 > H2 > H3` パンくずが表示されます。
+- **`parent_child`** — 精度の高いチャイルドチャンクマッチングと、より豊富なペアレントチャンクのコンテキストが必要な場合に使用。`retrieval.strategy: parent_child` と組み合わせます。重複除去後のペアレント候補を十分確保するため `dense_top_k` / `keyword_top_k` は `top_k × 3` 以上に設定してください。
 
-**`block_aware` での検索結果表示例:**
+**見出しパスメタデータを持つ検索結果の表示例:**
 
 ```
 [1] score=0.8421  doc=manual.md  chunk=a3f2b1c4...
@@ -455,13 +481,14 @@ chunking:
 
 ### 検索ストラテジー
 
-プロファイルの `retrieval.strategy` フィールドで検索方式を切り替えます。3種類のストラテジーが使用できます：
+プロファイルの `retrieval.strategy` フィールドで検索方式を切り替えます。4種類のストラテジーが使用できます：
 
 | ストラテジー | 説明 |
 |------------|------|
 | `hybrid` | キーワード（BM25）とベクター検索の結果を Reciprocal Rank Fusion（RRF）で統合。**ほとんどのユースケースで推奨するデフォルト設定。** |
 | `keyword` | SQLite FTS5 BM25 によるフルテキスト検索のみ。高速で、クエリ時に Embedding 不要。 |
 | `vector` | Qdrant コサイン類似度によるベクター検索のみ。クエリと文書の表現が異なる場合（言い換え・意味検索）に強い。 |
+| `parent_child` | チャイルドチャンクを検索し、ペアレントチャンクに解決して重複除去した上で返す。`chunking.strategy: parent_child` と組み合わせて使用。 |
 
 **ストラテジーごとの設定フィールド:**
 
@@ -481,6 +508,7 @@ retrieval:
 - **`hybrid`** — ほとんどの場面でベストな選択。製品コードや日本語キーワードのような完全一致クエリと、意味的なクエリの両方に対して安定した結果を返します。
 - **`keyword`** — クエリが文書中の正確な表現を含む場合に適しています（型番、エラーコードなど）。Ollama / Qdrant が利用できない環境でも動作します。
 - **`vector`** — クエリが文書の表現と異なる言い回しの場合に有効（概念に関する質問など）。クエリ時に Ollama が起動している必要があります。
+- **`parent_child`** — `chunking.strategy: parent_child` プロファイルと組み合わせて使用。小さなチャイルドチャンクで精度の高い検索を行い、重複除去されたペアレントチャンクをコンテキストとして返す。重複除去後に十分なペアレント候補を確保するため `dense_top_k` / `keyword_top_k` は `top_k × 3` 以上（例：`top_k: 8` → `dense_top_k: 60`）に設定してください。
 
 > **注意:** ストラテジーはグローバル設定ではなく**プロファイル単位**で設定します。異なるストラテジーを持つ複数のプロファイルを用意し、`--profile <name>` で切り替えることができます。
 

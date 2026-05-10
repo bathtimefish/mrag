@@ -603,6 +603,101 @@ mrag search "<focused query>" --top-k 5
 
 ---
 
+## Skill 14 — Use parent-child retrieval
+
+Parent-child retrieval indexes small **child chunks** for precise search and returns large **parent chunks** as context. This gives better retrieval accuracy than large chunks while providing richer context than small chunks.
+
+**Preconditions:**
+- Inside the project directory
+- `mrag index` has NOT been run yet (or run `mrag reindex` after adding the profile)
+- Ollama is running with `bge-m3` pulled
+
+**Create the profile:**
+
+```bash
+cat > profiles/parent_child.yaml << 'EOF'
+name: parent_child
+
+chunking:
+  strategy: parent_child
+  source_format: markdown      # enables block-aware wrapping for child chunks
+  preserve_heading_path: true  # optional: attach section breadcrumbs
+  preserve_tables: true        # optional: keep tables intact in child chunks
+  preserve_code_blocks: true   # optional: keep code blocks intact in child chunks
+  parent:
+    strategy: fixed_size
+    max_chars: 3000
+  child:
+    strategy: recursive
+    chunk_size: 600
+    overlap: 100
+
+embedding:
+  provider: ollama
+  model: bge-m3
+  endpoint: http://localhost:11434
+
+retrieval:
+  strategy: parent_child
+  top_k: 8
+  dense_top_k: 60   # must be >= top_k * 3 (see note below)
+  keyword_top_k: 60
+  fusion: rrf
+
+augmentation:
+  strategy: none
+EOF
+```
+
+**Index and search:**
+
+```bash
+mrag index --profile parent_child
+mrag search "your query" --profile parent_child
+```
+
+**`chunking.strategy` and `retrieval.strategy` must always match:**
+
+Setting only one to `parent_child` will cause a profile validation error at runtime:
+
+```
+Error: chunking.strategy is 'parent_child' but retrieval.strategy is 'hybrid'.
+       Both must be 'parent_child' when using parent-child retrieval.
+```
+
+**Why `dense_top_k` must be ≥ `top_k × 3`:**
+
+The `parent_child` search fetches child chunks, then resolves them to parent chunks with deduplication. Because multiple child chunks can map to the same parent, the effective number of distinct parent results after dedup may be significantly less than the raw child count. To ensure the final `top_k` parent results are available:
+
+```
+dense_top_k >= top_k * 3   (minimum — go higher for better coverage)
+keyword_top_k >= top_k * 3
+```
+
+With `top_k: 8`, set `dense_top_k: 60` and `keyword_top_k: 60`. Using the defaults (`dense_top_k: 20`) with `top_k=8` will result in fewer than 8 parent results in practice.
+
+**Storage overhead:**
+
+Parent chunk content is stored in full in the `chunks` table, while child chunks store the same content in smaller pieces. With `parent_max_chars=3000` and 4 child chunks per parent, the `chunks` table is approximately 1.8× larger than a standard profile. Plan storage accordingly for large corpora.
+
+**Reranking with parent-child:**
+
+If `rerank.enabled: true`, the reranker evaluates **parent chunk content** (not child chunks). This is beneficial — the reranker scores richer context rather than fragments. Execution order:
+
+```
+hybrid_search (child level) → resolve_to_parent → reranker → final top_k
+```
+
+**Debugging child-level results:**
+
+Use `--strategy keyword` or `--strategy vector` with a parent_child profile to see child-level results without parent resolution. Useful for verifying chunking behaviour:
+
+```bash
+mrag eval "your query" --profile parent_child --strategy keyword
+```
+
+---
+
 ## Quick decision guide
 
 ```
@@ -625,7 +720,11 @@ Contextual indexing too slow?                               →  use a faster/sm
 Want to tune the LLM augmentation prompt?                   →  edit profiles/context_prompt.txt; run mrag reindex
 Reranker ImportError?                                       →  uv pip install -e ".[reranker]"
 mrag not found after uv install?                            →  use .venv/bin/mrag or activate the venv
-Documents have tables or code blocks that get split?        →  use strategy: block_aware + source_format: markdown; mrag reindex
-Want heading breadcrumbs in search results?                 →  use strategy: block_aware; results will show "section: H1 > H2 > H3"
+Want richer context in retrieval results?                   →  use strategy: parent_child (see Skill 14)
+parent_child profile validation error?                      →  chunking.strategy and retrieval.strategy must both be 'parent_child'
+parent_child returning fewer results than top_k?            →  increase dense_top_k and keyword_top_k to >= top_k * 3
+Documents have tables or code blocks that get split?        →  set source_format: markdown + preserve_tables/preserve_code_blocks: true; works with any strategy; mrag reindex
+Want heading breadcrumbs in search results?                 →  set source_format: markdown + preserve_heading_path: true; works with any strategy; results show "section: H1 > H2 > H3"
 block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata
+Want block-aware options with parent_child?                 →  add source_format: markdown + preserve_* flags to a parent_child profile; child chunks get block-aware preprocessing
 ```

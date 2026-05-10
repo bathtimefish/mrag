@@ -97,6 +97,24 @@ def search(
                     col_name=col,
                     top_k=retrieval_top_k,
                 )
+            elif retrieval_strategy == "parent_child":
+                results = hybrid_search(
+                    query_text=query,
+                    knowledge_id=config.knowledge_id,
+                    profile_name=profile_name,
+                    db_path=db_path,
+                    embedding_provider=provider,
+                    qdrant_client=qdrant_client,
+                    col_name=col,
+                    dense_top_k=prof.retrieval.dense_top_k,
+                    keyword_top_k=prof.retrieval.keyword_top_k,
+                    top_k=retrieval_top_k * 3,  # parent 解決後に絞るため多めに取得
+                    fusion=prof.retrieval.fusion,
+                    tokenizer=tokenizer,
+                )
+                from mrag.core.retrieval.parent_child import resolve_to_parent
+                results = resolve_to_parent(results, db_path)
+                results = results[:retrieval_top_k]
             else:  # hybrid (default)
                 results = hybrid_search(
                     query_text=query,
@@ -143,10 +161,19 @@ def search(
         filename = filename_map.get(r.document_id, r.document_id[:8])
         preview = r.content[:200].replace("\n", " ")
         section_text = r.metadata.get("heading_path_text", "")
-        console.print(
-            f"[bold]\\[{i}][/bold] score=[cyan]{r.score:.4f}[/cyan]  "
-            f"doc=[green]{filename}[/green]  chunk=[dim]{r.chunk_id[:8]}...[/dim]"
-        )
+        retrieval_mode = r.metadata.get("retrieval_mode", "")
+        if retrieval_mode == "parent_child":
+            child_id = r.metadata.get("retrieved_child_id", "")[:8]
+            console.print(
+                f"[bold]\\[{i}][/bold] score=[cyan]{r.score:.4f}[/cyan]  "
+                f"doc=[green]{filename}[/green]  "
+                f"[dim]child={child_id}...  →  parent={r.chunk_id[:8]}...[/dim]"
+            )
+        else:
+            console.print(
+                f"[bold]\\[{i}][/bold] score=[cyan]{r.score:.4f}[/cyan]  "
+                f"doc=[green]{filename}[/green]  chunk=[dim]{r.chunk_id[:8]}...[/dim]"
+            )
         if section_text:
             console.print(f"    [dim]section:[/dim] {section_text}")
         console.print(f"    {preview}")

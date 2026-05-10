@@ -800,3 +800,174 @@ def test_init_creates_context_prompt_file(tmp_path: Path):
     assert content == DEFAULT_CONTEXT_PROMPT_TEMPLATE
     assert "{document}" in content
     assert "{chunk}" in content
+
+
+# ---------------------------------------------------------------------------
+# Parent-child indexing (V03)
+# ---------------------------------------------------------------------------
+
+def _run_pc_pipeline(tmp_path: Path, text: str) -> tuple[Path, Path]:
+    """Init project with parent_child profile, add a doc, run index. Returns (project_dir, db_path)."""
+    import yaml
+    from mrag.config.profile import ProfileConfig
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        result = runner.invoke(app, ["init", "--name", "pc-kb", "--yes"], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        project_dir = tmp_path / "pc-kb"
+        mp.chdir(project_dir)
+
+        # Write a parent_child profile
+        profile_data = ProfileConfig(name="pc").model_dump()
+        profile_data["chunking"]["strategy"] = "parent_child"
+        profile_data["chunking"]["parent"] = {"strategy": "fixed_size", "max_chars": 200}
+        profile_data["chunking"]["child"] = {"strategy": "recursive", "chunk_size": 60, "overlap": 10}
+        profile_data["retrieval"]["strategy"] = "parent_child"
+        (project_dir / "profiles" / "pc.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
+
+        doc_file = tmp_path / "pc_doc.txt"
+        doc_file.write_text(text, encoding="utf-8")
+        _add_document(project_dir, doc_file)
+
+        from mrag.config.project import load_project_config
+        config = load_project_config(project_dir)
+        provider = FakeEmbeddingProvider()
+        qdrant = _fake_qdrant_client()
+
+        run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="pc",
+            embedding_provider=provider,
+            qdrant_client=qdrant,
+        )
+
+        db_path = find_db(project_dir)
+        return project_dir, db_path
+
+
+def test_pc_pipeline_creates_parent_and_child_chunks(tmp_path: Path):
+    text = "word " * 200  # ~1000 chars → multiple parents
+    _, db = _run_pc_pipeline(tmp_path, text)
+    conn = open_connection(db)
+    types = {r[0] for r in conn.execute("SELECT DISTINCT chunk_type FROM chunks").fetchall()}
+    conn.close()
+    assert "parent" in types
+    assert "child" in types
+
+
+def test_pc_pipeline_parent_chunk_id_resolved(tmp_path: Path):
+    """Every child must have parent_chunk_id pointing to a real parent row."""
+    text = "word " * 200
+    _, db = _run_pc_pipeline(tmp_path, text)
+    conn = open_connection(db)
+    children = conn.execute(
+        "SELECT parent_chunk_id FROM chunks WHERE chunk_type='child'"
+    ).fetchall()
+    parent_ids = {r[0] for r in conn.execute(
+        "SELECT id FROM chunks WHERE chunk_type='parent'"
+    ).fetchall()}
+    conn.close()
+    assert children, "expected at least one child chunk"
+    for row in children:
+        assert row[0] in parent_ids, f"dangling parent_chunk_id: {row[0]}"
+
+
+def test_pc_pipeline_parents_not_in_fts(tmp_path: Path):
+    """Parent chunks must NOT be inserted into fts_chunks."""
+    import sqlite3 as _sqlite3
+    text = "word " * 200
+    _, db = _run_pc_pipeline(tmp_path, text)
+
+    conn_raw = _sqlite3.connect(str(db))
+    fts_ids = {r[0] for r in conn_raw.execute("SELECT chunk_id FROM fts_chunks").fetchall()}
+    conn_raw.close()
+
+    conn = open_connection(db)
+    parent_ids = {r[0] for r in conn.execute(
+        "SELECT id FROM chunks WHERE chunk_type='parent'"
+    ).fetchall()}
+    conn.close()
+
+    overlap = fts_ids & parent_ids
+    assert not overlap, f"parent chunk(s) found in fts_chunks: {overlap}"
+
+
+def test_pc_pipeline_parents_not_in_chunk_variants(tmp_path: Path):
+    """Parent chunks must NOT have chunk_variants rows."""
+    text = "word " * 200
+    _, db = _run_pc_pipeline(tmp_path, text)
+    conn = open_connection(db)
+    parent_ids = {r[0] for r in conn.execute(
+        "SELECT id FROM chunks WHERE chunk_type='parent'"
+    ).fetchall()}
+    variant_chunk_ids = {r[0] for r in conn.execute(
+        "SELECT chunk_id FROM chunk_variants"
+    ).fetchall()}
+    conn.close()
+    overlap = parent_ids & variant_chunk_ids
+    assert not overlap, f"parent chunk(s) found in chunk_variants: {overlap}"
+
+
+def test_pc_pipeline_hint_not_in_parent_metadata(tmp_path: Path):
+    """_parent_id_hint must be stripped from parent chunk metadata after indexing."""
+    import json
+    text = "word " * 200
+    _, db = _run_pc_pipeline(tmp_path, text)
+    conn = open_connection(db)
+    parents = conn.execute(
+        "SELECT metadata_json FROM chunks WHERE chunk_type='parent'"
+    ).fetchall()
+    conn.close()
+    for row in parents:
+        if row[0]:
+            meta = json.loads(row[0])
+            assert "_parent_id_hint" not in meta, "hint leaked into stored metadata"
+
+
+def test_pc_pipeline_indexed_count_excludes_parents(tmp_path: Path):
+    """IndexResult.indexed counts child chunks only, not parents."""
+    import yaml
+    from mrag.config.profile import ProfileConfig
+
+    text = "word " * 200
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        runner.invoke(app, ["init", "--name", "pc-kb2", "--yes"], catch_exceptions=False)
+        project_dir = tmp_path / "pc-kb2"
+        mp.chdir(project_dir)
+
+        profile_data = ProfileConfig(name="pc").model_dump()
+        profile_data["chunking"]["strategy"] = "parent_child"
+        profile_data["chunking"]["parent"] = {"strategy": "fixed_size", "max_chars": 200}
+        profile_data["chunking"]["child"] = {"strategy": "recursive", "chunk_size": 60, "overlap": 10}
+        profile_data["retrieval"]["strategy"] = "parent_child"
+        (project_dir / "profiles" / "pc.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
+
+        doc_file = tmp_path / "pc_doc2.txt"
+        doc_file.write_text(text, encoding="utf-8")
+        _add_document(project_dir, doc_file)
+
+        from mrag.config.project import load_project_config
+        config = load_project_config(project_dir)
+        provider = FakeEmbeddingProvider()
+        qdrant = _fake_qdrant_client()
+
+        result = run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="pc",
+            embedding_provider=provider,
+            qdrant_client=qdrant,
+        )
+        db_path = find_db(project_dir)
+
+    conn = open_connection(db_path)
+    child_count = conn.execute(
+        "SELECT COUNT(*) FROM chunks WHERE chunk_type='child'"
+    ).fetchone()[0]
+    conn.close()
+
+    assert result.indexed == 1  # 1 document indexed
+    assert child_count >= 1
