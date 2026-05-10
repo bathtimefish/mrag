@@ -505,6 +505,27 @@ This follows the [Anthropic contextual retrieval](https://www.anthropic.com/news
 - Keyword search (FTS5) always indexes original chunk content — augmentation only affects vector embeddings
 - Changing `augmentation.strategy` invalidates the index; run `mrag reindex` to rebuild
 - Indexing with `strategy: contextual` is slower: one LLM call per chunk
+- Transient Ollama timeouts and HTTP 5xx errors are automatically retried with exponential backoff; monitor logs for `↻ retry` lines
+- Documents with 300 or more chunks print a `⚠ large document` warning at index time — this is informational, not an error
+
+**Retry configuration (optional):**
+
+The default retry policy (3 attempts, 2 s initial delay, ×2 backoff, 30 s cap) works for most setups. Override per profile if needed:
+
+```yaml
+augmentation:
+  strategy: contextual
+  provider: ollama
+  model: gemma4:e4b
+  endpoint: http://localhost:11434
+  retry:
+    max_attempts: 5
+    initial_delay_seconds: 3.0
+    backoff_multiplier: 2.0
+    max_delay_seconds: 60.0
+```
+
+The same `retry` block is available under `embedding` for controlling retry behaviour of embedding calls. Changing `retry` settings does not invalidate the index.
 
 **Per-project prompt customisation:**
 

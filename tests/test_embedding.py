@@ -129,7 +129,7 @@ class TestOllamaEmbeddingProvider:
 
     def test_http_status_error_raises_runtime_error(self):
         import httpx as _httpx
-        prov = self._provider()
+        prov = OllamaEmbeddingProvider(model="nomic-embed-text", max_attempts=1)
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_resp.text = "Internal Server Error"
@@ -137,7 +137,7 @@ class TestOllamaEmbeddingProvider:
             "httpx.post",
             side_effect=_httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp),
         ):
-            with pytest.raises(RuntimeError, match="Ollama returned HTTP"):
+            with pytest.raises(RuntimeError, match="failed after 1 attempt"):
                 prov.embed(["text"])
 
     def test_ensure_model_registered(self, tmp_path: Path):

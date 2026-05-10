@@ -176,11 +176,20 @@ augmentation:
   provider: ollama
   model: gemma4:e4b      # generation model — separate from embedding.model
   endpoint: http://localhost:11434
+  retry:                 # optional — these are the defaults
+    max_attempts: 3
+    initial_delay_seconds: 2.0
+    backoff_multiplier: 2.0
+    max_delay_seconds: 30.0
 ```
+
+The same `retry` block is available under `embedding`. Changing `retry` values does **not** invalidate the index (excluded from `profile_hash`).
 
 **Key behaviour:**
 - `strategy: none` (default) — no LLM call, indexing runs at normal speed
 - `strategy: contextual` — one Ollama `/api/generate` call per chunk; expect slower indexing depending on model and document size
+- Transient Ollama timeouts and HTTP 5xx errors are retried automatically; watch for `↻ retry` lines in the index log
+- Documents with ≥ 300 chunks print a `⚠ large document` warning at the start of augmentation — this is informational
 - FTS5 keyword index always stores the original chunk content — keyword search is unaffected by augmentation
 - `variant_type` in the database is `contextual` (vs `raw` for non-augmented chunks)
 - Changing `augmentation.strategy` changes the `profile_hash`, which triggers full re-indexing on the next `mrag index`
@@ -272,6 +281,8 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | Indexing fails with connection error | Ollama not running or embedding model not pulled | `ollama serve` + `ollama pull bge-m3` |
 | Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e4b` (or whatever `augmentation.model` is set to) |
 | `mrag index` very slow | `augmentation.strategy: contextual` calls LLM once per chunk | Expected; use `strategy: none` to skip augmentation |
+| Contextual indexing fails on large documents | Many sequential LLM calls increase exposure to transient Ollama errors | Retry is automatic (3 attempts); increase `augmentation.retry.max_attempts` for very large documents |
+| Log shows many `↻ retry` lines | Ollama under load or model stalling | Retry is working; if exhausted, reduce concurrency or switch to a more stable model |
 | Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |

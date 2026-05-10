@@ -168,6 +168,7 @@ def _index_document(
     tokenizer: str = "trigram",
     on_doc_start: Callable[[int], None] | None = None,
     on_chunk_augmented: Callable[[int, int], None] | None = None,
+    on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None,
 ) -> None:
     # 1. Read extracted content
     source_format = profile.chunking.source_format
@@ -200,7 +201,8 @@ def _index_document(
         from mrag.core.indexing.augmentation import augment_chunks
         prompt_template = _load_context_prompt(project_dir)
         ctx_list = augment_chunks(chunks, text, profile.augmentation, prompt_template,
-                                  on_chunk=on_chunk_augmented)
+                                  on_chunk=on_chunk_augmented,
+                                  on_chunk_retry=on_chunk_retry)
         for i, ctx in enumerate(ctx_list):
             context_texts[i] = ctx
             contents_for_embedding[i] = ctx + "\n\n" + chunks[i].content
@@ -356,6 +358,10 @@ def run_index(
         embedding_provider = OllamaEmbeddingProvider(
             model=profile.embedding.model,
             endpoint=profile.embedding.endpoint,
+            max_attempts=profile.embedding.retry.max_attempts,
+            initial_delay=profile.embedding.retry.initial_delay_seconds,
+            backoff_multiplier=profile.embedding.retry.backoff_multiplier,
+            max_delay=profile.embedding.retry.max_delay_seconds,
         )
 
     # Probe: discover dimension, register model, ensure collection
@@ -397,6 +403,7 @@ def run_index(
 
         on_doc_start: Callable[[int], None] | None = None
         on_chunk_augmented: Callable[[int, int], None] | None = None
+        on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None
         if console:
             strategy = profile.augmentation.strategy
 
@@ -406,6 +413,12 @@ def run_index(
                     console.print(
                         f"[dim]{_now_ts()}[/dim]         {chunk_count} chunks → {next_step}"
                     )
+                    if strategy == "contextual" and chunk_count >= 300:
+                        console.print(
+                            f"[dim]{_now_ts()}[/dim]         [yellow]⚠ large document "
+                            f"({chunk_count} chunks) — contextual augmentation may take a long time; "
+                            f"retry is enabled[/yellow]"
+                        )
                 return _cb
             on_doc_start = _make_start_cb(filename)
 
@@ -417,6 +430,18 @@ def run_index(
                         )
                     return _cb
                 on_chunk_augmented = _make_chunk_cb(filename)
+
+                def _make_retry_cb(fn: str) -> Callable[[int, int, int, int, Exception], None]:
+                    def _cb(cur: int, tot: int, attempt: int, max_attempts: int, exc: Exception) -> None:
+                        reason = str(exc)[:120]
+                        console.print(
+                            f"[dim]{_now_ts()}[/dim]         [yellow]↻ retry[/yellow]  "
+                            f"[cyan]{cur:3d}[/cyan]/[cyan]{tot}[/cyan]  "
+                            f"attempt [cyan]{attempt}[/cyan]/[cyan]{max_attempts}[/cyan]  "
+                            f"[dim]{reason}[/dim]  [dim]{fn}[/dim]"
+                        )
+                    return _cb
+                on_chunk_retry = _make_retry_cb(filename)
 
         try:
             _index_document(
@@ -433,6 +458,7 @@ def run_index(
                 tokenizer=tokenizer,
                 on_doc_start=on_doc_start,
                 on_chunk_augmented=on_chunk_augmented,
+                on_chunk_retry=on_chunk_retry,
             )
             _set_indexed_status(db_path, doc["id"], profile_name)
             if console:

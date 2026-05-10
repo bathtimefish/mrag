@@ -21,6 +21,13 @@ class RetrievalConfig(BaseModel):
     fusion: str = "rrf"
 
 
+class OllamaRetryConfig(BaseModel):
+    max_attempts: int = 3
+    initial_delay_seconds: float = 2.0
+    backoff_multiplier: float = 2.0
+    max_delay_seconds: float = 30.0
+
+
 class EmbeddingCacheConfig(BaseModel):
     enabled: bool = False
 
@@ -30,6 +37,7 @@ class EmbeddingConfig(BaseModel):
     model: str = "bge-m3"
     endpoint: str = "http://localhost:11434"
     cache: EmbeddingCacheConfig = Field(default_factory=EmbeddingCacheConfig)
+    retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
 
 
 class AugmentationConfig(BaseModel):
@@ -37,6 +45,7 @@ class AugmentationConfig(BaseModel):
     provider: str = "ollama"
     model: str = "gemma4:e4b"
     endpoint: str = "http://localhost:11434"
+    retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
 
 
 class KeywordConfig(BaseModel):
@@ -80,9 +89,9 @@ class ProfileConfig(BaseModel):
         """
         relevant = {
             "chunking": self.chunking.model_dump(),
-            "embedding": self.embedding.model_dump(),
+            "embedding": self.embedding.model_dump(exclude={"retry"}),
             "retrieval": self.retrieval.model_dump(),
-            "augmentation": self.augmentation.model_dump(),
+            "augmentation": self.augmentation.model_dump(exclude={"retry"}),
             "keyword": self.keyword.model_dump(),
         }
         canonical = json.dumps(relevant, sort_keys=True, ensure_ascii=False)
