@@ -60,18 +60,20 @@ def augment_chunks(
     prompt_template: str | None = None,
     on_chunk: Callable[[int, int], None] | None = None,
     on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None,
-) -> list[str]:
-    """Return a list of context_text strings (one per chunk).
+    on_chunk_fallback: Callable[[int, int, Exception], None] | None = None,
+) -> list[str | None]:
+    """Return a list of context_text strings (one per chunk), or None for fallback chunks.
 
-    Each string is the LLM-generated context for that chunk.
-    prompt_template is forwarded to generate_context; None uses the default.
-    on_chunk(current_1based, total) is called after each chunk completes.
-    on_chunk_retry(chunk_cur, chunk_total, attempt, max_attempts, exc) is called
-      before each retry sleep so callers can log retry events.
-    Raises on LLM error after retries exhausted; callers should catch and handle.
+    When failure_policy.mode is 'raw_fallback', failed chunks yield None instead of raising.
+    When failure_policy.mode is 'fail_document', failed chunks raise (original behavior).
+    on_chunk(current_1based, total) is called after each chunk completes or falls back.
+    on_chunk_retry(chunk_cur, chunk_total, attempt, max_attempts, exc) is called before each retry.
+    on_chunk_fallback(chunk_cur_1based, total, exc) is called when a chunk falls back to raw.
     """
-    results = []
+    results: list[str | None] = []
     total = len(chunks)
+    raw_fallback = config.failure_policy.mode == "raw_fallback"
+
     for i, c in enumerate(chunks):
         cur = i + 1
 
@@ -83,8 +85,21 @@ def augment_chunks(
                 return _cb
             on_retry = _make_on_retry(cur)
 
-        ctx = generate_context(c.content, full_text, config, prompt_template, on_retry=on_retry)
-        results.append(ctx)
+        try:
+            ctx = generate_context(c.content, full_text, config, prompt_template, on_retry=on_retry)
+            results.append(ctx)
+        except RuntimeError as exc:
+            # RuntimeError covers all retry-exhausted cases: timeout, empty response, HTTP 5xx/4xx.
+            # ConnectionError (Ollama not running) is intentionally not caught here — it should
+            # propagate and fail the document so the user knows Ollama is unreachable.
+            if raw_fallback:
+                results.append(None)
+                if on_chunk_fallback is not None:
+                    on_chunk_fallback(cur, total, exc)
+            else:
+                raise
+
         if on_chunk:
             on_chunk(cur, total)
+
     return results

@@ -21,6 +21,22 @@ import httpx
 _RETRYABLE_HTTP_CODES = {500, 502, 503, 504}
 
 
+def probe_connection(endpoint: str, timeout: float = 10.0) -> None:
+    """Verify the Ollama endpoint is reachable. Raises ConnectionError if not.
+
+    Uses GET /api/version — a lightweight read-only endpoint that does not
+    require a model to be loaded.
+    """
+    url = f"{endpoint.rstrip('/')}/api/version"
+    try:
+        httpx.get(url, timeout=timeout)
+    except httpx.ConnectError as exc:
+        raise ConnectionError(
+            f"Cannot connect to Ollama at {endpoint}. "
+            "Is Ollama running? (ollama serve)"
+        ) from exc
+
+
 def ollama_post(
     endpoint: str,
     path: str,

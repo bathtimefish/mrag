@@ -243,9 +243,11 @@ augmentation:
     initial_delay_seconds: 2.0
     backoff_multiplier: 2.0
     max_delay_seconds: 30.0
+  failure_policy:        # optional — controls behavior when LLM fails after all retries
+    mode: raw_fallback   # raw_fallback (default) | fail_document
 ```
 
-The same `retry` block is available under `embedding`. Changing `retry` values does **not** invalidate the index (excluded from `profile_hash`).
+The same `retry` block is available under `embedding`. Changing `retry` and `failure_policy` values does **not** invalidate the index (excluded from `profile_hash`).
 
 **Key behaviour:**
 - `strategy: none` (default) — no LLM call, indexing runs at normal speed
@@ -255,6 +257,19 @@ The same `retry` block is available under `embedding`. Changing `retry` values d
 - FTS5 keyword index always stores the original chunk content — keyword search is unaffected by augmentation
 - `variant_type` in the database is `contextual` (vs `raw` for non-augmented chunks)
 - Changing `augmentation.strategy` changes the `profile_hash`, which triggers full re-indexing on the next `mrag index`
+
+**Failure policy (`failure_policy.mode`):**
+
+| Mode | Behaviour |
+|------|-----------|
+| `raw_fallback` (default) | Per-chunk LLM failure is recovered: chunk is stored as `raw` variant with original content; document indexing continues |
+| `fail_document` | Per-chunk LLM failure propagates as an error; the whole document is marked `error` (pre-0.7 behaviour) |
+
+When `raw_fallback` is active:
+- A `⤵ fallback` line is printed in the index log for each affected chunk
+- The `chunk_variants.metadata_json` column records `{"augmentation_status": "fallback_raw", "augmentation_error": "..."}` for auditability
+- The document-level summary shows `(N raw fallback)` when any chunks fell back
+- `IndexResult.raw_fallback_chunks` reflects the total count across all documents in the run
 
 **Customising the prompt:**
 
@@ -343,8 +358,9 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | Indexing fails with connection error | Ollama not running or embedding model not pulled | `ollama serve` + `ollama pull bge-m3` |
 | Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e4b` (or whatever `augmentation.model` is set to) |
 | `mrag index` very slow | `augmentation.strategy: contextual` calls LLM once per chunk | Expected; use `strategy: none` to skip augmentation |
-| Contextual indexing fails on large documents | Many sequential LLM calls increase exposure to transient Ollama errors | Retry is automatic (3 attempts); increase `augmentation.retry.max_attempts` for very large documents |
-| Log shows many `↻ retry` lines | Ollama under load or model stalling | Retry is working; if exhausted, reduce concurrency or switch to a more stable model |
+| Contextual indexing fails on large documents | Many sequential LLM calls increase exposure to transient Ollama errors | Retry is automatic (3 attempts); increase `augmentation.retry.max_attempts` for very large documents; `failure_policy.mode: raw_fallback` (default) prevents document-level failure |
+| Log shows many `↻ retry` lines | Ollama under load or model stalling | Retry is working; if all retries fail, `raw_fallback` stores raw variant instead of failing the document |
+| Log shows `⤵ fallback` lines | Chunks that exceeded retry budget fell back to raw variant | Expected with noisy/table-heavy documents; check `chunk_variants.metadata_json` for `augmentation_status: fallback_raw` |
 | Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |

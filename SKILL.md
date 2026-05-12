@@ -519,6 +519,8 @@ augmentation:
   #   initial_delay_seconds: 2.0
   #   backoff_multiplier: 2.0
   #   max_delay_seconds: 30.0
+  # failure_policy:           # optional — controls per-chunk failure behaviour
+  #   mode: raw_fallback      # raw_fallback (default) | fail_document
 ```
 
 ```bash
@@ -556,7 +558,8 @@ Set `augmentation.strategy: none` in the profile YAML, then run `mrag reindex`. 
 
 - Indexing with `strategy: contextual` is significantly slower than `strategy: none` — one LLM call per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.
 - Transient Ollama timeouts and HTTP 5xx errors are retried automatically (default: 3 attempts, exponential backoff). Watch for `↻ retry` lines in the log.
-- Documents with **300 or more chunks** trigger a `⚠ large document` warning at index time. This is informational — retry is active and the index will proceed. For very large documents, consider raising `augmentation.retry.max_attempts`.
+- If a chunk still fails after all retries, the default `failure_policy.mode: raw_fallback` stores the raw chunk instead of failing the whole document. The success line shows `(N raw fallback)` and `⤵ fallback` log lines identify affected chunks. Set `mode: fail_document` to restore pre-0.7 strict behaviour.
+- Documents with **300 or more chunks** trigger a `⚠ large document` warning at index time. This is informational — retry and fallback are active and the index will proceed.
 - The `embedding` section supports the same `retry` block for controlling embedding call retry behaviour.
 
 ---

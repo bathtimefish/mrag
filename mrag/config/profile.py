@@ -57,12 +57,17 @@ class EmbeddingConfig(BaseModel):
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
 
 
+class AugmentationFailurePolicyConfig(BaseModel):
+    mode: str = "raw_fallback"    # "raw_fallback" | "fail_document"
+
+
 class AugmentationConfig(BaseModel):
     strategy: str = "none"        # none | contextual | raptor | ...
     provider: str = "ollama"
     model: str = "gemma4:e4b"
     endpoint: str = "http://localhost:11434"
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
+    failure_policy: AugmentationFailurePolicyConfig = Field(default_factory=AugmentationFailurePolicyConfig)
 
 
 class KeywordConfig(BaseModel):
@@ -126,7 +131,7 @@ class ProfileConfig(BaseModel):
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(exclude={"retry"}),
             "retrieval": self.retrieval.model_dump(),
-            "augmentation": self.augmentation.model_dump(exclude={"retry"}),
+            "augmentation": self.augmentation.model_dump(exclude={"retry", "failure_policy"}),
             "keyword": self.keyword.model_dump(),
         }
         canonical = json.dumps(relevant, sort_keys=True, ensure_ascii=False)
