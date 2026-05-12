@@ -549,11 +549,12 @@ This follows the [Anthropic contextual retrieval](https://www.anthropic.com/news
 - Changing `augmentation.strategy` invalidates the index; run `mrag reindex` to rebuild
 - Indexing with `strategy: contextual` is slower: one LLM call per chunk
 - Transient Ollama timeouts and HTTP 5xx errors are automatically retried with exponential backoff; monitor logs for `↻ retry` lines
+- If a chunk still fails after all retries (e.g. OCR/table noise causing repeated empty responses), mrag falls back to storing the raw chunk instead of failing the whole document — the success line shows `(N raw fallback)` and `⤵ fallback` log lines identify affected chunks
 - Documents with 300 or more chunks print a `⚠ large document` warning at index time — this is informational, not an error
 
-**Retry configuration (optional):**
+**Retry and failure policy (optional):**
 
-The default retry policy (3 attempts, 2 s initial delay, ×2 backoff, 30 s cap) works for most setups. Override per profile if needed:
+The default retry policy (3 attempts, 2 s initial delay, ×2 backoff, 30 s cap) works for most setups. The default failure policy (`raw_fallback`) ensures a single problematic chunk does not fail the whole document. Override per profile if needed:
 
 ```yaml
 augmentation:
@@ -566,9 +567,13 @@ augmentation:
     initial_delay_seconds: 3.0
     backoff_multiplier: 2.0
     max_delay_seconds: 60.0
+  failure_policy:
+    mode: raw_fallback   # raw_fallback (default) | fail_document
 ```
 
-The same `retry` block is available under `embedding` for controlling retry behaviour of embedding calls. Changing `retry` settings does not invalidate the index.
+`failure_policy.mode: fail_document` restores the pre-0.7 behaviour where any chunk failure marks the entire document as failed. `retry` and `failure_policy` settings do not invalidate the index.
+
+The same `retry` block is available under `embedding` for controlling retry behaviour of embedding calls.
 
 **Per-project prompt customisation:**
 

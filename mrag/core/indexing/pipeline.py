@@ -41,6 +41,7 @@ class IndexResult:
     indexed: int = 0
     skipped: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document_id, message)
+    raw_fallback_chunks: int = 0  # chunks that fell back to raw due to augmentation failure
 
 
 def _get_documents(db_path: Path, document_ids: list[str] | None) -> list[dict]:
@@ -202,7 +203,8 @@ def _index_document(
     on_doc_start: Callable[[int], None] | None = None,
     on_chunk_augmented: Callable[[int, int], None] | None = None,
     on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None,
-) -> None:
+    on_chunk_fallback: Callable[[int, int, Exception], None] | None = None,
+) -> int:
     # 1. Read extracted content
     source_format = profile.chunking.source_format
     path_key = "extracted_markdown_path" if source_format == "markdown" else "extracted_text_path"
@@ -250,17 +252,27 @@ def _index_document(
     context_texts: list[str | None] = [None] * len(indexable_chunks)
     contents_for_embedding: list[str] = [c.content for c in indexable_chunks]
     variant_types: list[str] = ["raw"] * len(indexable_chunks)
+    fallback_errors: dict[int, str] = {}  # chunk index (0-based) -> error message
 
     if profile.augmentation.strategy == "contextual":
         from mrag.core.indexing.augmentation import augment_chunks
         prompt_template = _load_context_prompt(project_dir)
+
+        def _capture_fallback(cur: int, total: int, exc: Exception) -> None:
+            fallback_errors[cur - 1] = str(exc)[:200]
+            if on_chunk_fallback is not None:
+                on_chunk_fallback(cur, total, exc)
+
         ctx_list = augment_chunks(indexable_chunks, text, profile.augmentation, prompt_template,
                                   on_chunk=on_chunk_augmented,
-                                  on_chunk_retry=on_chunk_retry)
+                                  on_chunk_retry=on_chunk_retry,
+                                  on_chunk_fallback=_capture_fallback)
         for i, ctx in enumerate(ctx_list):
-            context_texts[i] = ctx
-            contents_for_embedding[i] = ctx + "\n\n" + indexable_chunks[i].content
-            variant_types[i] = "contextual"
+            if ctx is not None:
+                context_texts[i] = ctx
+                contents_for_embedding[i] = ctx + "\n\n" + indexable_chunks[i].content
+                variant_types[i] = "contextual"
+            # else: remains raw (context_texts[i]=None, original content, "raw" variant_type)
 
     # 4. Embed (with optional cache) — indexable チャンクのみ
     if use_cache:
@@ -318,13 +330,19 @@ def _index_document(
             point_id = str(uuid.uuid4())
             variant_ids.append(variant_id)
             point_ids.append(point_id)
+            var_meta = None
+            if i in fallback_errors:
+                var_meta = json.dumps(
+                    {"augmentation_status": "fallback_raw", "augmentation_error": fallback_errors[i]},
+                    ensure_ascii=False,
+                )
             conn.execute(
                 """INSERT INTO chunk_variants
                    (id, knowledge_id, document_id, chunk_id, profile_name,
                     variant_type, content_for_embedding, context_text,
                     embedding_model_id, qdrant_point_id, qdrant_collection,
                     metadata_json, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     variant_id,
                     doc["knowledge_id"],
@@ -337,6 +355,7 @@ def _index_document(
                     model_id,
                     point_id,
                     col_name,
+                    var_meta,
                     now,
                 ),
             )
@@ -373,6 +392,8 @@ def _index_document(
             )
         ]
         upsert_points(qdrant_client, col_name, points)
+
+    return len(fallback_errors)
 
 
 def run_index(
@@ -426,6 +447,12 @@ def run_index(
     model_id = embedding_provider.get_model_id()
     embedding_provider.ensure_model_registered(db_path)
 
+    # Probe augmentation endpoint before touching any documents.
+    # ConnectionError here means Ollama is unreachable — fail the whole run immediately.
+    if profile.augmentation.strategy == "contextual":
+        from mrag.core.ollama_client import probe_connection
+        probe_connection(profile.augmentation.endpoint)
+
     col_name = collection_name(
         config.knowledge_id,
         profile_name,
@@ -461,6 +488,7 @@ def run_index(
         on_doc_start: Callable[[int], None] | None = None
         on_chunk_augmented: Callable[[int, int], None] | None = None
         on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None
+        on_chunk_fallback: Callable[[int, int, Exception], None] | None = None
         if console:
             strategy = profile.augmentation.strategy
 
@@ -500,8 +528,19 @@ def run_index(
                     return _cb
                 on_chunk_retry = _make_retry_cb(filename)
 
+                def _make_fallback_cb(fn: str) -> Callable[[int, int, Exception], None]:
+                    def _cb(cur: int, tot: int, exc: Exception) -> None:
+                        reason = str(exc)[:120]
+                        console.print(
+                            f"[dim]{_now_ts()}[/dim]         [yellow]⤵ fallback[/yellow]  "
+                            f"[cyan]{cur:3d}[/cyan]/[cyan]{tot}[/cyan]  raw  "
+                            f"[dim]{reason}[/dim]  [dim]{fn}[/dim]"
+                        )
+                    return _cb
+                on_chunk_fallback = _make_fallback_cb(filename)
+
         try:
-            _index_document(
+            fallback_count = _index_document(
                 doc=doc,
                 profile=profile,
                 profile_hash=profile_hash,
@@ -516,11 +555,16 @@ def run_index(
                 on_doc_start=on_doc_start,
                 on_chunk_augmented=on_chunk_augmented,
                 on_chunk_retry=on_chunk_retry,
+                on_chunk_fallback=on_chunk_fallback,
             )
             _set_indexed_status(db_path, doc["id"], profile_name)
             if console:
-                console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [green]✓[/green] {filename}")
+                fallback_note = f"  [yellow]({fallback_count} raw fallback)[/yellow]" if fallback_count else ""
+                console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [green]✓[/green] {filename}{fallback_note}")
             result.indexed += 1
+            result.raw_fallback_chunks += fallback_count
+        except ConnectionError:
+            raise  # Ollama went down mid-run — propagate immediately, do not continue
         except Exception as exc:
             msg = str(exc)
             _set_error_status(db_path, doc["id"], profile_name, msg)
