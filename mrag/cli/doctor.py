@@ -155,9 +155,9 @@ def doctor() -> None:
     if cfg and cfg.qdrant.mode == "local":
         console.print(f"  {_OK}  mode: local (embedded — no server required)")
     elif cfg:
-        _check(f"server ({cfg.qdrant.host}:{cfg.qdrant.port})", lambda: _check_qdrant(cfg.qdrant.host, cfg.qdrant.port))
+        _check_warn(f"server ({cfg.qdrant.host}:{cfg.qdrant.port})", lambda: _check_qdrant(cfg.qdrant.host, cfg.qdrant.port))
     else:
-        _check("server (localhost:6333)", lambda: _check_qdrant("localhost", 6333))
+        _check_warn("server (localhost:6333) — not needed for mode: local (default)", lambda: _check_qdrant("localhost", 6333))
 
     console.print()
     console.print("[bold]Ollama[/bold]")
