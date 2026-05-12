@@ -28,7 +28,7 @@ fts_tokenizer: {fts_tokenizer}
 default_extraction:
   pdf:
     provider: pymupdf
-    output_format: text
+    output_format: markdown
 
 qdrant:
   mode: local
@@ -40,13 +40,16 @@ name: default
 extraction:
   pdf:
     provider: pymupdf
-    output_format: text
+    output_format: markdown
 
 chunking:
   strategy: recursive
-  source_format: text
+  source_format: markdown
   chunk_size: 800
   overlap: 120
+  preserve_heading_path: true
+  preserve_tables: true
+  preserve_code_blocks: true
 
 retrieval:
   strategy: hybrid
