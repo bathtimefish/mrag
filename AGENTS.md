@@ -212,6 +212,10 @@ When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sen
 
 Reranking is **retrieval-time only** — it does not affect the stored index. Changing `rerank` settings in a profile YAML takes effect on the next search without re-indexing.
 
+**`max_length` and token limits.** BERT-based rerankers (including all `hotchpotch/japanese-reranker-cross-encoder-*` variants) have a hard limit of 514 position embeddings. `rerank.max_length: 512` (the default) tells the tokenizer to truncate inputs before they reach the model. Do not raise `max_length` above 512 for BERT-based models — doing so re-introduces the out-of-bounds crash.
+
+**`parent_child` profiles.** When `retrieval.strategy: parent_child`, reranking operates on parent chunks (~3000 chars, ~1361 tokens) after parent resolution. The 512-token truncation discards most of the parent content, making reranking scores unreliable. mrag emits a `WARN` at runtime when `rerank.enabled: true` and `strategy: parent_child` are both active. For `parent_child` profiles, leave `rerank.enabled: false`.
+
 To disable reranking at runtime:
 
 ```bash

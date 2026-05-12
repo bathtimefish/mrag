@@ -77,6 +77,7 @@ rerank:
   enabled: false
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
+  max_length: 512   # BERT-based rerankers: keep at 512. Raise only for long-context models.
   top_n: 30
   top_k: 8
 """

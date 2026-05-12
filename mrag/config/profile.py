@@ -80,6 +80,7 @@ class RerankConfig(BaseModel):
     enabled: bool = False
     provider: str = "sentence-transformers"
     model: str = "hotchpotch/japanese-reranker-cross-encoder-small-v1"
+    max_length: int = 512
     top_n: int = 30
     top_k: int = 8
 

@@ -8,14 +8,14 @@ from mrag.core.retrieval.base import RetrievalResult
 
 
 class SentenceTransformersReranker(BaseReranker):
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, max_length: int = 512) -> None:
         if CrossEncoder is None:
             raise ImportError(
                 'sentence-transformers is not installed. '
                 'Run: uv pip install -e ".[reranker]"'
             )
         self.model_name = model
-        self._model = CrossEncoder(model)
+        self._model = CrossEncoder(model, max_length=max_length)
 
     def rerank(self, query: str, results: list[RetrievalResult]) -> list[RetrievalResult]:
         if not results:

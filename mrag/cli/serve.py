@@ -58,6 +58,13 @@ def serve(
 
     reranker = None
     if prof.rerank.enabled and not no_rerank:
+        if prof.retrieval.strategy == "parent_child":
+            console.print(
+                "[yellow]WARN[/yellow]  rerank.enabled=true with strategy: parent_child. "
+                "Reranking scores parent chunks (~3000 chars) after parent resolution. "
+                "BERT-based rerankers truncate at 512 tokens, discarding most parent content. "
+                "Consider disabling rerank for parent_child profiles."
+            )
         from mrag.core.reranking import get_reranker
         try:
             console.print(f"Loading reranker: [bold]{prof.rerank.model}[/bold]...")

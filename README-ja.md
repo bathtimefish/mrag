@@ -524,13 +524,16 @@ rerank:
   enabled: true
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
-  top_n: 30      # リランキング前に取得する候補数
-  top_k: 8       # リランキング後に返す件数
+  max_length: 512  # トークン切り捨て上限。BERT 系モデルでは 512 のまま使用すること
+  top_n: 30        # リランキング前に取得する候補数
+  top_k: 8         # リランキング後に返す件数
 ```
 
 リランキングはクエリ時にのみ適用されます。`rerank` の設定を変更しても再インデックスは不要です。使用には `uv pip install -e ".[reranker]"` が必要です。
 
 `mrag search`・`mrag eval`・`mrag serve` の `--no-rerank` オプションで実行時に無効化できます。
+
+> **注意: `parent_child` プロファイルとリランキングの組み合わせ。** `retrieval.strategy: parent_child` を使用している場合、リランキングはペアレント解決後のペアレントチャンク（約3000文字 / 約1361トークン）に対して適用されます。BERT 系リランカー（`hotchpotch/japanese-reranker-cross-encoder-*` を含む全バリアント）は 512 トークンで切り捨てるため、ペアレントチャンクの大部分が失われます。この組み合わせを検出すると mrag は実行時に `WARN` を表示します。`parent_child` プロファイルでは `rerank.enabled: false` のままにすることを推奨します。チャイルドチャンクのマッチングで検索精度は確保されており、広範囲なペアレント文脈が主な価値だからです。
 
 ### コンテキスト拡張（Contextual Augmentation）
 
