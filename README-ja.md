@@ -387,9 +387,12 @@ name: default
 
 chunking:
   strategy: recursive
-  source_format: text
+  source_format: markdown
   chunk_size: 800
   overlap: 120
+  preserve_heading_path: true
+  preserve_tables: true
+  preserve_code_blocks: true
 
 embedding:
   provider: ollama
@@ -430,13 +433,13 @@ keyword:
 ```yaml
 chunking:
   strategy: recursive       # recursive | markdown_recursive | block_aware | parent_child
-  source_format: text       # text | markdown
+  source_format: markdown   # text | markdown  （デフォルト: markdown）
   chunk_size: 800           # チャンクの目標文字数
   overlap: 120              # 隣接チャンク間のオーバーラップ文字数
   # --- ブロック認識オプション: source_format: markdown 時に任意のストラテジーで有効 ---
-  preserve_heading_path: true   # 見出しパンくずをチャンクに付与
-  preserve_tables: true         # テーブルをアトミック単位として保護
-  preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護
+  preserve_heading_path: true   # 見出しパンくずをチャンクに付与（デフォルト: true）
+  preserve_tables: true         # テーブルをアトミック単位として保護（デフォルト: true）
+  preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護（デフォルト: true）
   # --- parent_child のみ ---
   # parent:
   #   strategy: fixed_size

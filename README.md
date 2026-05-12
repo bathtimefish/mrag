@@ -386,9 +386,12 @@ name: default
 
 chunking:
   strategy: recursive
-  source_format: text
+  source_format: markdown
   chunk_size: 800
   overlap: 120
+  preserve_heading_path: true
+  preserve_tables: true
+  preserve_code_blocks: true
 
 embedding:
   provider: ollama
@@ -429,13 +432,13 @@ The `chunking.strategy` field controls how documents are split into chunks befor
 ```yaml
 chunking:
   strategy: recursive       # recursive | markdown_recursive | block_aware | parent_child
-  source_format: text       # text | markdown
+  source_format: markdown   # text | markdown  (default: markdown)
   chunk_size: 800           # target chunk size in characters
   overlap: 120              # overlap between adjacent chunks in characters
   # --- Block-aware options: active for any strategy when source_format: markdown ---
-  preserve_heading_path: true   # attach H1 > H2 > H3 breadcrumb to each chunk
-  preserve_tables: true         # keep tables as atomic units (never split mid-table)
-  preserve_code_blocks: true    # keep fenced code blocks as atomic units
+  preserve_heading_path: true   # attach H1 > H2 > H3 breadcrumb to each chunk (default: true)
+  preserve_tables: true         # keep tables as atomic units (default: true)
+  preserve_code_blocks: true    # keep fenced code blocks as atomic units (default: true)
   # --- parent_child only ---
   # parent:
   #   strategy: fixed_size
