@@ -55,8 +55,16 @@ ollama list   # returns a list (possibly empty) without error
 
 If Ollama is not running, start it:
 
-- **macOS**: launch the Ollama desktop app from Applications
+- **macOS / Windows**: launch the Ollama desktop app from Applications (macOS) or the system tray (Windows)
 - **Linux**: `ollama serve &`
+
+### Qdrant
+
+mrag uses Qdrant for vector storage. By default, **Qdrant runs embedded in-process** (`mode: local`) — no Docker or external server is required. The embedded data is stored in the project's `qdrant/` directory.
+
+`mrag doctor` may show a Qdrant WARN when run outside a project directory. This is expected and does not indicate a setup problem for the default local mode.
+
+Docker is only needed if you explicitly set `qdrant.mode: server` in `mrag.yaml`.
 
 ---
 
@@ -73,7 +81,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv pip install -e ".[vaporetto,reranker]"
 ```
 
-- `vaporetto`: Japanese morphological tokenization. Installs `apsw`, which provides SQLite extension loading on macOS (the system `sqlite3` does not support it). The native shared library must also be placed separately — see §3.
+- `vaporetto`: Japanese morphological tokenization. Installs `apsw`, which provides SQLite extension loading (the built-in `sqlite3` module does not support it on macOS or Windows). The native shared library must also be placed separately — see §3.
 - `reranker`: CrossEncoder reranking via `sentence-transformers`.
 
 **Verification:**
@@ -88,13 +96,17 @@ mrag --help   # must print the command list without error
 
 ## 3. Vaporetto Tokenizer (optional, recommended for Japanese)
 
-Vaporetto requires a native shared library (`libsqlite_vaporetto.dylib` on macOS, `.so` on Linux) in addition to the Python package installed in §2.
+Vaporetto requires a native shared library in addition to the Python package installed in §2.
+
+| Platform | Library filename |
+|----------|-----------------|
+| macOS | `libsqlite_vaporetto.dylib` |
+| Linux | `libsqlite_vaporetto.so` |
+| Windows | `sqlite_vaporetto.dll` |
+
+> Always use the **`-with-model`** variant when downloading. It includes the tokenization model data (`bccwj-suw+unidic_pos+kana.model.zst`) required for Japanese morphological analysis. The plain variant does not include it and will not work.
 
 ### Automated download via GitHub API
-
-The following commands detect your OS and architecture, fetch the latest release URL, and download the correct `-with-model` package.
-
-> Always use the **`-with-model`** variant. It includes the tokenization model data (`bccwj-suw+unidic_pos+kana.model.zst`) required for Japanese morphological analysis. The plain variant does not include it and will not work.
 
 **macOS:**
 
@@ -121,9 +133,21 @@ echo "Downloading: $DOWNLOAD_URL"
 curl -L -o sqlite-vaporetto-with-model.tar.gz "$DOWNLOAD_URL"
 ```
 
-**Verification:** Confirm `$DOWNLOAD_URL` is non-empty and the download completes without error before continuing.
+**Windows (PowerShell):**
+
+```powershell
+$release = Invoke-RestMethod "https://api.github.com/repos/hotchpotch/sqlite-vaporetto/releases/latest"
+$asset = $release.assets | Where-Object { $_.browser_download_url -match "windows.*with-model" }
+$downloadUrl = $asset.browser_download_url
+Write-Host "Downloading: $downloadUrl"
+Invoke-WebRequest -Uri $downloadUrl -OutFile sqlite-vaporetto-with-model.zip
+```
+
+**Verification:** Confirm the download URL is non-empty and the download completes without error before continuing.
 
 ### Extract and place the library
+
+**macOS / Linux:**
 
 The archive extracts to a single top-level directory (e.g. `sqlite-vaporetto-v0.4.0-macos-aarch64-with-model/`). The shared library is directly inside that directory.
 
@@ -139,20 +163,42 @@ cp "${EXTRACTED_DIR}/libsqlite_vaporetto.dylib" ~/.mrag/extensions/
 # cp "${EXTRACTED_DIR}/libsqlite_vaporetto.so" ~/.mrag/extensions/
 ```
 
-**Verification:**
+**Windows (PowerShell):**
 
+```powershell
+Expand-Archive -Path sqlite-vaporetto-with-model.zip -DestinationPath sqlite-vaporetto-with-model
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.mrag\extensions"
+$dll = Get-ChildItem -Recurse sqlite-vaporetto-with-model -Filter "sqlite_vaporetto.dll" | Select-Object -First 1
+Copy-Item $dll.FullName "$env:USERPROFILE\.mrag\extensions\"
+```
+
+### Verification
+
+**macOS:**
 ```bash
-# macOS
 ls -la ~/.mrag/extensions/libsqlite_vaporetto.dylib   # file must exist
+```
 
-# Linux
-# ls -la ~/.mrag/extensions/libsqlite_vaporetto.so
+**Linux:**
+```bash
+ls -la ~/.mrag/extensions/libsqlite_vaporetto.so
+```
+
+**Windows (PowerShell):**
+```powershell
+Test-Path "$env:USERPROFILE\.mrag\extensions\sqlite_vaporetto.dll"   # must return True
 ```
 
 ### Custom path (alternative to ~/.mrag/extensions/)
 
+**macOS / Linux:**
 ```bash
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:MRAG_VAPORETTO_LIB = "C:\path\to\sqlite_vaporetto.dll"
 ```
 
 ---
@@ -197,4 +243,4 @@ Key points to keep in mind when using `mrag init`:
 
 - `mrag init` creates a **subdirectory** inside the current working directory. Run it from the **parent** directory of where you want the project to live — not from inside the intended project directory.
 - The vaporetto library (§3) must be in place **before** running `mrag init`. The tokenizer is auto-detected at init time and stored in `mrag.yaml`. Changing it after init requires deleting the project and re-running `mrag init`.
-- Only one `mrag index` process can run at a time (Qdrant `mode: local` holds a file lock on the `qdrant/` directory).
+- Qdrant runs **embedded** by default (`mode: local`). No Docker setup is needed. Only one `mrag index` process can run at a time per project (the embedded Qdrant holds a file lock on the `qdrant/` directory).

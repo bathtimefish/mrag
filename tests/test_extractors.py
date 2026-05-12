@@ -136,12 +136,151 @@ def test_pymupdf_extracts_text(tmp_path: Path):
     assert result.metadata["page_count"] == 1
 
 
-def test_pymupdf_both_representations_equal(tmp_path: Path):
+def test_pymupdf_no_table_pdf_text_equals_markdown(tmp_path: Path):
+    """For a plain-text PDF with no tables, text and markdown must be equal
+    (both fall back to get_text('text'))."""
     from mrag.extractors.pymupdf import PyMuPDFExtractor
 
     pdf = _make_simple_pdf(tmp_path / "test.pdf")
     result = PyMuPDFExtractor().extract(pdf)
     assert result.text == result.markdown
+
+
+# ---------------------------------------------------------------------------
+# _page_to_markdown unit tests (mock-based)
+# ---------------------------------------------------------------------------
+
+def test_page_to_markdown_no_tables_returns_plain_text():
+    """When no tables are found, falls back to get_text('text')."""
+    from unittest.mock import MagicMock
+    from mrag.extractors.pymupdf import _page_to_markdown
+
+    page = MagicMock()
+    finder = MagicMock()
+    finder.tables = []
+    page.find_tables.return_value = finder
+    page.get_text.return_value = "Plain text content"
+
+    result = _page_to_markdown(page)
+
+    assert result == "Plain text content"
+    page.get_text.assert_called_once_with("text")
+
+
+def test_page_to_markdown_find_tables_exception_falls_back():
+    """If find_tables() raises, falls back to get_text('text')."""
+    from unittest.mock import MagicMock
+    from mrag.extractors.pymupdf import _page_to_markdown
+
+    page = MagicMock()
+    page.find_tables.side_effect = RuntimeError("layout error")
+    page.get_text.return_value = "Fallback text"
+
+    result = _page_to_markdown(page)
+
+    assert result == "Fallback text"
+
+
+def test_page_to_markdown_with_table_contains_pipe_syntax():
+    """When a table is detected, markdown contains pipe-table rows."""
+    import fitz
+    from unittest.mock import MagicMock
+    from mrag.extractors.pymupdf import _page_to_markdown
+
+    mock_table = MagicMock()
+    mock_table.bbox = (50.0, 100.0, 400.0, 200.0)
+    mock_table.to_markdown.return_value = "| Col A | Col B |\n|---|---|\n| val1 | val2 |"
+
+    mock_finder = MagicMock()
+    mock_finder.tables = [mock_table]
+
+    page = MagicMock()
+    page.find_tables.return_value = mock_finder
+    page.get_text.return_value = {
+        "blocks": [
+            {
+                "type": 0,
+                "bbox": [50.0, 10.0, 400.0, 60.0],  # above the table
+                "lines": [{"spans": [{"text": "Section heading"}]}],
+            }
+        ]
+    }
+
+    result = _page_to_markdown(page)
+
+    assert "| Col A | Col B |" in result
+    assert "val1" in result
+
+
+def test_page_to_markdown_reading_order():
+    """Text blocks above a table appear before the table in the markdown output."""
+    import fitz
+    from unittest.mock import MagicMock
+    from mrag.extractors.pymupdf import _page_to_markdown
+
+    mock_table = MagicMock()
+    mock_table.bbox = (50.0, 200.0, 400.0, 300.0)
+    mock_table.to_markdown.return_value = "| H1 | H2 |\n|---|---|\n| r1 | r2 |"
+
+    mock_finder = MagicMock()
+    mock_finder.tables = [mock_table]
+
+    page = MagicMock()
+    page.find_tables.return_value = mock_finder
+    page.get_text.return_value = {
+        "blocks": [
+            {
+                "type": 0,
+                "bbox": [50.0, 50.0, 400.0, 90.0],  # y=50, above table at y=200
+                "lines": [{"spans": [{"text": "Introduction text"}]}],
+            },
+            {
+                "type": 0,
+                "bbox": [50.0, 350.0, 400.0, 400.0],  # y=350, below table
+                "lines": [{"spans": [{"text": "Footer note"}]}],
+            },
+        ]
+    }
+
+    result = _page_to_markdown(page)
+
+    intro_pos = result.index("Introduction text")
+    table_pos = result.index("| H1 |")
+    footer_pos = result.index("Footer note")
+
+    assert intro_pos < table_pos < footer_pos
+
+
+def test_page_to_markdown_overlapping_text_excluded():
+    """Text blocks that overlap a table bbox are excluded to avoid duplication."""
+    import fitz
+    from unittest.mock import MagicMock
+    from mrag.extractors.pymupdf import _page_to_markdown
+
+    mock_table = MagicMock()
+    mock_table.bbox = (50.0, 100.0, 400.0, 300.0)
+    mock_table.to_markdown.return_value = "| A | B |"
+
+    mock_finder = MagicMock()
+    mock_finder.tables = [mock_table]
+
+    page = MagicMock()
+    page.find_tables.return_value = mock_finder
+    page.get_text.return_value = {
+        "blocks": [
+            {
+                "type": 0,
+                # Overlaps with table (y=150 is within 100-300)
+                "bbox": [60.0, 150.0, 390.0, 250.0],
+                "lines": [{"spans": [{"text": "cell text inside table"}]}],
+            }
+        ]
+    }
+
+    result = _page_to_markdown(page)
+
+    assert "cell text inside table" not in result
+    assert "| A | B |" in result
 
 
 def test_pymupdf_scanned_warning(tmp_path: Path):
