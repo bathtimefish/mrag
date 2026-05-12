@@ -726,6 +726,8 @@ mrag not found after uv install?                            →  use .venv/bin/m
 Want richer context in retrieval results?                   →  use strategy: parent_child (see Skill 14)
 parent_child profile validation error?                      →  chunking.strategy and retrieval.strategy must both be 'parent_child'
 parent_child returning fewer results than top_k?            →  increase dense_top_k and keyword_top_k to >= top_k * 3
+WARN: rerank.enabled=true with strategy: parent_child?      →  reranking on parent chunks (~3000 chars) truncates at 512 tokens; set rerank.enabled: false for parent_child profiles
+RuntimeError: index 514 out of bounds?                      →  reranker received a chunk exceeding BERT token limit; ensure rerank.max_length: 512 in profile
 Documents have tables or code blocks that get split?        →  verify source_format: markdown + preserve_tables/preserve_code_blocks: true (default since 0.8.0); mrag reindex if changed
 Want heading breadcrumbs in search results?                 →  verify source_format: markdown + preserve_heading_path: true (default since 0.8.0); results show "section: H1 > H2 > H3"
 block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata

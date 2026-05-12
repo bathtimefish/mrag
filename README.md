@@ -523,13 +523,16 @@ rerank:
   enabled: true
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
-  top_n: 30      # candidates fetched before reranking
-  top_k: 8       # final results after reranking
+  max_length: 512  # token truncation limit; keep at 512 for BERT-based models
+  top_n: 30        # candidates fetched before reranking
+  top_k: 8         # final results after reranking
 ```
 
 Reranking is applied at query time only — changing `rerank` settings never triggers re-indexing. Requires `uv pip install -e ".[reranker]"`.
 
 Disable at runtime with `--no-rerank` on `mrag search`, `mrag eval`, or `mrag serve`.
+
+> **Note: reranking with `parent_child` profiles.** When `retrieval.strategy: parent_child`, reranking is applied to parent chunks (~3000 chars, ~1361 tokens) after parent resolution. BERT-based rerankers (including all `hotchpotch/japanese-reranker-cross-encoder-*` variants) truncate at 512 tokens, discarding most of the parent chunk content. mrag emits a `WARN` at runtime when this combination is detected. For `parent_child` profiles, consider leaving `rerank.enabled: false` — child-chunk matching already provides the retrieval precision, and the broad parent context is the primary value.
 
 ### Contextual Augmentation
 
