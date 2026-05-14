@@ -176,6 +176,16 @@ The skip list JSON only requires `failed_documents[].document_id`. You can also 
 }
 ```
 
+**Monitoring index progress in real time:**
+
+The JSON log is a post-run artifact for failure analysis. It does not capture per-chunk progress lines. To monitor ongoing progress — especially during long-running contextual augmentation where each chunk triggers an LLM call — pipe output through `tee`:
+
+```bash
+mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+```
+
+This streams `augmenting`, `↻ retry`, and `⤵ fallback` lines to the terminal in real time while writing them to file. Both you and an LLM monitoring the log file can track how far the run has progressed, spot stalling chunks, and estimate remaining time — without waiting for the run to finish.
+
 **Verify:**
 ```bash
 mrag search "test" --strategy keyword --top-k 1
