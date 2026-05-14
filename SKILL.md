@@ -125,38 +125,56 @@ mrag index --document-id <doc-id>
 
 # Force full rebuild of the index (drops and recreates all chunks)
 mrag reindex
+
+# Specify a custom log output path
+mrag index --output-log /tmp/my-index-run.json
+
+# Skip documents that failed in a previous run
+mrag index --skip-list-json logs/20260514103000-index.json
 ```
 
 **Expected output:**
 ```
-✓ Indexed: 12  Skipped: 0
+✓ Indexed: 12  Up-to-date: 0  List-skipped: 0
+Log: logs/20260514103000-index.json
 ```
 
-`Skipped` count shows documents whose content and profile hash have not changed since last indexing.
+Every run writes a JSON log to `logs/` automatically (default filename: `YYYYMMDDHHmmss-index.json`). The log records the run summary and full metadata for any failed documents.
 
-If any documents failed (e.g. Ollama timeout during contextual augmentation), the summary line shows:
+`Up-to-date` shows documents whose content and profile hash have not changed. `List-skipped` shows documents explicitly skipped via `--skip-list-json`.
+
+If any documents failed, the summary shows:
 ```
-✓ Indexed: 11  Skipped: 0
+✓ Indexed: 11  Up-to-date: 0  List-skipped: 0
 Error (2ba41462-...): Empty context response from Ollama: ...
+Log: logs/20260514103000-index.json
 ```
 
-Failed documents remain in `error` status and are automatically retried on the next `mrag index` run. No manual intervention is needed other than re-running the command.
+Failed documents remain in `error` status and are automatically retried on the next `mrag index` run.
 
-**Log output to file (recommended for large corpora):**
+**Skipping persistently failing documents:**
 
-When indexing many documents, redirect output to a log file so that errors are preserved for later review:
+If a document consistently fails (e.g. oversized PDF producing too many chunks), use the run log as a skip list to proceed with the rest of the corpus while the problematic document is investigated separately:
 
 ```bash
-mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+# Run 1: index everything, note the log path
+mrag index
+# → logs/20260514103000-index.json  (failed_count: 1)
+
+# Run 2: skip the failing document
+mrag index --skip-list-json logs/20260514103000-index.json
+# → logs/20260514104500-index.json  (List-skipped: 1)
 ```
 
-This streams output to the terminal in real time and simultaneously writes to a timestamped log file. After the run, check for errors with:
+The skip list JSON only requires `failed_documents[].document_id`. You can also create the file manually or have an LLM generate it:
 
-```bash
-grep "Error" mrag-index-*.log
+```json
+{
+  "failed_documents": [
+    {"document_id": "6559abe7-8cb6-45ae-817b-a42c8534179f"}
+  ]
+}
 ```
-
-Re-run `mrag index` to retry only the failed documents — successfully indexed documents are skipped automatically.
 
 **Verify:**
 ```bash
@@ -711,7 +729,8 @@ Zero results from vector/hybrid?                            →  check Ollama ru
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
 Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index
 Need to rebuild everything?                                 →  mrag reindex
-Some documents failed during index?                         →  re-run mrag index (retries error-status docs only); check logs for details
+Some documents failed during index?                         →  re-run mrag index (retries error-status docs automatically); check logs/ for the JSON run log
+Document always fails and blocks the rest?                  →  mrag index --skip-list-json logs/<ts>-index.json  (or create minimal JSON with failed_documents[].document_id)
 Need to expose retrieval over HTTP?                         →  mrag serve (from inside project dir)
 Need to inspect retrieval quality?                          →  mrag eval "<query>" [--strategy vector]
 Want to retrieve and synthesise content?                    →  mrag search (includes σ + document distribution)

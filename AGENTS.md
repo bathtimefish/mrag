@@ -43,7 +43,7 @@ mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve
 
 1. **`mrag init --name <name>`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory.
 2. **`mrag add <file>`** — Extracts text and stores metadata. No indexing yet.
-3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents.
+3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents. Always writes a JSON run log to `logs/` (timestamped). Use `--skip-list-json <log>` to skip documents that failed in a previous run.
 4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
 
 Use **`mrag eval <query>`** at any time after indexing for deeper quality inspection: duplicate chunk detection and multi-profile comparison.
@@ -374,3 +374,4 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | Tables or code blocks split across chunks | `preserve_tables`/`preserve_code_blocks` not enabled, or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_tables: true` + `preserve_code_blocks: true`; run `mrag reindex` |
 | `parent_child` profile validation error | `chunking.strategy` and `retrieval.strategy` must both be `parent_child` | Update the profile so both fields are `parent_child` |
 | `parent_child` returning fewer results than `top_k` | `dense_top_k` / `keyword_top_k` too low; deduplication reduces candidates | Increase both to at least `top_k × 3` (e.g. `top_k: 8` → `dense_top_k: 60`) |
+| Specific documents always fail during `mrag index` | Oversized PDF, too many chunks, or extraction issue | Pass the run log as a skip list: `mrag index --skip-list-json logs/<ts>-index.json`; investigate the failing document separately |
