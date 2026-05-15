@@ -710,7 +710,7 @@ mrag search "クエリ"   # mrag reindex 不要
 
 ## ライセンス
 
-[GNU Affero General Public License v3.0 or later](./LICENSE)（AGPL-3.0-or-later）のもとで配布されます。
+GNU Affero General Public License v3.0のもとで配布されます。
 
 Copyright (c) 2026 BathTimeFish KK.
 
