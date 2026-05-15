@@ -161,10 +161,17 @@ mrag index
 This embeds all un-indexed documents and builds the FTS5 + Qdrant index:
 
 ```
-✓ Indexed: 12  Skipped: 0
+✓ Indexed: 12  Up-to-date: 0  List-skipped: 0
+Log: logs/20260514103000-index.json
 ```
 
-Re-running `mrag index` after adding new files only processes the new documents.
+Every run writes a JSON log to `logs/` automatically. Re-running `mrag index` after adding new files only processes the new documents.
+
+To skip documents that consistently fail (e.g. oversized PDFs), pass the previous run's log as a skip list:
+
+```bash
+mrag index --skip-list-json logs/20260514103000-index.json
+```
 
 ### 4. Search
 
@@ -214,8 +221,8 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 |---------|-------------|
 | `mrag init [--name NAME]` | Create a new project in a subdirectory |
 | `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | Ingest documents (extract & store; no indexing) |
-| `mrag index [--profile P]` | Differential index (skips up-to-date docs) |
-| `mrag reindex [--profile P]` | Force-rebuild the entire index for a profile |
+| `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
+| `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
 | `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |
 | `mrag eval <query>` | Evaluate retrieval quality (`--profile P`, `--strategy S`, `--top-k N`, `--no-rerank`) |
 | `mrag serve` | Start FastAPI server (`--host`, `--port`, `--no-rerank`) |
@@ -702,10 +709,7 @@ If you are using `mode: server`, copy everything except `qdrant/` and run `mrag 
 
 ## License
 
-Licensed under either of the following licenses, at your option:
-
-- [MIT License](./LICENSE-MIT)
-- [Apache License, Version 2.0](./LICENSE-APACHE)
+Licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE) (AGPL-3.0-or-later).
 
 Copyright (c) 2026 BathTimeFish KK.
 

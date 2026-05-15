@@ -162,10 +162,17 @@ mrag index
 未インデックスのドキュメントを Embedding してFTS5 + Qdrant インデックスを構築します：
 
 ```
-✓ Indexed: 12  Skipped: 0
+✓ Indexed: 12  Up-to-date: 0  List-skipped: 0
+Log: logs/20260514103000-index.json
 ```
 
-新しいファイルを追加してから `mrag index` を再実行すると、新規分のみが処理されます。
+実行のたびに `logs/` へ JSON ログが自動生成されます。新しいファイルを追加してから `mrag index` を再実行すると、新規分のみが処理されます。
+
+常に失敗するドキュメント（巨大な PDF など）をスキップしたい場合は、前回のログをスキップリストとして渡します：
+
+```bash
+mrag index --skip-list-json logs/20260514103000-index.json
+```
 
 ### 4. 検索する
 
@@ -215,8 +222,8 @@ mrag serve --no-rerank
 |---------|------|
 | `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
 | `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
-| `mrag index [--profile P]` | 差分インデックス（最新のドキュメントはスキップ） |
-| `mrag reindex [--profile P]` | プロファイルのインデックスを強制再構築 |
+| `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
+| `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
 | `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`） |
 | `mrag eval <query>` | 検索品質評価（`--profile P`、`--strategy S`、`--top-k N`、`--no-rerank`） |
 | `mrag serve` | FastAPI サーバー起動（`--host`、`--port`、`--no-rerank`） |
@@ -703,10 +710,7 @@ mrag search "クエリ"   # mrag reindex 不要
 
 ## ライセンス
 
-以下のいずれかのライセンスの条件に従って、任意に選択して利用できます：
-
-- [MIT License](./LICENSE-MIT)
-- [Apache License, Version 2.0](./LICENSE-APACHE)
+[GNU Affero General Public License v3.0 or later](./LICENSE)（AGPL-3.0-or-later）のもとで配布されます。
 
 Copyright (c) 2026 BathTimeFish KK.
 

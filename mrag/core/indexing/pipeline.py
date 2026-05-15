@@ -37,11 +37,82 @@ def _load_context_prompt(project_dir: Path) -> str | None:
 
 
 @dataclass
+class FailedDocEntry:
+    document_id: str
+    filename: str
+    source_path: str
+    source_type: str
+    added_at: str
+    failure_reason: str
+    failure_stage: str
+    page_count: int | None
+    char_count: int | None
+
+
+@dataclass
 class IndexResult:
     indexed: int = 0
-    skipped: int = 0
+    skipped: int = 0           # diff-skipped: already up-to-date
+    skipped_by_list: int = 0   # explicitly skipped via --skip-list-json
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document_id, message)
-    raw_fallback_chunks: int = 0  # chunks that fell back to raw due to augmentation failure
+    raw_fallback_chunks: int = 0
+    failed_docs: list[FailedDocEntry] = field(default_factory=list)
+
+
+def _read_extraction_meta(project_dir: Path, doc: dict) -> dict:
+    meta_rel = doc.get("extraction_meta_path")
+    if not meta_rel:
+        return {}
+    meta_path = project_dir / meta_rel
+    if not meta_path.exists():
+        return {}
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def write_index_log(
+    result: "IndexResult",
+    log_path: Path,
+    command: str,
+    profile_name: str,
+) -> None:
+    try:
+        from importlib.metadata import version as _pkg_version
+        mrag_version = _pkg_version("mrag")
+    except Exception:
+        mrag_version = "unknown"
+
+    total = result.indexed + result.skipped + result.skipped_by_list + len(result.errors)
+    data = {
+        "generated_at": _now_iso(),
+        "command": command,
+        "profile": profile_name,
+        "mrag_version": mrag_version,
+        "total_documents": total,
+        "indexed_count": result.indexed,
+        "up_to_date_count": result.skipped,
+        "list_skipped_count": result.skipped_by_list,
+        "failed_count": len(result.errors),
+        "raw_fallback_chunks": result.raw_fallback_chunks,
+        "failed_documents": [
+            {
+                "document_id": fd.document_id,
+                "filename": fd.filename,
+                "source_path": fd.source_path,
+                "source_type": fd.source_type,
+                "added_at": fd.added_at,
+                "failure_reason": fd.failure_reason,
+                "failure_stage": fd.failure_stage,
+                "page_count": fd.page_count,
+                "char_count": fd.char_count,
+            }
+            for fd in result.failed_docs
+        ],
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _get_documents(db_path: Path, document_ids: list[str] | None) -> list[dict]:
@@ -401,6 +472,7 @@ def run_index(
     config: ProjectConfig,
     profile_name: str,
     document_ids: list[str] | None = None,
+    skip_document_ids: set[str] | None = None,
     force: bool = False,
     embedding_provider: BaseEmbeddingProvider | None = None,
     qdrant_client=None,
@@ -426,7 +498,21 @@ def run_index(
     docs_to_index = [(doc, reason) for doc, needs, reason in decisions if needs]
     skipped = sum(1 for _, needs, _ in decisions if not needs)
 
-    result = IndexResult(skipped=skipped)
+    # Apply explicit skip list
+    skipped_by_list = 0
+    if skip_document_ids:
+        filtered = []
+        for doc, reason in docs_to_index:
+            if doc["id"] in skip_document_ids:
+                skipped_by_list += 1
+                if console:
+                    filename = doc.get("filename", doc["id"])
+                    console.print(f"[dim]{_now_ts()}[/dim]  [yellow]⤭ skip-list[/yellow]  {filename}")
+            else:
+                filtered.append((doc, reason))
+        docs_to_index = filtered
+
+    result = IndexResult(skipped=skipped, skipped_by_list=skipped_by_list)
 
     if not docs_to_index:
         return result
@@ -571,6 +657,18 @@ def run_index(
             if console:
                 console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [red]✗[/red] {filename}: {msg}")
             result.errors.append((doc["id"], msg))
+            extraction_meta = _read_extraction_meta(project_dir, doc)
+            result.failed_docs.append(FailedDocEntry(
+                document_id=doc["id"],
+                filename=doc.get("filename", doc["id"]),
+                source_path=doc.get("original_path", ""),
+                source_type=doc.get("source_type", ""),
+                added_at=doc.get("created_at", ""),
+                failure_reason=msg,
+                failure_stage="indexing",
+                page_count=extraction_meta.get("page_count"),
+                char_count=extraction_meta.get("char_count"),
+            ))
 
     return result
 
