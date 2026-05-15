@@ -709,7 +709,7 @@ If you are using `mode: server`, copy everything except `qdrant/` and run `mrag 
 
 ## License
 
-Licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE) (AGPL-3.0-or-later).
+Licensed under the GNU Affero General Public License v3.0.
 
 Copyright (c) 2026 BathTimeFish KK.
 
