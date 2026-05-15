@@ -710,10 +710,7 @@ mrag search "クエリ"   # mrag reindex 不要
 
 ## ライセンス
 
-以下のいずれかのライセンスの条件に従って、任意に選択して利用できます：
-
-- [MIT License](./LICENSE-MIT)
-- [Apache License, Version 2.0](./LICENSE-APACHE)
+[GNU Affero General Public License v3.0 or later](./LICENSE)（AGPL-3.0-or-later）のもとで配布されます。
 
 Copyright (c) 2026 BathTimeFish KK.
 
