@@ -717,6 +717,8 @@ Copyright (c) 2026 BathTimeFish KK.
 
 ## Acknowledgements
 
+mrag uses [PyMuPDF](https://github.com/pymupdf/pymupdf) for PDF text extraction and table detection. PyMuPDF is developed and maintained by [Artifex Software](https://artifex.com) and licensed under AGPL-3.0.
+
 mrag uses [sqlite-vaporetto](https://github.com/hotchpotch/sqlite-vaporetto) by [@hotchpotch](https://github.com/hotchpotch) for Japanese morphological tokenization via SQLite FTS5.
 
 - **sqlite-vaporetto** — licensed under `MIT OR Apache-2.0`

@@ -718,6 +718,8 @@ Copyright (c) 2026 BathTimeFish KK.
 
 ## 謝辞
 
+mrag は PDF テキスト抽出とテーブル検出に [PyMuPDF](https://github.com/pymupdf/pymupdf) を利用しています。PyMuPDF は [Artifex Software](https://artifex.com) が開発・メンテナンスしており、AGPL-3.0 ライセンスのもとで配布されています。
+
 mrag は SQLite FTS5 による日本語形態素解析に [@hotchpotch](https://github.com/hotchpotch) 氏の [sqlite-vaporetto](https://github.com/hotchpotch/sqlite-vaporetto) を利用しています。
 
 - **sqlite-vaporetto** — `MIT OR Apache-2.0` ライセンス
