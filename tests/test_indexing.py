@@ -577,7 +577,7 @@ def test_profile_hash_unaffected_by_rerank_change():
     p1 = ProfileConfig(name="a")
     p2 = ProfileConfig(name="b")
     p2.rerank.enabled = True
-    p2.rerank.top_k = 999
+    p2.rerank.top_n = 999
     assert p1.compute_hash() == p2.compute_hash()
 
 

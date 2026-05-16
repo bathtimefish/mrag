@@ -518,7 +518,7 @@ The `weights` field is retrieval-time only — changing it does **not** invalida
 
 ### Reranking
 
-When `rerank.enabled: true`, mrag runs a CrossEncoder reranker after retrieval to improve result ordering. The reranker fetches `top_n` candidates, re-scores them, and returns `top_k` results.
+When `rerank.enabled: true`, mrag runs a CrossEncoder reranker after retrieval to improve result ordering. The reranker fetches `top_n` candidates, re-scores them, and returns the final result count requested by the caller (`--top-k` for CLI or `top_k` in API requests).
 
 ```yaml
 rerank:
@@ -526,8 +526,7 @@ rerank:
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
   max_length: 512  # token truncation limit; keep at 512 for BERT-based models
-  top_n: 30        # candidates fetched before reranking
-  top_k: 8         # final results after reranking
+  top_n: 30        # candidates fetched before reranking; final count comes from --top-k (CLI) or request body (API)
 ```
 
 Reranking is applied at query time only — changing `rerank` settings never triggers re-indexing. Requires `uv pip install -e ".[reranker]"`.

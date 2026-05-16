@@ -519,7 +519,7 @@ retrieval:
 
 ### リランキング
 
-`rerank.enabled: true` を設定すると、検索後に CrossEncoder による再スコアリングが行われ、結果の順序が改善されます。`top_n` 件の候補を取得してから再スコアし、最終的に `top_k` 件を返します。
+`rerank.enabled: true` を設定すると、検索後に CrossEncoder による再スコアリングが行われ、結果の順序が改善されます。`top_n` 件の候補を取得してから再スコアし、最終的な返却件数は呼び出し側で指定します（CLI なら `--top-k`、API なら リクエストの `top_k`）。
 
 ```yaml
 rerank:
@@ -527,8 +527,7 @@ rerank:
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
   max_length: 512  # トークン切り捨て上限。BERT 系モデルでは 512 のまま使用すること
-  top_n: 30        # リランキング前に取得する候補数
-  top_k: 8         # リランキング後に返す件数
+  top_n: 30        # リランキング前に取得する候補数。最終件数は呼び出し側（--top-k / API top_k）で決定
 ```
 
 リランキングはクエリ時にのみ適用されます。`rerank` の設定を変更しても再インデックスは不要です。使用には `uv pip install -e ".[reranker]"` が必要です。

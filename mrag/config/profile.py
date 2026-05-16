@@ -100,7 +100,6 @@ class RerankConfig(BaseModel):
     model: str = "hotchpotch/japanese-reranker-cross-encoder-small-v1"
     max_length: int = 512
     top_n: int = 30
-    top_k: int = 8
 
 
 class ProfileExtractionPdfConfig(BaseModel):
