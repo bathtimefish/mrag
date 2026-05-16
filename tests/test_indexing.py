@@ -411,6 +411,42 @@ def test_pipeline_no_documents_returns_empty(tmp_path: Path):
     assert result.skipped == 0
 
 
+def test_pipeline_empty_document_completes_without_error(tmp_path: Path):
+    """An empty document must not raise TypeError or be marked as errored.
+
+    Regression test for the latent bug where _index_document returned None
+    (implicit return) on empty chunks, causing `result.raw_fallback_chunks +=
+    None` to raise TypeError, which was then caught and reported as a
+    document-level error with a confusing message.
+    """
+    empty_file = tmp_path / "empty.txt"
+    empty_file.write_text("", encoding="utf-8")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, empty_file)
+
+        from mrag.config.project import load_project_config
+        config = load_project_config(project_dir)
+        result = run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=FakeEmbeddingProvider(),
+            qdrant_client=_fake_qdrant_client(),
+        )
+
+    # Empty document should be processed cleanly:
+    # - indexed=1 (the document was processed, just with zero chunks)
+    # - errors=[] (no TypeError leaked through)
+    # - raw_fallback_chunks=0 (no fallback occurred)
+    assert result.errors == [], f"unexpected errors: {result.errors}"
+    assert result.indexed == 1
+    assert result.raw_fallback_chunks == 0
+
+
 def test_cleanup_profile_index_removes_data(tmp_path: Path, sample_txt: Path):
     _, db = _run_pipeline(tmp_path, sample_txt)
     project_dir = tmp_path / "test-kb"

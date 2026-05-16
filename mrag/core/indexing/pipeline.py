@@ -306,7 +306,11 @@ def _index_document(
     chunks = chunker.chunk(text, {"document_id": doc["id"], "profile_name": profile.name})
 
     if not chunks:
-        return
+        # Empty document — nothing to index. Return 0 (not None) so the caller's
+        # `result.raw_fallback_chunks += fallback_count` arithmetic succeeds and
+        # the document is correctly recorded as a no-op success rather than as a
+        # TypeError-failure.
+        return 0
 
     # 2b. UUID を先払いで割り当て。parent_child の場合は child→parent 参照を解決する。
     chunk_id_list: list[str] = [str(uuid.uuid4()) for _ in chunks]
