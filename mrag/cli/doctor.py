@@ -1,4 +1,3 @@
-import importlib.util
 import sqlite3
 from pathlib import Path
 from typing import Callable
@@ -93,13 +92,6 @@ def _check_ollama(endpoint: str) -> tuple[bool, str]:
         return False, f"not reachable at {endpoint}: {e}"
 
 
-def _check_marker() -> tuple[bool, str]:
-    spec = importlib.util.find_spec("marker")
-    if spec:
-        return True, "marker-pdf installed"
-    return False, "not installed (optional — needed for --provider marker)"
-
-
 def _check_mrag_yaml(project_dir: Path) -> tuple[bool, str]:
     from mrag.config.project import load_project_config
     try:
@@ -171,7 +163,3 @@ def doctor() -> None:
         except FileNotFoundError:
             pass
     _check(f"endpoint ({ollama_endpoint})", lambda ep=ollama_endpoint: _check_ollama(ep))
-
-    console.print()
-    console.print("[bold]Optional packages[/bold]")
-    _check_warn("marker-pdf", _check_marker)

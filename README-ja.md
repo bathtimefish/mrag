@@ -77,14 +77,6 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 
 `mrag init` 実行時に vaporetto が検出されない場合、trigram トークナイザーに自動フォールバックします。`mrag doctor` で検出状況を確認できます。
 
-### Marker を使う場合（オプション：スキャン PDF・複雑なレイアウトの PDF 向け）
-
-```bash
-uv pip install -e ".[marker]"
-```
-
-スキャン PDF や複雑なレイアウトの PDF に対して高精度な抽出を行う `--extractor marker` オプションが `mrag add` で使えるようになります。
-
 ### デフォルト Embedding モデルの取得
 
 ```bash
@@ -133,25 +125,15 @@ mrag add manual.pdf notes.txt
 
 ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。
 
-**エクストラクターオプション（PDF のみ）**
-
-| エクストラクター | オプション | 説明 |
-|--------------|----------|------|
-| PyMuPDF | `--extractor pymupdf` | デフォルト。テキストレイヤーの高速抽出。スキャン/画像ベースの PDF と判定された場合は警告を出力する。 |
-| Marker | `--extractor marker` | 複雑なレイアウトに対応した高精度抽出。`uv pip install -e ".[marker]"` が必要。 |
+**PDF 抽出**には PyMuPDF を使用しており、テキストレイヤーを高速に抽出するとともに `find_tables()` によるテーブル検出を行います。スキャン/画像ベースの PDF と判定された場合は警告が出力されます。
 
 ```bash
-# デフォルトエクストラクター（PyMuPDF）を使用
+# PDF、プレーンテキスト、Markdown ファイルを追加
 mrag add report.pdf
-
-# スキャン PDF や複雑なレイアウトの PDF に Marker を使用
-mrag add scanned.pdf --extractor marker
 
 # 登録済みのドキュメントを再追加（抽出内容を上書き）
 mrag add report.pdf --force
 ```
-
-プロジェクト全体のデフォルトエクストラクターは `mrag.yaml` の `default_extraction.pdf.provider` で設定できます。
 
 ### 3. インデックスを構築する
 
@@ -221,7 +203,7 @@ mrag serve --no-rerank
 | コマンド | 説明 |
 |---------|------|
 | `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
-| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
+| `mrag add <file> [file…] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
 | `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`） |

@@ -77,14 +77,6 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 
 If vaporetto is not available at `mrag init` time, mrag falls back to the trigram tokenizer automatically. Run `mrag doctor` to confirm which tokenizer was detected.
 
-### With Marker (optional, for scanned / complex-layout PDFs)
-
-```bash
-uv pip install -e ".[marker]"
-```
-
-Enables `--extractor marker` in `mrag add` for high-accuracy extraction of scanned or complex-layout PDFs.
-
 ### Pull the default embedding model
 
 ```bash
@@ -132,25 +124,15 @@ mrag add manual.pdf notes.txt
 
 Documents are extracted and stored in `data/documents/`. Supported formats: PDF, plain text, Markdown.
 
-**Extractor options (PDF only)**
-
-| Extractor | Option | Notes |
-|-----------|--------|-------|
-| PyMuPDF | `--extractor pymupdf` | Default. Fast text-layer extraction. Warns if the PDF appears to be scanned/image-based. |
-| Marker | `--extractor marker` | High-accuracy extraction for complex layouts. Requires `uv pip install -e ".[marker]"`. |
+**PDF extraction** uses PyMuPDF for fast text-layer extraction with table detection (`find_tables()`). A warning is printed if the PDF appears to be scanned/image-based.
 
 ```bash
-# Use the default extractor (PyMuPDF)
+# Add a PDF, plain text, or Markdown file
 mrag add report.pdf
-
-# Use Marker for a scanned or complex-layout PDF
-mrag add scanned.pdf --extractor marker
 
 # Re-add an already-registered document (overwrites extracted content)
 mrag add report.pdf --force
 ```
-
-The default extractor can be set project-wide in `mrag.yaml` under `default_extraction.pdf.provider`.
 
 ### 3. Build the index
 
@@ -220,7 +202,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | Command | Description |
 |---------|-------------|
 | `mrag init [--name NAME]` | Create a new project in a subdirectory |
-| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | Ingest documents (extract & store; no indexing) |
+| `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
 | `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |

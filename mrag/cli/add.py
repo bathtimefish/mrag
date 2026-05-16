@@ -14,7 +14,7 @@ def add(
     file: Path = typer.Argument(..., help="File to add (pdf, txt, md)"),
     extractor: Optional[str] = typer.Option(
         None, "--extractor", "-e",
-        help="Extractor override (pymupdf | marker). Default: mrag.yaml default_extraction.",
+        help="Extractor override (pymupdf). Default: mrag.yaml default_extraction.",
     ),
     force: bool = typer.Option(False, "--force", help="Re-add if already registered."),
 ) -> None:
