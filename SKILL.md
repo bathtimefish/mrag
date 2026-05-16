@@ -773,6 +773,8 @@ parent_child returning fewer results than top_k?            →  increase dense_
 WARN: rerank.enabled=true with strategy: parent_child?      →  reranking on parent chunks (~3000 chars) truncates at 512 tokens; set rerank.enabled: false for parent_child profiles
 RuntimeError: index 514 out of bounds?                      →  reranker received a chunk exceeding BERT token limit; ensure rerank.max_length: 512 in profile
 "⚠ large chunks" warning during mrag index?                 →  embedding input may be truncated silently by the model; lower chunk_size or parent.max_chars and mrag reindex (defaults never trigger this)
+Want score-based fusion instead of rank-based?              →  retrieval.fusion: weighted + retrieval.weights: [vector, keyword]; retrieval-time only (no reindex needed)
+Want to bias hybrid retrieval toward keyword (or vector)?   →  retrieval.fusion: weighted + retrieval.weights e.g. [0.3, 0.7] favours keyword; experiment per-corpus
 Documents have tables or code blocks that get split?        →  verify source_format: markdown + preserve_tables/preserve_code_blocks: true (default since 0.8.0); mrag reindex if changed
 Want heading breadcrumbs in search results?                 →  verify source_format: markdown + preserve_heading_path: true (default since 0.8.0); results show "section: H1 > H2 > H3"
 block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata

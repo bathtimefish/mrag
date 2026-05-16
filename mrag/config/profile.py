@@ -36,7 +36,24 @@ class RetrievalConfig(BaseModel):
     top_k: int = 8
     dense_top_k: int = 20
     keyword_top_k: int = 20
-    fusion: str = "rrf"
+    fusion: Literal["rrf", "weighted"] = "rrf"
+    weights: list[float] | None = None
+    """When ``fusion='weighted'``, the fusion weight for each retrieval list in
+    the order [vector, keyword]. ``None`` (default) means uniform weights.
+    Ignored when ``fusion='rrf'`` (RRF uses rank only, not score)."""
+
+    @model_validator(mode="after")
+    def _validate_weights(self) -> "RetrievalConfig":
+        if self.weights is None:
+            return self
+        if len(self.weights) != 2:
+            raise ValueError(
+                "retrieval.weights must have exactly 2 elements [vector, keyword]; "
+                f"got {len(self.weights)}"
+            )
+        if sum(self.weights) <= 0:
+            raise ValueError("retrieval.weights must sum to a positive value")
+        return self
 
 
 class OllamaRetryConfig(BaseModel):
@@ -132,7 +149,8 @@ class ProfileConfig(BaseModel):
         relevant = {
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(exclude={"retry"}),
-            "retrieval": self.retrieval.model_dump(),
+            # weights is retrieval-time only and does not affect what is indexed.
+            "retrieval": self.retrieval.model_dump(exclude={"weights"}),
             "augmentation": self.augmentation.model_dump(exclude={"retry", "failure_policy"}),
             "keyword": self.keyword.model_dump(),
         }

@@ -494,10 +494,18 @@ retrieval:
   top_k: 8              # final number of results returned
   dense_top_k: 20       # candidates fetched from Qdrant before fusion (hybrid/vector)
   keyword_top_k: 20     # candidates fetched from FTS5 before fusion (hybrid/keyword)
-  fusion: rrf           # fusion algorithm (rrf is the only supported option)
+  fusion: rrf           # rrf (default) | weighted
+  # weights: [0.7, 0.3] # only for fusion=weighted; [vector, keyword] order
 ```
 
 `dense_top_k` and `keyword_top_k` are only used when the corresponding sub-search is active. Setting them higher than `top_k` gives the fusion step more candidates to re-rank, which generally improves result quality at a small latency cost.
+
+**Fusion algorithms:**
+
+- **`rrf`** (default) — Reciprocal Rank Fusion. Uses rank only (`score = Σ 1/(k+rank)`, k=60). Robust against score-range differences between vector and keyword searches. No tuning required. Recommended as the default and for most use cases.
+- **`weighted`** — Min-max normalize each list's scores to `[0,1]`, then weighted sum. Preserves score strength (large gaps between top hits remain large). Configurable per-search weighting via `weights: [vector, keyword]`. Use when you want to bias toward one retrieval mode (e.g. `weights: [0.3, 0.7]` to favour keyword on table-heavy or domain-jargon corpora).
+
+The `weights` field is retrieval-time only — changing it does **not** invalidate the index.
 
 **Choosing a strategy:**
 

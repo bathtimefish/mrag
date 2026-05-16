@@ -495,10 +495,18 @@ retrieval:
   top_k: 8              # 最終的に返す件数
   dense_top_k: 20       # 融合前に Qdrant から取得する候補数（hybrid / vector で使用）
   keyword_top_k: 20     # 融合前に FTS5 から取得する候補数（hybrid / keyword で使用）
-  fusion: rrf           # 融合アルゴリズム（現在 rrf のみ対応）
+  fusion: rrf           # rrf（デフォルト）| weighted
+  # weights: [0.7, 0.3] # fusion=weighted の場合のみ。[vector, keyword] の順
 ```
 
 `dense_top_k` / `keyword_top_k` は対応するサブ検索が有効なときのみ使用されます。`top_k` より大きい値を設定することで融合ステップに渡す候補が増え、精度が向上します（レイテンシはわずかに増加）。
+
+**融合アルゴリズム:**
+
+- **`rrf`**（デフォルト）— Reciprocal Rank Fusion。順位のみを使う（`score = Σ 1/(k+rank)`、k=60）。vector と keyword のスコアレンジ差の影響を受けない頑健な手法。チューニング不要で、ほとんどのケースで推奨。
+- **`weighted`** — 各リストのスコアを min-max で `[0, 1]` に正規化してから重み付き和を取る。スコアの「強さ」が結果に反映される（トップヒットが圧倒的なクエリではその強度がそのまま順位に影響）。`weights: [vector, keyword]` で個別重み付けが可能。テーブル中心や専門用語の多いコーパスで `weights: [0.3, 0.7]` のように keyword 寄りにバイアスする用途に有効。
+
+`weights` は検索時のみに使われるパラメータです。変更してもインデックスは無効化されません（reindex 不要）。
 
 **ストラテジーの選び方:**
 
