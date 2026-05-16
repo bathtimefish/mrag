@@ -29,13 +29,5 @@ def get_extractor(source_type: str, provider: str | None = None) -> BaseExtracto
         provider = provider or "pymupdf"
         if provider == "pymupdf":
             return PyMuPDFExtractor()
-        if provider == "marker":
-            try:
-                from mrag.extractors.marker import MarkerExtractor  # type: ignore
-                return MarkerExtractor()
-            except ImportError:
-                raise ImportError(
-                    "marker is not installed. Run: pip install \"mrag[marker]\""
-                )
         raise ValueError(f"Unsupported PDF extractor: {provider}")
     raise ValueError(f"Unsupported source type: {source_type}")

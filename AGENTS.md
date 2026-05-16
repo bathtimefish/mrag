@@ -177,7 +177,7 @@ chunking:
   strategy: parent_child
   source_format: markdown   # optionally enable block-aware wrapping for child chunks
   parent:
-    strategy: fixed_size
+    strategy: fixed_size      # fixed_size | section
     max_chars: 3000
   child:
     strategy: recursive
@@ -201,14 +201,14 @@ Changing any `chunking` field (including `preserve_*`) invalidates the profile h
 |----------|-------------|---------|
 | `keyword` | FTS5 BM25 full-text search | SQLite only |
 | `vector` | Dense vector similarity (Qdrant) | Qdrant + Ollama |
-| `hybrid` | RRF fusion of keyword + vector (default) | Qdrant + Ollama |
+| `hybrid` | Keyword + vector fused via `retrieval.fusion: rrf` (default) or `weighted` | Qdrant + Ollama |
 | `parent_child` | Fetches child chunks, resolves to parent chunks, deduplicates | Qdrant + Ollama; requires `chunking.strategy: parent_child` |
 
 The default strategy is set in `profiles/default.yaml` under `retrieval.strategy`.
 
 ## Reranking
 
-When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sentence-transformers) after retrieval. The reranker fetches `rerank.top_n` candidates then re-scores and returns `rerank.top_k` results.
+When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sentence-transformers) after retrieval. The reranker fetches `rerank.top_n` candidates, re-scores them, and the caller trims to the requested final count (`--top-k` for CLI or `top_k` for API requests).
 
 Reranking is **retrieval-time only** — it does not affect the stored index. Changing `rerank` settings in a profile YAML takes effect on the next search without re-indexing.
 

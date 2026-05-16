@@ -76,6 +76,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
                 keyword_top_k=prof.retrieval.keyword_top_k,
                 top_k=retrieval_top_k * 3,
                 fusion=prof.retrieval.fusion,
+                weights=prof.retrieval.weights,
                 tokenizer=tokenizer,
             )
             from mrag.core.retrieval.parent_child import resolve_to_parent
@@ -94,6 +95,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
                 keyword_top_k=prof.retrieval.keyword_top_k,
                 top_k=retrieval_top_k,
                 fusion=prof.retrieval.fusion,
+                weights=prof.retrieval.weights,
                 tokenizer=tokenizer,
             )
     except (ConnectionError, RuntimeError) as e:
@@ -230,4 +232,5 @@ async def get_profile(profile_name: str, request: Request) -> ProfileDetail:
         dense_top_k=prof.retrieval.dense_top_k,
         keyword_top_k=prof.retrieval.keyword_top_k,
         fusion=prof.retrieval.fusion,
+        weights=prof.retrieval.weights,
     )

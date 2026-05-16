@@ -411,6 +411,42 @@ def test_pipeline_no_documents_returns_empty(tmp_path: Path):
     assert result.skipped == 0
 
 
+def test_pipeline_empty_document_completes_without_error(tmp_path: Path):
+    """An empty document must not raise TypeError or be marked as errored.
+
+    Regression test for the latent bug where _index_document returned None
+    (implicit return) on empty chunks, causing `result.raw_fallback_chunks +=
+    None` to raise TypeError, which was then caught and reported as a
+    document-level error with a confusing message.
+    """
+    empty_file = tmp_path / "empty.txt"
+    empty_file.write_text("", encoding="utf-8")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, empty_file)
+
+        from mrag.config.project import load_project_config
+        config = load_project_config(project_dir)
+        result = run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=FakeEmbeddingProvider(),
+            qdrant_client=_fake_qdrant_client(),
+        )
+
+    # Empty document should be processed cleanly:
+    # - indexed=1 (the document was processed, just with zero chunks)
+    # - errors=[] (no TypeError leaked through)
+    # - raw_fallback_chunks=0 (no fallback occurred)
+    assert result.errors == [], f"unexpected errors: {result.errors}"
+    assert result.indexed == 1
+    assert result.raw_fallback_chunks == 0
+
+
 def test_cleanup_profile_index_removes_data(tmp_path: Path, sample_txt: Path):
     _, db = _run_pipeline(tmp_path, sample_txt)
     project_dir = tmp_path / "test-kb"
@@ -479,7 +515,7 @@ def test_index_command_second_run_skips(tmp_path: Path, sample_txt: Path):
             result2 = runner.invoke(app, ["index"], catch_exceptions=False)
 
     assert result2.exit_code == 0
-    assert "Skipped: 1" in result2.output
+    assert "Up-to-date: 1" in result2.output
 
 
 def test_index_command_without_init_exits_nonzero(tmp_path: Path, sample_txt: Path):
@@ -577,7 +613,7 @@ def test_profile_hash_unaffected_by_rerank_change():
     p1 = ProfileConfig(name="a")
     p2 = ProfileConfig(name="b")
     p2.rerank.enabled = True
-    p2.rerank.top_k = 999
+    p2.rerank.top_n = 999
     assert p1.compute_hash() == p2.compute_hash()
 
 
@@ -717,6 +753,22 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
         assert vtype == "contextual"
         assert ctx == fake_context
         assert cfe.startswith(fake_context + "\n\n")
+
+    # Contextual BM25: FTS5 must contain the contextualized text, not the raw chunk.
+    # The LLM-generated context phrase should be matchable via FTS5 MATCH.
+    from mrag.db.connection import open_fts_connection
+    fts_conn = open_fts_connection(db_path, "trigram")
+    fts_rows = fts_conn.execute(
+        "SELECT content FROM fts_chunks WHERE knowledge_id=?", ("kb_t",)
+    ).fetchall()
+    fts_conn.close()
+    assert fts_rows, "expected FTS rows for indexed chunks"
+    for (fts_content,) in fts_rows:
+        # Each FTS row's stored content should begin with the LLM context (contextualized BM25).
+        assert fts_content.startswith(fake_context), (
+            "FTS5 must store contextualized content (Anthropic Contextual BM25 pattern); "
+            f"got: {fts_content[:80]!r}"
+        )
 
 
 def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample_txt: Path):

@@ -118,6 +118,7 @@ def search(
                     keyword_top_k=prof.retrieval.keyword_top_k,
                     top_k=retrieval_top_k * 3,  # parent 解決後に絞るため多めに取得
                     fusion=prof.retrieval.fusion,
+                    weights=prof.retrieval.weights,
                     tokenizer=tokenizer,
                 )
                 from mrag.core.retrieval.parent_child import resolve_to_parent
@@ -136,6 +137,7 @@ def search(
                     keyword_top_k=prof.retrieval.keyword_top_k,
                     top_k=retrieval_top_k,
                     fusion=prof.retrieval.fusion,
+                    weights=prof.retrieval.weights,
                     tokenizer=tokenizer,
                 )
     except (ConnectionError, RuntimeError) as e:

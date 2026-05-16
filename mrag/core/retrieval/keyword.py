@@ -37,7 +37,9 @@ def keyword_search(
             "LIMIT ?",
             (fts_query, knowledge_id, profile_name, top_k),
         ).fetchall()
-    except (sqlite3.OperationalError, Exception):
+    except sqlite3.OperationalError:
+        # FTS5 syntax errors (e.g. malformed MATCH query) — return empty results.
+        # Other exceptions propagate so real bugs are not silently swallowed.
         rows = []
     finally:
         conn.close()

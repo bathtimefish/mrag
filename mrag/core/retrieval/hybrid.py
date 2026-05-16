@@ -19,6 +19,7 @@ def hybrid_search(
     keyword_top_k: int = 20,
     top_k: int = 8,
     fusion: str = "rrf",
+    weights: list[float] | None = None,
     tokenizer: str = "trigram",
 ) -> list[RetrievalResult]:
     vector_results = vector_search(
@@ -41,7 +42,7 @@ def hybrid_search(
     )
 
     if fusion == "weighted":
-        fused = weighted_fusion([vector_results, keyword_results])
+        fused = weighted_fusion([vector_results, keyword_results], weights=weights)
     else:
         fused = rrf_fusion([vector_results, keyword_results])
 

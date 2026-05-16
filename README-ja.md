@@ -77,14 +77,6 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 
 `mrag init` 実行時に vaporetto が検出されない場合、trigram トークナイザーに自動フォールバックします。`mrag doctor` で検出状況を確認できます。
 
-### Marker を使う場合（オプション：スキャン PDF・複雑なレイアウトの PDF 向け）
-
-```bash
-uv pip install -e ".[marker]"
-```
-
-スキャン PDF や複雑なレイアウトの PDF に対して高精度な抽出を行う `--extractor marker` オプションが `mrag add` で使えるようになります。
-
 ### デフォルト Embedding モデルの取得
 
 ```bash
@@ -133,25 +125,15 @@ mrag add manual.pdf notes.txt
 
 ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。
 
-**エクストラクターオプション（PDF のみ）**
-
-| エクストラクター | オプション | 説明 |
-|--------------|----------|------|
-| PyMuPDF | `--extractor pymupdf` | デフォルト。テキストレイヤーの高速抽出。スキャン/画像ベースの PDF と判定された場合は警告を出力する。 |
-| Marker | `--extractor marker` | 複雑なレイアウトに対応した高精度抽出。`uv pip install -e ".[marker]"` が必要。 |
+**PDF 抽出**には PyMuPDF を使用しており、テキストレイヤーを高速に抽出するとともに `find_tables()` によるテーブル検出を行います。スキャン/画像ベースの PDF と判定された場合は警告が出力されます。
 
 ```bash
-# デフォルトエクストラクター（PyMuPDF）を使用
+# PDF、プレーンテキスト、Markdown ファイルを追加
 mrag add report.pdf
-
-# スキャン PDF や複雑なレイアウトの PDF に Marker を使用
-mrag add scanned.pdf --extractor marker
 
 # 登録済みのドキュメントを再追加（抽出内容を上書き）
 mrag add report.pdf --force
 ```
-
-プロジェクト全体のデフォルトエクストラクターは `mrag.yaml` の `default_extraction.pdf.provider` で設定できます。
 
 ### 3. インデックスを構築する
 
@@ -221,7 +203,7 @@ mrag serve --no-rerank
 | コマンド | 説明 |
 |---------|------|
 | `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
-| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
+| `mrag add <file> [file…] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
 | `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`） |
@@ -449,13 +431,18 @@ chunking:
   preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護（デフォルト: true）
   # --- parent_child のみ ---
   # parent:
-  #   strategy: fixed_size
+  #   strategy: fixed_size   # fixed_size | section
   #   max_chars: 3000
   # child:
   #   strategy: recursive
   #   chunk_size: 600
   #   overlap: 100
 ```
+
+**Parent ストラテジー（`parent_child` のみ）:**
+
+- **`fixed_size`**（デフォルト）— `max_chars` 文字単位で再帰的区切り文字分割により parent を生成。任意のドキュメント形式に対応。
+- **`section`** — Markdown 見出し境界で parent を分割。各見出しセクションが 1 parent となる。サイズ超過セクションは `fixed_size` ロジックで再分割。見出しが存在しない場合は自動的に `fixed_size` 相当の挙動にフォールバックする。技術ドキュメントや Wiki など見出し境界に意味的価値がある構造化 Markdown 文書に向く。
 
 **ブロック認識前処理（全ストラテジーで使用可能）**
 
@@ -508,10 +495,18 @@ retrieval:
   top_k: 8              # 最終的に返す件数
   dense_top_k: 20       # 融合前に Qdrant から取得する候補数（hybrid / vector で使用）
   keyword_top_k: 20     # 融合前に FTS5 から取得する候補数（hybrid / keyword で使用）
-  fusion: rrf           # 融合アルゴリズム（現在 rrf のみ対応）
+  fusion: rrf           # rrf（デフォルト）| weighted
+  # weights: [0.7, 0.3] # fusion=weighted の場合のみ。[vector, keyword] の順
 ```
 
 `dense_top_k` / `keyword_top_k` は対応するサブ検索が有効なときのみ使用されます。`top_k` より大きい値を設定することで融合ステップに渡す候補が増え、精度が向上します（レイテンシはわずかに増加）。
+
+**融合アルゴリズム:**
+
+- **`rrf`**（デフォルト）— Reciprocal Rank Fusion。順位のみを使う（`score = Σ 1/(k+rank)`、k=60）。vector と keyword のスコアレンジ差の影響を受けない頑健な手法。チューニング不要で、ほとんどのケースで推奨。
+- **`weighted`** — 各リストのスコアを min-max で `[0, 1]` に正規化してから重み付き和を取る。スコアの「強さ」が結果に反映される（トップヒットが圧倒的なクエリではその強度がそのまま順位に影響）。`weights: [vector, keyword]` で個別重み付けが可能。テーブル中心や専門用語の多いコーパスで `weights: [0.3, 0.7]` のように keyword 寄りにバイアスする用途に有効。
+
+`weights` は検索時のみに使われるパラメータです。変更してもインデックスは無効化されません（reindex 不要）。
 
 **ストラテジーの選び方:**
 
@@ -524,7 +519,7 @@ retrieval:
 
 ### リランキング
 
-`rerank.enabled: true` を設定すると、検索後に CrossEncoder による再スコアリングが行われ、結果の順序が改善されます。`top_n` 件の候補を取得してから再スコアし、最終的に `top_k` 件を返します。
+`rerank.enabled: true` を設定すると、検索後に CrossEncoder による再スコアリングが行われ、結果の順序が改善されます。`top_n` 件の候補を取得してから再スコアし、最終的な返却件数は呼び出し側で指定します（CLI なら `--top-k`、API なら リクエストの `top_k`）。
 
 ```yaml
 rerank:
@@ -532,8 +527,7 @@ rerank:
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
   max_length: 512  # トークン切り捨て上限。BERT 系モデルでは 512 のまま使用すること
-  top_n: 30        # リランキング前に取得する候補数
-  top_k: 8         # リランキング後に返す件数
+  top_n: 30        # リランキング前に取得する候補数。最終件数は呼び出し側（--top-k / API top_k）で決定
 ```
 
 リランキングはクエリ時にのみ適用されます。`rerank` の設定を変更しても再インデックスは不要です。使用には `uv pip install -e ".[reranker]"` が必要です。
@@ -556,12 +550,14 @@ augmentation:
 
 [Anthropic contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) パターンに基づいた実装です。生成モデル（`gemma4:e4b`）は Embedding モデル（`bge-m3`）とは独立しています。
 
+有効化時、mrag は **Contextual Embeddings（ベクター）と Contextual BM25（FTS5 キーワード）の両方** を構築します。同じ「コンテキスト + チャンク」テキストが両方のインデックスに格納される Anthropic 推奨の完全構成です。
+
 **重要な仕様:**
 
 - `strategy: none`（デフォルト）— LLM 呼び出しなし。インデックス速度に影響なし
-- キーワード検索（FTS5）は常に元のチャンク内容をインデックスします — ベクター検索のみが拡張の影響を受けます
 - `augmentation.strategy` を変更するとプロファイルハッシュが変わるため、次回の `mrag index` で全チャンクが再インデックスされます
 - `strategy: contextual` でのインデックスは遅くなります（1チャンクにつき1回の LLM 呼び出し）
+- **ドキュメント truncation 制約（ローカル LLM の制限）:** プロンプトの `{document}` プレースホルダーはローカル生成モデルに渡される前に 8000 文字に切り詰められます。8000 文字を超えるドキュメントの場合、末尾近くのチャンクはドキュメント前半部分のみを文脈としてコンテキストが生成されるため、文脈の関連度が下がる可能性があります。これは `gemma4:e4b` などコンテキストウィンドウが限られたローカルモデルとローカルファースト運用のトレードオフです。回避策：長いコンテキスト対応の生成モデルを使う、または非常に長いドキュメントを `mrag add` 前に分割しておく
 - 一時的な Ollama タイムアウトや HTTP 5xx エラーはエクスポネンシャルバックオフで自動リトライされます。ログの `↻ retry` 行で状況を確認できます
 - リトライを使い果たしても失敗するチャンク（OCR/表ノイズによる空レスポンス連発など）は、ドキュメント全体を失敗させる代わりに raw バリアントとして保存されます。成功行に `(N raw fallback)` と表示され、`⤵ fallback` ログで対象チャンクを確認できます
 - チャンク数が 300 以上のドキュメントはインデックス時に `⚠ large document` 警告を表示します（情報提供のみ、エラーではありません）

@@ -77,14 +77,6 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 
 If vaporetto is not available at `mrag init` time, mrag falls back to the trigram tokenizer automatically. Run `mrag doctor` to confirm which tokenizer was detected.
 
-### With Marker (optional, for scanned / complex-layout PDFs)
-
-```bash
-uv pip install -e ".[marker]"
-```
-
-Enables `--extractor marker` in `mrag add` for high-accuracy extraction of scanned or complex-layout PDFs.
-
 ### Pull the default embedding model
 
 ```bash
@@ -132,25 +124,15 @@ mrag add manual.pdf notes.txt
 
 Documents are extracted and stored in `data/documents/`. Supported formats: PDF, plain text, Markdown.
 
-**Extractor options (PDF only)**
-
-| Extractor | Option | Notes |
-|-----------|--------|-------|
-| PyMuPDF | `--extractor pymupdf` | Default. Fast text-layer extraction. Warns if the PDF appears to be scanned/image-based. |
-| Marker | `--extractor marker` | High-accuracy extraction for complex layouts. Requires `uv pip install -e ".[marker]"`. |
+**PDF extraction** uses PyMuPDF for fast text-layer extraction with table detection (`find_tables()`). A warning is printed if the PDF appears to be scanned/image-based.
 
 ```bash
-# Use the default extractor (PyMuPDF)
+# Add a PDF, plain text, or Markdown file
 mrag add report.pdf
-
-# Use Marker for a scanned or complex-layout PDF
-mrag add scanned.pdf --extractor marker
 
 # Re-add an already-registered document (overwrites extracted content)
 mrag add report.pdf --force
 ```
-
-The default extractor can be set project-wide in `mrag.yaml` under `default_extraction.pdf.provider`.
 
 ### 3. Build the index
 
@@ -220,7 +202,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | Command | Description |
 |---------|-------------|
 | `mrag init [--name NAME]` | Create a new project in a subdirectory |
-| `mrag add <file> [file…] [--extractor pymupdf\|marker] [--force]` | Ingest documents (extract & store; no indexing) |
+| `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
 | `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |
@@ -448,13 +430,18 @@ chunking:
   preserve_code_blocks: true    # keep fenced code blocks as atomic units (default: true)
   # --- parent_child only ---
   # parent:
-  #   strategy: fixed_size
+  #   strategy: fixed_size   # fixed_size | section
   #   max_chars: 3000
   # child:
   #   strategy: recursive
   #   chunk_size: 600
   #   overlap: 100
 ```
+
+**Parent strategies (`parent_child` only):**
+
+- **`fixed_size`** (default) — splits the document into parent chunks of `max_chars` characters using recursive separator splitting. Good for any document type.
+- **`section`** — splits parents at Markdown heading boundaries; each heading section becomes one parent. Oversized sections are sub-split with `fixed_size` logic. Documents with no headings degrade naturally to `fixed_size` behaviour. Use for structured Markdown documents (technical docs, wikis) where heading boundaries carry semantic meaning.
 
 **Block-aware preprocessing (universal)**
 
@@ -507,10 +494,18 @@ retrieval:
   top_k: 8              # final number of results returned
   dense_top_k: 20       # candidates fetched from Qdrant before fusion (hybrid/vector)
   keyword_top_k: 20     # candidates fetched from FTS5 before fusion (hybrid/keyword)
-  fusion: rrf           # fusion algorithm (rrf is the only supported option)
+  fusion: rrf           # rrf (default) | weighted
+  # weights: [0.7, 0.3] # only for fusion=weighted; [vector, keyword] order
 ```
 
 `dense_top_k` and `keyword_top_k` are only used when the corresponding sub-search is active. Setting them higher than `top_k` gives the fusion step more candidates to re-rank, which generally improves result quality at a small latency cost.
+
+**Fusion algorithms:**
+
+- **`rrf`** (default) — Reciprocal Rank Fusion. Uses rank only (`score = Σ 1/(k+rank)`, k=60). Robust against score-range differences between vector and keyword searches. No tuning required. Recommended as the default and for most use cases.
+- **`weighted`** — Min-max normalize each list's scores to `[0,1]`, then weighted sum. Preserves score strength (large gaps between top hits remain large). Configurable per-search weighting via `weights: [vector, keyword]`. Use when you want to bias toward one retrieval mode (e.g. `weights: [0.3, 0.7]` to favour keyword on table-heavy or domain-jargon corpora).
+
+The `weights` field is retrieval-time only — changing it does **not** invalidate the index.
 
 **Choosing a strategy:**
 
@@ -523,7 +518,7 @@ retrieval:
 
 ### Reranking
 
-When `rerank.enabled: true`, mrag runs a CrossEncoder reranker after retrieval to improve result ordering. The reranker fetches `top_n` candidates, re-scores them, and returns `top_k` results.
+When `rerank.enabled: true`, mrag runs a CrossEncoder reranker after retrieval to improve result ordering. The reranker fetches `top_n` candidates, re-scores them, and returns the final result count requested by the caller (`--top-k` for CLI or `top_k` in API requests).
 
 ```yaml
 rerank:
@@ -531,8 +526,7 @@ rerank:
   provider: sentence-transformers
   model: hotchpotch/japanese-reranker-cross-encoder-small-v1
   max_length: 512  # token truncation limit; keep at 512 for BERT-based models
-  top_n: 30        # candidates fetched before reranking
-  top_k: 8         # final results after reranking
+  top_n: 30        # candidates fetched before reranking; final count comes from --top-k (CLI) or request body (API)
 ```
 
 Reranking is applied at query time only — changing `rerank` settings never triggers re-indexing. Requires `uv pip install -e ".[reranker]"`.
@@ -555,12 +549,14 @@ augmentation:
 
 This follows the [Anthropic contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) pattern. The generation model is independent of the embedding model: `bge-m3` embeds the augmented text, while `gemma4:e4b` (or any other Ollama generation model) produces the context.
 
+When enabled, mrag applies **both** Contextual Embeddings (vector) and Contextual BM25 (FTS5 keyword) — the same contextualized text (`context + chunk`) is indexed in both stores, matching Anthropic's full Contextual Retrieval recipe.
+
 **Important notes:**
 
 - `strategy: none` (default) — no LLM call; indexing speed is unchanged
-- Keyword search (FTS5) always indexes original chunk content — augmentation only affects vector embeddings
 - Changing `augmentation.strategy` invalidates the index; run `mrag reindex` to rebuild
 - Indexing with `strategy: contextual` is slower: one LLM call per chunk
+- **Document truncation limit (local LLM constraint):** The `{document}` placeholder in the prompt is truncated to 8000 characters before being sent to the local generation model. For documents longer than 8000 chars, chunks near the end receive context generated from only the document prefix, which can reduce contextual relevance. This is a pragmatic trade-off for local-first operation with limited-context-window models like `gemma4:e4b`. Workarounds: use a longer-context generation model, or split very long documents into multiple input files before `mrag add`.
 - Transient Ollama timeouts and HTTP 5xx errors are automatically retried with exponential backoff; monitor logs for `↻ retry` lines
 - If a chunk still fails after all retries (e.g. OCR/table noise causing repeated empty responses), mrag falls back to storing the raw chunk instead of failing the whole document — the success line shows `(N raw fallback)` and `⤵ fallback` log lines identify affected chunks
 - Documents with 300 or more chunks print a `⚠ large document` warning at index time — this is informational, not an error

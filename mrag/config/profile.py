@@ -1,13 +1,14 @@
 import hashlib
 import json
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
 
 class ParentConfig(BaseModel):
-    strategy: str = "fixed_size"   # "fixed_size" | "section"
+    strategy: Literal["fixed_size", "section"] = "fixed_size"
     max_chars: int = 3000
 
 
@@ -29,13 +30,46 @@ class ChunkingConfig(BaseModel):
     parent: ParentConfig = Field(default_factory=ParentConfig)
     child: ChildConfig = Field(default_factory=ChildConfig)
 
+    @model_validator(mode="after")
+    def _validate_parent_child_sizes(self) -> "ChunkingConfig":
+        # Only enforce when parent_child is actually in use — for other
+        # strategies parent/child fields are unused so size relationships
+        # don't matter.
+        if self.strategy != "parent_child":
+            return self
+        if self.child.chunk_size >= self.parent.max_chars:
+            raise ValueError(
+                f"chunking.child.chunk_size ({self.child.chunk_size}) must be smaller "
+                f"than chunking.parent.max_chars ({self.parent.max_chars}). "
+                "parent_child retrieval requires children to be substantially smaller "
+                "than parents — otherwise the small-to-big benefit is lost."
+            )
+        return self
+
 
 class RetrievalConfig(BaseModel):
     strategy: str = "hybrid"
     top_k: int = 8
     dense_top_k: int = 20
     keyword_top_k: int = 20
-    fusion: str = "rrf"
+    fusion: Literal["rrf", "weighted"] = "rrf"
+    weights: list[float] | None = None
+    """When ``fusion='weighted'``, the fusion weight for each retrieval list in
+    the order [vector, keyword]. ``None`` (default) means uniform weights.
+    Ignored when ``fusion='rrf'`` (RRF uses rank only, not score)."""
+
+    @model_validator(mode="after")
+    def _validate_weights(self) -> "RetrievalConfig":
+        if self.weights is None:
+            return self
+        if len(self.weights) != 2:
+            raise ValueError(
+                "retrieval.weights must have exactly 2 elements [vector, keyword]; "
+                f"got {len(self.weights)}"
+            )
+        if sum(self.weights) <= 0:
+            raise ValueError("retrieval.weights must sum to a positive value")
+        return self
 
 
 class OllamaRetryConfig(BaseModel):
@@ -82,7 +116,6 @@ class RerankConfig(BaseModel):
     model: str = "hotchpotch/japanese-reranker-cross-encoder-small-v1"
     max_length: int = 512
     top_n: int = 30
-    top_k: int = 8
 
 
 class ProfileExtractionPdfConfig(BaseModel):
@@ -131,7 +164,8 @@ class ProfileConfig(BaseModel):
         relevant = {
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(exclude={"retry"}),
-            "retrieval": self.retrieval.model_dump(),
+            # weights is retrieval-time only and does not affect what is indexed.
+            "retrieval": self.retrieval.model_dump(exclude={"weights"}),
             "augmentation": self.augmentation.model_dump(exclude={"retry", "failure_policy"}),
             "keyword": self.keyword.model_dump(),
         }

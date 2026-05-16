@@ -21,12 +21,40 @@ class ParentChildChunker(BaseChunker):
     def chunk(self, text: str, metadata: dict[str, Any]) -> list[ChunkData]:
         if not text.strip():
             return []
+        parent_texts = self._split_into_parents(text)
+        return self._build_parent_child(parent_texts, metadata)
+
+    def _split_into_parents(self, text: str) -> list[str]:
         if self.parent_strategy == "fixed_size":
-            return self._chunk_fixed_size(text, metadata)
+            return _split_text(text, self.parent_chunk_size, overlap=0)
+        if self.parent_strategy == "section":
+            return self._split_section_parents(text)
         raise ValueError(f"Unsupported parent_strategy: {self.parent_strategy}")
 
-    def _chunk_fixed_size(self, text: str, metadata: dict[str, Any]) -> list[ChunkData]:
-        parent_texts = _split_text(text, self.parent_chunk_size, overlap=0)
+    def _split_section_parents(self, text: str) -> list[str]:
+        """Split parents at Markdown heading boundaries.
+
+        Each Markdown section (heading + content until next heading) becomes one
+        parent. Sections exceeding ``parent_chunk_size`` are recursively split
+        with ``_split_text``. Documents with no headings degrade naturally to
+        ``fixed_size`` behaviour (the entire document is treated as one section).
+        """
+        from mrag.core.chunking.markdown_recursive import _split_by_headings
+
+        sections = _split_by_headings(text)
+        parents: list[str] = []
+        for section in sections:
+            if not section.strip():
+                continue
+            if len(section) <= self.parent_chunk_size:
+                parents.append(section)
+            else:
+                parents.extend(_split_text(section, self.parent_chunk_size, overlap=0))
+        return parents
+
+    def _build_parent_child(
+        self, parent_texts: list[str], metadata: dict[str, Any]
+    ) -> list[ChunkData]:
         all_chunks: list[ChunkData] = []
         global_idx = 0
 

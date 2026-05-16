@@ -43,6 +43,14 @@ def get_chunker(
     # ------------------------------------------------------------------ #
     # Build the inner (strategy-specific) chunker                          #
     # ------------------------------------------------------------------ #
+    # ``block_wrap_size`` is the size at which BlockAwareWrapper groups blocks
+    # before handing them to the inner chunker. For most strategies this equals
+    # the regular chunk_size, but for parent_child the wrapper must group at
+    # parent.max_chars so that ParentChildChunker receives parent-sized input
+    # (otherwise parents collapse to chunk_size and the small-to-big benefit is
+    # lost — see dev_docs/99_DESCRIBE_SPECS/P_CRetrival.md).
+    block_wrap_size: int = chunk_size
+
     if strategy == "block_aware":
         # Alias: recursive inner + force block-aware wrapping below
         from mrag.core.chunking.recursive import RecursiveChunker
@@ -66,6 +74,8 @@ def get_chunker(
             child_overlap=c.overlap if c else 100,
             parent_strategy=p.strategy if p else "fixed_size",
         )
+        # Group blocks at parent size so parents reach their intended size.
+        block_wrap_size = p.max_chars if p else 3000
         _needs_wrap = False
     else:
         raise ValueError(f"Unsupported chunking strategy: {strategy}")
@@ -81,7 +91,7 @@ def get_chunker(
         from mrag.core.chunking.block_aware import BlockAwareWrapper
         return BlockAwareWrapper(
             inner_chunker=inner,
-            chunk_size=chunk_size,
+            chunk_size=block_wrap_size,
             overlap=overlap,
             preserve_tables=preserve_tables,
             preserve_code_blocks=preserve_code_blocks,
