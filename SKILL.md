@@ -186,6 +186,21 @@ mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 
 This streams `augmenting`, `↻ retry`, and `⤵ fallback` lines to the terminal in real time while writing them to file. Both you and an LLM monitoring the log file can track how far the run has progressed, spot stalling chunks, and estimate remaining time — without waiting for the run to finish.
 
+**`⚠ large chunks` warning during index:**
+
+When a document produces one or more chunks whose embedding input (chunk content, or `context + content` if contextual augmentation is enabled) exceeds 6000 characters, mrag prints:
+
+```
+⚠ large chunks  3 chunks exceed 6000 chars (max: 8421) — may hit embedding model input limit  <filename>
+```
+
+This is informational, not an error — indexing continues. The threshold (6000 chars) is set conservatively below the input limit of typical embedding models (e.g. `bge-m3` ≈ 8192 tokens, which corresponds to roughly 12000–25000 characters depending on language and content type). When this warning fires:
+
+- The embedding model **may silently truncate** the input on its side. Retrieval quality for that chunk's tail content can degrade without any error surfacing.
+- To eliminate the warning, lower `chunking.chunk_size` (or `chunking.parent.max_chars` for `parent_child` profiles), then `mrag reindex`.
+- The warning is most likely with parent-child profiles using `parent.max_chars >= 6000`, or with chunking profiles where contextual augmentation prepends substantial context to already-large chunks.
+- If `chunking` defaults (`chunk_size: 800`, `parent.max_chars: 3000`) are used, this warning should never fire.
+
 **Verify:**
 ```bash
 mrag search "test" --strategy keyword --top-k 1
@@ -757,6 +772,7 @@ parent_child profile validation error?                      →  chunking.strate
 parent_child returning fewer results than top_k?            →  increase dense_top_k and keyword_top_k to >= top_k * 3
 WARN: rerank.enabled=true with strategy: parent_child?      →  reranking on parent chunks (~3000 chars) truncates at 512 tokens; set rerank.enabled: false for parent_child profiles
 RuntimeError: index 514 out of bounds?                      →  reranker received a chunk exceeding BERT token limit; ensure rerank.max_length: 512 in profile
+"⚠ large chunks" warning during mrag index?                 →  embedding input may be truncated silently by the model; lower chunk_size or parent.max_chars and mrag reindex (defaults never trigger this)
 Documents have tables or code blocks that get split?        →  verify source_format: markdown + preserve_tables/preserve_code_blocks: true (default since 0.8.0); mrag reindex if changed
 Want heading breadcrumbs in search results?                 →  verify source_format: markdown + preserve_heading_path: true (default since 0.8.0); results show "section: H1 > H2 > H3"
 block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata

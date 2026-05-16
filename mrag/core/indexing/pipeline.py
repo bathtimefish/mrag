@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from rich.console import Console
 
 
+# Embedding 入力長の警告閾値。bge-m3 等の代表的なモデルは ~8192 トークン上限を
+# 持ち、安全側に倒して半分以下の閾値を設定する。テーブル/コードのような
+# token-dense なコンテンツでもこの閾値以下なら入力上限を超えにくい。
+_EMBEDDING_INPUT_WARN_THRESHOLD = 6000
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -275,6 +281,7 @@ def _index_document(
     on_chunk_augmented: Callable[[int, int], None] | None = None,
     on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None,
     on_chunk_fallback: Callable[[int, int, Exception], None] | None = None,
+    on_chunks_oversized: Callable[[int, int, int], None] | None = None,
 ) -> int:
     # 1. Read extracted content
     source_format = profile.chunking.source_format
@@ -344,6 +351,21 @@ def _index_document(
                 contents_for_embedding[i] = ctx + "\n\n" + indexable_chunks[i].content
                 variant_types[i] = "contextual"
             # else: remains raw (context_texts[i]=None, original content, "raw" variant_type)
+
+    # 3b. Warn if any content exceeds the embedding model input safety threshold.
+    # Silent truncation by the embedding model can degrade retrieval quality
+    # without surfacing an error, so we flag this case proactively.
+    if on_chunks_oversized is not None:
+        oversized_lens = [
+            len(c) for c in contents_for_embedding
+            if len(c) > _EMBEDDING_INPUT_WARN_THRESHOLD
+        ]
+        if oversized_lens:
+            on_chunks_oversized(
+                len(oversized_lens),
+                max(oversized_lens),
+                _EMBEDDING_INPUT_WARN_THRESHOLD,
+            )
 
     # 4. Embed (with optional cache) — indexable チャンクのみ
     if use_cache:
@@ -528,8 +550,10 @@ def run_index(
             max_delay=profile.embedding.retry.max_delay_seconds,
         )
 
-    # Probe: discover dimension, register model, ensure collection
-    embedding_provider.embed([""])
+    # Probe: discover dimension, register model, ensure collection.
+    # Use a single space rather than an empty string — some embedding models
+    # reject empty input with HTTP 4xx.
+    embedding_provider.embed([" "])
     model_id = embedding_provider.get_model_id()
     embedding_provider.ensure_model_registered(db_path)
 
@@ -575,6 +599,7 @@ def run_index(
         on_chunk_augmented: Callable[[int, int], None] | None = None
         on_chunk_retry: Callable[[int, int, int, int, Exception], None] | None = None
         on_chunk_fallback: Callable[[int, int, Exception], None] | None = None
+        on_chunks_oversized: Callable[[int, int, int], None] | None = None
         if console:
             strategy = profile.augmentation.strategy
 
@@ -592,6 +617,16 @@ def run_index(
                         )
                 return _cb
             on_doc_start = _make_start_cb(filename)
+
+            def _make_oversized_cb(fn: str) -> Callable[[int, int, int], None]:
+                def _cb(count: int, max_len: int, threshold: int) -> None:
+                    console.print(
+                        f"[dim]{_now_ts()}[/dim]         [yellow]⚠ large chunks[/yellow]  "
+                        f"{count} chunks exceed {threshold} chars (max: {max_len}) — "
+                        f"may hit embedding model input limit  [dim]{fn}[/dim]"
+                    )
+                return _cb
+            on_chunks_oversized = _make_oversized_cb(filename)
 
             if strategy == "contextual":
                 def _make_chunk_cb(fn: str) -> Callable[[int, int], None]:
@@ -642,6 +677,7 @@ def run_index(
                 on_chunk_augmented=on_chunk_augmented,
                 on_chunk_retry=on_chunk_retry,
                 on_chunk_fallback=on_chunk_fallback,
+                on_chunks_oversized=on_chunks_oversized,
             )
             _set_indexed_status(db_path, doc["id"], profile_name)
             if console:
