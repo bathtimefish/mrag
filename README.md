@@ -430,13 +430,18 @@ chunking:
   preserve_code_blocks: true    # keep fenced code blocks as atomic units (default: true)
   # --- parent_child only ---
   # parent:
-  #   strategy: fixed_size
+  #   strategy: fixed_size   # fixed_size | section
   #   max_chars: 3000
   # child:
   #   strategy: recursive
   #   chunk_size: 600
   #   overlap: 100
 ```
+
+**Parent strategies (`parent_child` only):**
+
+- **`fixed_size`** (default) — splits the document into parent chunks of `max_chars` characters using recursive separator splitting. Good for any document type.
+- **`section`** — splits parents at Markdown heading boundaries; each heading section becomes one parent. Oversized sections are sub-split with `fixed_size` logic. Documents with no headings degrade naturally to `fixed_size` behaviour. Use for structured Markdown documents (technical docs, wikis) where heading boundaries carry semantic meaning.
 
 **Block-aware preprocessing (universal)**
 

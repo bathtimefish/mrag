@@ -431,13 +431,18 @@ chunking:
   preserve_code_blocks: true    # フェンスコードブロックをアトミック単位として保護（デフォルト: true）
   # --- parent_child のみ ---
   # parent:
-  #   strategy: fixed_size
+  #   strategy: fixed_size   # fixed_size | section
   #   max_chars: 3000
   # child:
   #   strategy: recursive
   #   chunk_size: 600
   #   overlap: 100
 ```
+
+**Parent ストラテジー（`parent_child` のみ）:**
+
+- **`fixed_size`**（デフォルト）— `max_chars` 文字単位で再帰的区切り文字分割により parent を生成。任意のドキュメント形式に対応。
+- **`section`** — Markdown 見出し境界で parent を分割。各見出しセクションが 1 parent となる。サイズ超過セクションは `fixed_size` ロジックで再分割。見出しが存在しない場合は自動的に `fixed_size` 相当の挙動にフォールバックする。技術ドキュメントや Wiki など見出し境界に意味的価値がある構造化 Markdown 文書に向く。
 
 **ブロック認識前処理（全ストラテジーで使用可能）**
 

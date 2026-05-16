@@ -479,7 +479,7 @@ def test_index_command_second_run_skips(tmp_path: Path, sample_txt: Path):
             result2 = runner.invoke(app, ["index"], catch_exceptions=False)
 
     assert result2.exit_code == 0
-    assert "Skipped: 1" in result2.output
+    assert "Up-to-date: 1" in result2.output
 
 
 def test_index_command_without_init_exits_nonzero(tmp_path: Path, sample_txt: Path):

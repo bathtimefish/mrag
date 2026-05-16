@@ -656,7 +656,7 @@ chunking:
   preserve_tables: true        # optional: keep tables intact in child chunks
   preserve_code_blocks: true   # optional: keep code blocks intact in child chunks
   parent:
-    strategy: fixed_size
+    strategy: fixed_size       # fixed_size | section (Markdown heading boundaries)
     max_chars: 3000
   child:
     strategy: recursive

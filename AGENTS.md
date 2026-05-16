@@ -177,7 +177,7 @@ chunking:
   strategy: parent_child
   source_format: markdown   # optionally enable block-aware wrapping for child chunks
   parent:
-    strategy: fixed_size
+    strategy: fixed_size      # fixed_size | section
     max_chars: 3000
   child:
     strategy: recursive

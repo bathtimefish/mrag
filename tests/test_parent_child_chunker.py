@@ -141,6 +141,83 @@ def test_chunk_indexes_are_globally_sequential():
 # ---------------------------------------------------------------------------
 
 def test_unsupported_parent_strategy_raises():
-    chunker = ParentChildChunker(parent_strategy="section")
+    chunker = ParentChildChunker(parent_strategy="unknown")
     with pytest.raises(ValueError, match="Unsupported parent_strategy"):
         chunker.chunk("some text", {})
+
+
+# ---------------------------------------------------------------------------
+# parent_strategy: "section"
+# ---------------------------------------------------------------------------
+
+def _make_section_chunker(**kwargs) -> ParentChildChunker:
+    return ParentChildChunker(
+        parent_chunk_size=kwargs.get("parent_chunk_size", 500),
+        child_chunk_size=kwargs.get("child_chunk_size", 80),
+        child_overlap=kwargs.get("child_overlap", 10),
+        parent_strategy="section",
+    )
+
+
+def test_section_strategy_splits_by_headings():
+    """Each Markdown heading section becomes one parent."""
+    text = (
+        "# Section A\n\nContent of A.\n\n"
+        "# Section B\n\nContent of B.\n\n"
+        "# Section C\n\nContent of C."
+    )
+    chunker = _make_section_chunker(parent_chunk_size=500)
+    result = chunker.chunk(text, {})
+    parents = [c for c in result if c.chunk_type == "parent"]
+    assert len(parents) == 3
+    assert "Section A" in parents[0].content
+    assert "Section B" in parents[1].content
+    assert "Section C" in parents[2].content
+
+
+def test_section_strategy_preamble_before_first_heading():
+    """Text before the first heading becomes its own parent."""
+    text = "Preamble text.\n\n# Section A\n\nContent."
+    chunker = _make_section_chunker(parent_chunk_size=500)
+    result = chunker.chunk(text, {})
+    parents = [c for c in result if c.chunk_type == "parent"]
+    assert len(parents) == 2
+    assert "Preamble" in parents[0].content
+    assert "Section A" in parents[1].content
+
+
+def test_section_strategy_oversized_section_is_split():
+    """Sections exceeding parent_chunk_size are sub-split."""
+    big_section = "# Big\n\n" + _long_text(800)
+    chunker = _make_section_chunker(parent_chunk_size=200)
+    result = chunker.chunk(big_section, {})
+    parents = [c for c in result if c.chunk_type == "parent"]
+    assert len(parents) >= 2
+    for p in parents:
+        assert len(p.content) <= 200 or "Big" in p.content  # heading-attached one may slightly exceed
+
+
+def test_section_strategy_no_headings_falls_back():
+    """Documents without headings degrade to fixed_size-like behaviour."""
+    text = _long_text(400)
+    chunker = _make_section_chunker(parent_chunk_size=200)
+    result = chunker.chunk(text, {})
+    parents = [c for c in result if c.chunk_type == "parent"]
+    assert len(parents) >= 1
+
+
+def test_section_strategy_children_inherit_parent_hint():
+    text = "# A\n\nAlpha content.\n\n# B\n\nBeta content."
+    chunker = _make_section_chunker(parent_chunk_size=500)
+    result = chunker.chunk(text, {})
+    hints = {c.metadata["_parent_id_hint"] for c in result if c.chunk_type == "parent"}
+    for child in (c for c in result if c.chunk_type == "child"):
+        assert child.parent_chunk_id in hints
+
+
+def test_section_strategy_chunk_indexes_sequential():
+    text = "# A\n\nAlpha.\n\n# B\n\nBeta.\n\n# C\n\nGamma."
+    chunker = _make_section_chunker(parent_chunk_size=500)
+    result = chunker.chunk(text, {})
+    indexes = [c.chunk_index for c in result]
+    assert indexes == list(range(len(result)))

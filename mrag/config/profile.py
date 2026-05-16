@@ -1,13 +1,14 @@
 import hashlib
 import json
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
 
 class ParentConfig(BaseModel):
-    strategy: str = "fixed_size"   # "fixed_size" | "section"
+    strategy: Literal["fixed_size", "section"] = "fixed_size"
     max_chars: int = 3000
 
 
