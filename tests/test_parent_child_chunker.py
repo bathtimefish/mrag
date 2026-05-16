@@ -221,3 +221,54 @@ def test_section_strategy_chunk_indexes_sequential():
     result = chunker.chunk(text, {})
     indexes = [c.chunk_index for c in result]
     assert indexes == list(range(len(result)))
+
+
+# ---------------------------------------------------------------------------
+# parent_child + block-aware wrapping (via get_chunker)
+# Verifies that BlockAwareWrapper uses parent.max_chars (not chunk_size) when
+# wrapping ParentChildChunker — otherwise parents collapse to small groups.
+# ---------------------------------------------------------------------------
+
+def test_parent_child_with_block_aware_uses_parent_max_chars():
+    """When parent_child + source_format: markdown, BlockAwareWrapper must group
+    at parent.max_chars so that parents reach their intended size."""
+    from mrag.core.chunking.base import get_chunker
+    from mrag.config.profile import ParentConfig, ChildConfig
+
+    chunker = get_chunker(
+        strategy="parent_child",
+        chunk_size=800,        # ← should NOT be used as the parent grouping size
+        overlap=120,
+        preserve_heading_path=True,
+        preserve_tables=True,
+        preserve_code_blocks=True,
+        source_format="markdown",
+        parent_config=ParentConfig(max_chars=3000, strategy="fixed_size"),
+        child_config=ChildConfig(chunk_size=600, overlap=100),
+    )
+
+    body = ("Paragraph filler. " * 100)
+    text = (
+        "# Section A\n\n" + body + "\n\n"
+        "# Section B\n\n" + body + "\n\n"
+        "# Section C\n\n" + body
+    )
+    chunks = chunker.chunk(text, {"document_id": "d1", "profile_name": "p1"})
+    parents = [c for c in chunks if c.chunk_type == "parent"]
+    children = [c for c in chunks if c.chunk_type == "child"]
+
+    assert parents, "expected at least one parent"
+    assert children, "expected children"
+
+    # Parents should NOT be capped at chunk_size (800). At least one parent
+    # should exceed chunk_size; otherwise the bug is present.
+    max_parent_size = max(len(p.content) for p in parents)
+    assert max_parent_size > 800, (
+        f"parents collapsed to chunk_size ({max_parent_size} <= 800) — "
+        "BlockAwareWrapper is not using parent.max_chars"
+    )
+    # And every parent should be at or below parent.max_chars (3000) within tolerance
+    for p in parents:
+        assert len(p.content) <= 3000 + 200, (
+            f"parent exceeds parent.max_chars: {len(p.content)} chars"
+        )

@@ -54,6 +54,43 @@ class TestParentChildValidation:
         assert prof.chunking.child.chunk_size == 600
         assert prof.chunking.child.overlap == 100
 
+    def test_child_size_equal_to_parent_raises(self):
+        with pytest.raises(ValidationError, match="must be smaller"):
+            ProfileConfig(
+                name="bad",
+                chunking={
+                    "strategy": "parent_child",
+                    "parent": {"max_chars": 3000},
+                    "child": {"chunk_size": 3000},
+                },
+                retrieval={"strategy": "parent_child"},
+            )
+
+    def test_child_size_larger_than_parent_raises(self):
+        with pytest.raises(ValidationError, match="must be smaller"):
+            ProfileConfig(
+                name="bad",
+                chunking={
+                    "strategy": "parent_child",
+                    "parent": {"max_chars": 500},
+                    "child": {"chunk_size": 600},
+                },
+                retrieval={"strategy": "parent_child"},
+            )
+
+    def test_child_size_relationship_ignored_for_non_parent_child(self):
+        # Default config has child.chunk_size=600 and parent.max_chars=3000 (irrelevant for recursive).
+        # If we deliberately put child > parent on a non-parent_child profile, validation should pass.
+        prof = ProfileConfig(
+            name="ok",
+            chunking={
+                "strategy": "recursive",
+                "parent": {"max_chars": 500},
+                "child": {"chunk_size": 600},
+            },
+        )
+        assert prof.chunking.strategy == "recursive"
+
 
 class TestRetrievalFusionValidation:
     def test_default_fusion_is_rrf(self):

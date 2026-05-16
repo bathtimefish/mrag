@@ -682,10 +682,10 @@ name: parent_child
 
 chunking:
   strategy: parent_child
-  source_format: markdown      # enables block-aware wrapping for child chunks
-  preserve_heading_path: true  # optional: attach section breadcrumbs
-  preserve_tables: true        # optional: keep tables intact in child chunks
-  preserve_code_blocks: true   # optional: keep code blocks intact in child chunks
+  source_format: markdown      # enables block-aware wrapping at the parent level
+  preserve_heading_path: true  # optional: attach section breadcrumbs to chunks
+  preserve_tables: true        # optional: keep tables intact at the parent level
+  preserve_code_blocks: true   # optional: keep code blocks intact at the parent level
   parent:
     strategy: fixed_size       # fixed_size | section (Markdown heading boundaries)
     max_chars: 3000
@@ -794,5 +794,5 @@ Want to bias hybrid retrieval toward keyword (or vector)?   →  retrieval.fusio
 Documents have tables or code blocks that get split?        →  verify source_format: markdown + preserve_tables/preserve_code_blocks: true (default since 0.8.0); mrag reindex if changed
 Want heading breadcrumbs in search results?                 →  verify source_format: markdown + preserve_heading_path: true (default since 0.8.0); results show "section: H1 > H2 > H3"
 block_aware results missing section line?                   →  chunk has no heading — only chunks under a heading carry section metadata
-Want block-aware options with parent_child?                 →  add source_format: markdown + preserve_* flags to a parent_child profile; child chunks get block-aware preprocessing
+Want block-aware options with parent_child?                 →  add source_format: markdown + preserve_* flags; tables/code/heading-path are preserved at the parent level (children may still split mid-block but the returned parent always shows the intact block)
 ```

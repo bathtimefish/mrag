@@ -30,6 +30,22 @@ class ChunkingConfig(BaseModel):
     parent: ParentConfig = Field(default_factory=ParentConfig)
     child: ChildConfig = Field(default_factory=ChildConfig)
 
+    @model_validator(mode="after")
+    def _validate_parent_child_sizes(self) -> "ChunkingConfig":
+        # Only enforce when parent_child is actually in use — for other
+        # strategies parent/child fields are unused so size relationships
+        # don't matter.
+        if self.strategy != "parent_child":
+            return self
+        if self.child.chunk_size >= self.parent.max_chars:
+            raise ValueError(
+                f"chunking.child.chunk_size ({self.child.chunk_size}) must be smaller "
+                f"than chunking.parent.max_chars ({self.parent.max_chars}). "
+                "parent_child retrieval requires children to be substantially smaller "
+                "than parents — otherwise the small-to-big benefit is lost."
+            )
+        return self
+
 
 class RetrievalConfig(BaseModel):
     strategy: str = "hybrid"
