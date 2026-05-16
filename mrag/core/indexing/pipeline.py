@@ -454,11 +454,17 @@ def _index_document(
             )
 
     # Insert FTS chunks — indexable のみ
+    # When augmentation.strategy=contextual, contents_for_embedding contains
+    # the contextualized chunk (LLM-generated context + original content).
+    # Anthropic's Contextual Retrieval recommends indexing the same contextualized
+    # text in BOTH the embedding and BM25 indexes — known as "Contextual BM25".
+    # For non-contextual augmentation (or fallback-raw chunks), contents_for_embedding[i]
+    # equals indexable_chunks[i].content, so this preserves the original behavior.
     with fts_db_connection(db_path, tokenizer) as fts_conn:
-        for chunk_id, chunk in zip(indexable_ids, indexable_chunks):
+        for i, chunk_id in enumerate(indexable_ids):
             fts_db.insert_chunk(
                 fts_conn,
-                chunk.content,
+                contents_for_embedding[i],
                 doc["knowledge_id"],
                 profile.name,
                 chunk_id,

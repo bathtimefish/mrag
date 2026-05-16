@@ -597,6 +597,22 @@ mrag reindex
 
 Set `augmentation.strategy: none` in the profile YAML, then run `mrag reindex`. This removes all contextual variants and rebuilds raw variants only.
 
+**What gets contextualized:**
+
+When enabled, mrag applies both **Contextual Embeddings** (vector index) and **Contextual BM25** (FTS5 keyword index) — the same `context + chunk` text is stored in both backends, matching Anthropic's full Contextual Retrieval recipe. Hybrid search therefore benefits in both retrieval branches.
+
+**Known constraint — document truncation (8000 chars):**
+
+The `{document}` placeholder in the prompt is truncated to **8000 characters** before being sent to the local LLM. This is a pragmatic trade-off for local-first operation with limited-context-window models like `gemma4:e4b`.
+
+- For documents **≤ 8000 chars**: every chunk receives context generated from the full document — no degradation.
+- For documents **> 8000 chars**: chunks near the end receive context generated from only the document prefix, which can produce less relevant context text.
+
+Workarounds:
+- Use a long-context generation model (some Ollama models support 32K+ context); raise `_MAX_DOC_CHARS` in `mrag/core/indexing/augmentation.py` if needed.
+- Split very long documents into multiple input files before `mrag add` (each becomes its own document with its own contextualization scope).
+- Use a smaller `chunk_size` so individual chunks stay close to the document start in token order (does not fundamentally solve the issue but reduces the proportion of "distant" chunks).
+
 **Performance and reliability notes:**
 
 - Indexing with `strategy: contextual` is significantly slower than `strategy: none` — one LLM call per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.

@@ -718,6 +718,22 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
         assert ctx == fake_context
         assert cfe.startswith(fake_context + "\n\n")
 
+    # Contextual BM25: FTS5 must contain the contextualized text, not the raw chunk.
+    # The LLM-generated context phrase should be matchable via FTS5 MATCH.
+    from mrag.db.connection import open_fts_connection
+    fts_conn = open_fts_connection(db_path, "trigram")
+    fts_rows = fts_conn.execute(
+        "SELECT content FROM fts_chunks WHERE knowledge_id=?", ("kb_t",)
+    ).fetchall()
+    fts_conn.close()
+    assert fts_rows, "expected FTS rows for indexed chunks"
+    for (fts_content,) in fts_rows:
+        # Each FTS row's stored content should begin with the LLM context (contextualized BM25).
+        assert fts_content.startswith(fake_context), (
+            "FTS5 must store contextualized content (Anthropic Contextual BM25 pattern); "
+            f"got: {fts_content[:80]!r}"
+        )
+
 
 def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample_txt: Path):
     """When profiles/context_prompt.txt exists, its content is used as the prompt template."""

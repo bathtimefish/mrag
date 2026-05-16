@@ -549,12 +549,14 @@ augmentation:
 
 This follows the [Anthropic contextual retrieval](https://www.anthropic.com/news/contextual-retrieval) pattern. The generation model is independent of the embedding model: `bge-m3` embeds the augmented text, while `gemma4:e4b` (or any other Ollama generation model) produces the context.
 
+When enabled, mrag applies **both** Contextual Embeddings (vector) and Contextual BM25 (FTS5 keyword) — the same contextualized text (`context + chunk`) is indexed in both stores, matching Anthropic's full Contextual Retrieval recipe.
+
 **Important notes:**
 
 - `strategy: none` (default) — no LLM call; indexing speed is unchanged
-- Keyword search (FTS5) always indexes original chunk content — augmentation only affects vector embeddings
 - Changing `augmentation.strategy` invalidates the index; run `mrag reindex` to rebuild
 - Indexing with `strategy: contextual` is slower: one LLM call per chunk
+- **Document truncation limit (local LLM constraint):** The `{document}` placeholder in the prompt is truncated to 8000 characters before being sent to the local generation model. For documents longer than 8000 chars, chunks near the end receive context generated from only the document prefix, which can reduce contextual relevance. This is a pragmatic trade-off for local-first operation with limited-context-window models like `gemma4:e4b`. Workarounds: use a longer-context generation model, or split very long documents into multiple input files before `mrag add`.
 - Transient Ollama timeouts and HTTP 5xx errors are automatically retried with exponential backoff; monitor logs for `↻ retry` lines
 - If a chunk still fails after all retries (e.g. OCR/table noise causing repeated empty responses), mrag falls back to storing the raw chunk instead of failing the whole document — the success line shows `(N raw fallback)` and `⤵ fallback` log lines identify affected chunks
 - Documents with 300 or more chunks print a `⚠ large document` warning at index time — this is informational, not an error
