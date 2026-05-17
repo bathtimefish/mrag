@@ -309,7 +309,7 @@ GET /api/v1/documents
 
 ## Reading project state
 
-Use `mrag doctor` to check the full environment:
+Use `mrag doctor` to verify the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama). It is project-independent — run it from any directory to confirm the install:
 
 ```bash
 mrag doctor

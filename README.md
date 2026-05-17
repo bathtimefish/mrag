@@ -214,7 +214,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | `mrag extract <file>` | Preview extracted text (dry-run, nothing stored) |
 | `mrag show-extracted <doc-id>` | Print stored extracted content |
 | `mrag export-extracted <doc-id>` | Export extracted content to file |
-| `mrag doctor` | Check environment (SQLite, vaporetto, Qdrant, Ollama) |
+| `mrag doctor` | Check the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama) — project-independent |
 
 ---
 

@@ -156,7 +156,6 @@ def test_doctor_runs_without_project(tmp_path, monkeypatch):
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
     assert result.exit_code == 0
     assert "SQLite" in result.output
-    assert "Qdrant" in result.output
     assert "Ollama" in result.output
 
 
@@ -166,11 +165,15 @@ def test_doctor_shows_sqlite_version(tmp_path, monkeypatch):
     assert "version" in result.output
 
 
-def test_doctor_shows_mrag_yaml_status(indexed_project):
+def test_doctor_is_project_independent(indexed_project):
+    """Doctor output must not depend on whether the cwd is an mrag project."""
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
     assert result.exit_code == 0
-    assert "mrag.yaml" in result.output
-    assert "valid" in result.output
+    # Project section was removed — mrag.yaml status is not part of doctor.
+    assert "mrag.yaml" not in result.output
+    # Qdrant check was removed entirely.
+    assert "Qdrant" not in result.output
+    assert "qdrant" not in result.output
 
 
 def test_doctor_shows_fts5_trigram(tmp_path, monkeypatch):

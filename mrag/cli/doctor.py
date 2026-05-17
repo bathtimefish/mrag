@@ -1,8 +1,19 @@
+"""mrag doctor — runtime environment health check.
+
+This command verifies that the system-level dependencies mrag needs to operate
+are present and working. It is intentionally project-agnostic: project-level
+configuration (mrag.yaml, profiles, Qdrant mode/host, embedding endpoint) is
+the responsibility of the individual project commands at runtime.
+
+Doctor checks:
+  - SQLite version (>= 3.35.0)
+  - SQLite FTS5 trigram tokenizer
+  - sqlite-vaporetto native library (optional)
+  - Ollama default endpoint (http://localhost:11434) reachability
+"""
 import sqlite3
-from pathlib import Path
 from typing import Callable
 
-import typer
 from rich.console import Console
 
 console = Console()
@@ -10,6 +21,8 @@ console = Console()
 _OK = "[green]OK   [/green]"
 _WARN = "[yellow]WARN [/yellow]"
 _ERR = "[red]ERROR[/red]"
+
+_OLLAMA_DEFAULT_ENDPOINT = "http://localhost:11434"
 
 
 def _check(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
@@ -66,100 +79,32 @@ def _check_vaporetto() -> tuple[bool, str]:
     return True, f"ready ({lib.name})"
 
 
-def _check_qdrant(host: str, port: int) -> tuple[bool, str]:
-    from mrag.db.qdrant import make_client
+def _check_ollama() -> tuple[bool, str]:
+    """Simple alive check against the default Ollama endpoint."""
+    import httpx
     try:
-        make_client(host=host, port=port)
-        return True, f"connected to {host}:{port}"
-    except ConnectionError as e:
-        return False, str(e)
-
-
-def _check_ollama(endpoint: str) -> tuple[bool, str]:
-    import urllib.request
-    import urllib.error
-    import json
-    try:
-        with urllib.request.urlopen(f"{endpoint}/api/tags", timeout=3) as resp:
-            data = json.loads(resp.read())
-        models = [m["name"] for m in data.get("models", [])]
-        if models:
-            return True, f"connected — {len(models)} model(s): {', '.join(models[:3])}" + (
-                " ..." if len(models) > 3 else ""
-            )
-        return True, "connected (no models installed)"
+        resp = httpx.get(f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0)
+        resp.raise_for_status()
+        return True, f"running at {_OLLAMA_DEFAULT_ENDPOINT}"
     except Exception as e:
-        return False, f"not reachable at {endpoint}: {e}"
-
-
-def _check_mrag_yaml(project_dir: Path) -> tuple[bool, str]:
-    from mrag.config.project import load_project_config
-    try:
-        cfg = load_project_config(project_dir)
-        return True, f"valid (project={cfg.project.name}, kb={cfg.knowledge_id})"
-    except FileNotFoundError:
-        return False, "mrag.yaml not found — run 'mrag init' first"
-    except Exception as e:
-        return False, f"invalid: {e}"
+        return False, f"not reachable at {_OLLAMA_DEFAULT_ENDPOINT}: {e}"
 
 
 def doctor() -> None:
-    """Check environment and project configuration."""
-    project_dir = Path.cwd()
+    """Check that the mrag runtime environment is healthy.
 
+    This is a system-level check independent of any specific project. Project
+    configuration (mrag.yaml, profiles) is validated by individual commands at
+    runtime — `mrag doctor` only confirms that the underlying tools mrag needs
+    are present and working.
+    """
     console.print("[bold]MRAG Environment Check[/bold]\n")
 
     console.print("[bold]SQLite[/bold]")
     _check("version (3.35.0+)", _check_sqlite_version)
     _check("FTS5 trigram tokenizer", _check_fts5_trigram)
-
-    # Determine if vaporetto is required by the current project config
-    try:
-        from mrag.config.project import load_project_config
-        _cfg_for_tokenizer = load_project_config(project_dir)
-        vaporetto_required = _cfg_for_tokenizer.fts_tokenizer == "vaporetto"
-    except Exception:
-        vaporetto_required = False
-
-    if vaporetto_required:
-        _check("sqlite-vaporetto (required by project)", _check_vaporetto)
-    else:
-        _check_warn("sqlite-vaporetto (optional)", _check_vaporetto)
-
-    console.print()
-    console.print("[bold]Project[/bold]")
-    ok, msg = (False, "")
-    try:
-        from mrag.config.project import load_project_config
-        cfg = load_project_config(project_dir)
-        ok = True
-        msg = f"valid (project={cfg.project.name}, kb={cfg.knowledge_id})"
-        console.print(f"  {_OK}  mrag.yaml: {msg}")
-    except FileNotFoundError:
-        console.print(f"  {_WARN}  mrag.yaml: not found — run 'mrag init' first")
-        cfg = None
-    except Exception as e:
-        console.print(f"  {_ERR}  mrag.yaml: {e}")
-        cfg = None
-
-    console.print()
-    console.print("[bold]Qdrant[/bold]")
-    if cfg and cfg.qdrant.mode == "local":
-        console.print(f"  {_OK}  mode: local (embedded — no server required)")
-    elif cfg:
-        _check_warn(f"server ({cfg.qdrant.host}:{cfg.qdrant.port})", lambda: _check_qdrant(cfg.qdrant.host, cfg.qdrant.port))
-    else:
-        _check_warn("server (localhost:6333) — not needed for mode: local (default)", lambda: _check_qdrant("localhost", 6333))
+    _check_warn("sqlite-vaporetto (optional)", _check_vaporetto)
 
     console.print()
     console.print("[bold]Ollama[/bold]")
-    ollama_endpoint = "http://localhost:11434"
-    if cfg:
-        # Read from default profile if available
-        try:
-            from mrag.config.profile import load_profile
-            prof = load_profile(cfg.default_profile, project_dir)
-            ollama_endpoint = prof.embedding.endpoint
-        except FileNotFoundError:
-            pass
-    _check(f"endpoint ({ollama_endpoint})", lambda ep=ollama_endpoint: _check_ollama(ep))
+    _check(f"endpoint ({_OLLAMA_DEFAULT_ENDPOINT})", _check_ollama)

@@ -215,7 +215,7 @@ mrag serve --no-rerank
 | `mrag extract <file>` | 抽出テキストのプレビュー（保存なし） |
 | `mrag show-extracted <doc-id>` | 保存済みの抽出テキストを表示 |
 | `mrag export-extracted <doc-id>` | 抽出テキストをファイルにエクスポート |
-| `mrag doctor` | 環境チェック（SQLite、vaporetto、Qdrant、Ollama） |
+| `mrag doctor` | mrag ランタイム環境チェック（SQLite、FTS5、vaporetto、Ollama）。プロジェクト非依存 |
 
 ---
 
