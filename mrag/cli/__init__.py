@@ -13,6 +13,7 @@ from mrag.cli.search import search
 from mrag.cli.serve import serve
 from mrag.cli.remove import remove
 from mrag.cli.profiles import profiles_app
+from mrag.cli.kb_info import kb_info_app
 from mrag.cli.doctor import doctor
 from mrag.cli.eval import eval_cmd
 
@@ -51,3 +52,4 @@ app.command("remove")(remove)
 app.command("doctor")(doctor)
 app.command("eval")(eval_cmd)
 app.add_typer(profiles_app, name="profiles")
+app.add_typer(kb_info_app, name="kb-info")

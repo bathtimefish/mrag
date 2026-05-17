@@ -105,7 +105,8 @@ cd my-project
 
 `mrag init` はカレントディレクトリに `my-project/` サブディレクトリを作成します：
 
-- `mrag.yaml` — プロジェクト設定
+- `mrag.yaml` — プロジェクト設定（ランタイム設定）
+- `kb_information.yaml` — エージェント向けの KB メタデータ（description / tags / preferred profiles）
 - `profiles/default.yaml` — 検索プロファイル
 - `profiles/context_prompt.txt` — コンテキスト拡張用の LLM プロンプトテンプレート（編集可能）
 - `mrag.db` — SQLite データベース
@@ -118,8 +119,17 @@ cd my-project
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated kb_information.yaml
 ✓ Initialized mrag.db
 ```
+
+**LLM 主導のプロジェクト作成:** KB の説明を含む JSON ファイルを渡すと、完全な `kb_information.yaml` が生成されます。エージェント向けの推奨モード：
+
+```bash
+mrag init ./knowledges/kb-device --non-interactive --kb-info-json kb_info.json
+```
+
+ファイルの役割とスキーマについては下記の [`kb_information.yaml`](#kb-information-エージェント向け-kb-メタデータ) を参照してください。
 
 ### 2. ドキュメントを追加する
 
@@ -207,20 +217,129 @@ mrag serve --no-rerank
 
 | コマンド | 説明 |
 |---------|------|
-| `mrag init [--name NAME] [--kb-id ID] [--non-interactive] [--force]` | サブディレクトリに新しいプロジェクトを作成（`--non-interactive` でプロンプトをスキップ） |
+| `mrag init [PROJECT_DIR] [--name NAME] [--kb-id ID] [--non-interactive] [--kb-info-json PATH] [--print-kb-info-schema] [--force]` | 新しいプロジェクトを作成。`--non-interactive` でプロンプトスキップ、`--kb-info-json` で LLM 主導の KB メタデータ生成、`--print-kb-info-schema` で入力 JSON Schema を出力 |
 | `mrag add <file> [file…] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
-| `mrag search <query>` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`） |
+| `mrag search <query> [--json]` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`、`--json` で機械可読出力） |
 | `mrag eval <query>` | 検索品質評価（`--profile P`、`--strategy S`、`--top-k N`、`--no-rerank`） |
 | `mrag serve` | FastAPI サーバー起動（`--host`、`--port`、`--no-rerank`） |
 | `mrag remove <doc-id>` | ドライラン削除（実際に削除するには `--force`） |
 | `mrag profiles list` | DBに登録済みのプロファイル一覧 |
 | `mrag profiles show <name>` | プロファイルの設定を表示 |
+| `mrag kb-info show` | 現プロジェクトの `kb_information.yaml` を表示 |
+| `mrag kb-info validate` | 現プロジェクトの `kb_information.yaml` をバリデーション |
+| `mrag kb-info schema` | `--kb-info-json` 入力用 JSON Schema を表示 |
 | `mrag extract <file>` | 抽出テキストのプレビュー（保存なし） |
 | `mrag show-extracted <doc-id>` | 保存済みの抽出テキストを表示 |
 | `mrag export-extracted <doc-id>` | 抽出テキストをファイルにエクスポート |
 | `mrag doctor` | mrag ランタイム環境チェック（SQLite、FTS5、vaporetto、Ollama）。プロジェクト非依存 |
+
+---
+
+## KB Information（エージェント向け KB メタデータ） <a id="kb-information-エージェント向け-kb-メタデータ"></a>
+
+すべての mrag プロジェクトには **`kb_information.yaml`** が同梱されます。これは外部 AI エージェント（Agentic RAG ワークフロー）が読み取るための自己記述メタデータで、mrag 自身はランタイムでは参照しません。
+
+### 役割分担
+
+```
+mrag.yaml             → ランタイム設定（mrag が読む）
+kb_information.yaml   → エージェント向けの意味的記述（外部エージェントが読む）
+```
+
+`mrag.yaml` は実行制御（Qdrant モード、デフォルトプロファイル、トークナイザー等）を持ち、`kb_information.yaml` は「この KB が何のためのものか」を記述してエージェントが選択判断に使います。
+
+### 例
+
+```yaml
+version: 1
+
+knowledge_base:
+  id: kb_device
+  name: Device Development Knowledge
+  description: >
+    M5Stack、SIM7080G、MQTT、LTE、BraveJIG、組込みデバイス開発、
+    現地トラブルシューティング向けのナレッジベース。
+
+agent_usage:
+  tags:
+    - m5stack
+    - sim7080g
+    - mqtt
+    - lte
+
+  best_for:
+    - SIM7080G / LTE モジュールのトラブルシューティング
+    - MQTT publish 停止・keepalive 問題
+
+  avoid_for:
+    - 契約レビュー
+    - 経理処理
+
+  preferred_profiles:
+    - default
+
+  example_queries:
+    - SIM7080G で MQTT publish が数時間で止まる
+```
+
+### init モード一覧
+
+| モード | コマンド | 結果 |
+|---|---|---|
+| 対話 | `mrag init --name kb-device` | name / kb_id / description をプロンプト。他のフィールドは空のまま（後で編集） |
+| 非対話 | `mrag init --name kb-device --non-interactive` | minimal テンプレート（description 空、preferred_profiles=["default"] のみ） |
+| JSON 入力 | `mrag init --non-interactive --kb-info-json kb_info.json` | JSON から完全生成 — LLM エージェント推奨 |
+
+### JSON 入力スキーマ
+
+`--kb-info-json` 入力ファイル用の JSON Schema を取得：
+
+```bash
+mrag init --print-kb-info-schema
+# または
+mrag kb-info schema
+```
+
+必須フィールド: `project.name`, `knowledge_base.{id, name, description}`
+任意フィールド: `agent_usage.{tags, best_for, avoid_for, preferred_profiles, example_queries}`
+
+入力 JSON 例：
+
+```json
+{
+  "project": {"name": "device-kb"},
+  "knowledge_base": {
+    "id": "kb_device",
+    "name": "Device Development Knowledge",
+    "description": "組込みデバイス開発ナレッジベース"
+  },
+  "agent_usage": {
+    "tags": ["m5stack", "sim7080g"],
+    "best_for": ["LTE トラブルシューティング"],
+    "preferred_profiles": ["default"]
+  }
+}
+```
+
+### 表示・検証
+
+```bash
+mrag kb-info show       # 現プロジェクトの kb_information.yaml を表示
+mrag kb-info validate   # v1 スキーマで検証
+mrag kb-info schema     # JSON Schema 表示（--print-kb-info-schema と同等）
+```
+
+### 機械可読の検索出力
+
+Agentic RAG の呼び出し向けに、`mrag search --json` は単一の JSON オブジェクトを stdout に出力します（ステータス行や警告は stderr へ）：
+
+```bash
+mrag search "MQTT keepalive" --json
+```
+
+ペイロードには `query`, `profile`, `strategy`, `reranked`, `result_count`, `results[]`, `score_stats`, `document_distribution` が含まれます。
 
 ---
 

@@ -60,6 +60,7 @@ cd <name>
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
 ✓ Generated profiles/context_prompt.txt
+✓ Generated kb_information.yaml
 ✓ Initialized mrag.db
 ```
 
@@ -67,8 +68,72 @@ cd <name>
 ```bash
 mrag doctor   # should show all checks green
 cat mrag.yaml # confirm fts_tokenizer and knowledge_base.id
+cat kb_information.yaml  # agent-facing KB metadata
 cat profiles/context_prompt.txt  # default LLM prompt for contextual augmentation
 ```
+
+**Note for AI agents:** the recommended init form for AI-driven KB creation is via `--kb-info-json` so that the resulting `kb_information.yaml` is fully populated. See **Skill 1.5** below.
+
+---
+
+## Skill 1.5 — Initialize a project with full KB metadata (LLM agents)
+
+**When to use this skill instead of Skill 1:** When an AI agent needs to create a KB project that will be discoverable by other agents (Agentic RAG workflows). This produces a fully populated `kb_information.yaml` — the metadata file that external agents read to decide whether to query this KB.
+
+**Preconditions:** same as Skill 1, plus:
+- The agent has enough domain knowledge to write the KB description / tags / best_for / avoid_for entries
+
+**Steps:**
+
+```bash
+# 1. (Optional) Inspect the JSON Schema to know what fields are accepted
+mrag init --print-kb-info-schema | head -40
+
+# 2. Generate kb_info.json with full metadata
+cat > /tmp/kb_info.json <<'EOF'
+{
+  "project": {"name": "device-kb"},
+  "knowledge_base": {
+    "id": "kb_device",
+    "name": "Device Development Knowledge",
+    "description": "Knowledge base for M5Stack, SIM7080G, MQTT, LTE, BraveJIG, and embedded device development."
+  },
+  "agent_usage": {
+    "tags": ["m5stack", "sim7080g", "mqtt", "lte", "bravejig", "embedded"],
+    "best_for": [
+      "SIM7080G / LTE module troubleshooting",
+      "MQTT publish stops and keepalive issues",
+      "AT command investigation"
+    ],
+    "avoid_for": [
+      "Contract review",
+      "Accounting"
+    ],
+    "preferred_profiles": ["default"],
+    "example_queries": [
+      "SIM7080G MQTT publish stops after several hours",
+      "BraveJIG USB router start stop command"
+    ]
+  }
+}
+EOF
+
+# 3. Initialize the project — files are created at ./knowledges/kb-device/
+mrag init ./knowledges/kb-device --non-interactive --kb-info-json /tmp/kb_info.json
+```
+
+**Verify:**
+
+```bash
+cd ./knowledges/kb-device
+mrag kb-info validate   # confirms the file passes the v1 schema
+mrag kb-info show       # prints the generated kb_information.yaml
+```
+
+**Required JSON fields:** `project.name`, `knowledge_base.{id, name, description}`.
+**Optional JSON fields:** `agent_usage.{tags, best_for, avoid_for, preferred_profiles, example_queries}`.
+
+Missing required fields cause `mrag init` to exit 1 with a clear validation error and no partial files are created. `knowledge_base.id` must be lowercase alphanumeric + underscore (e.g. `kb_device`, not `KB-Device`).
 
 ---
 
@@ -240,7 +305,42 @@ mrag search "<query>" --strategy vector --top-k 5
 
 # Disable reranking for this search (even if enabled in the profile)
 mrag search "<query>" --no-rerank
+
+# JSON output for AI agents — single JSON object on stdout, warnings on stderr
+mrag search "<query>" --json
+mrag search "<query>" --strategy vector --top-k 10 --json | jq '.results[].chunk_id'
 ```
+
+**`--json` output structure** (for AI agents and pipeline scripts):
+
+```json
+{
+  "query": "...",
+  "profile": "default",
+  "strategy": "hybrid",
+  "reranked": false,
+  "result_count": 3,
+  "results": [
+    {
+      "rank": 1,
+      "chunk_id": "...",
+      "document_id": "...",
+      "filename": "manual.pdf",
+      "score": 0.8421,
+      "content": "full chunk content here",
+      "metadata": {
+        "heading_path_text": "H1 > H2 > H3",
+        "section_id": "h1/h2/h3",
+        "contains_table": false
+      }
+    }
+  ],
+  "score_stats": {"min": 0.42, "max": 0.84, "mean": 0.67, "stdev": 0.13},
+  "document_distribution": {"manual.pdf": 3}
+}
+```
+
+When reranking is active, each result also exposes a top-level `retrieval_score` (the first-stage score from before reranking) — useful for diagnosing reranker effects. Empty result set returns `result_count: 0` with `results: []` and `score_stats: null`; the exit code stays 0.
 
 **Query syntax for keyword/hybrid strategy:**
 
@@ -773,6 +873,10 @@ mrag eval "your query" --profile parent_child --strategy keyword
 ```
 Need to search without Qdrant/Ollama?                       →  --strategy keyword
 Need best Japanese retrieval?                               →  ensure fts_tokenizer: vaporetto in mrag.yaml
+AI agent parsing mrag search output?                        →  always pass --json (stdout: single JSON object, stderr: warnings)
+AI agent creating a new KB project?                         →  use Skill 1.5 with --kb-info-json for fully populated kb_information.yaml
+Want to know what a KB is for?                              →  mrag kb-info show (or read kb_information.yaml directly)
+kb_information.yaml validation error?                       →  mrag kb-info validate; check knowledge_base.id is lowercase + underscore only
 Zero results from keyword search?                           →  check mrag index ran; try single-word query
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local

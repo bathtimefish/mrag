@@ -19,7 +19,8 @@ One project = one knowledge base. Do not mix documents from unrelated domains in
 
 ```
 <project-dir>/
-├── mrag.yaml                    # Project config — read this to understand the project
+├── mrag.yaml                    # Project config — runtime settings (mrag reads this)
+├── kb_information.yaml          # Agent-facing KB metadata (external agents read this)
 ├── mrag.db                      # SQLite database — source of truth
 ├── profiles/
 │   ├── default.yaml             # Retrieval profile (chunking, embedding, search)
@@ -304,6 +305,67 @@ GET /api/v1/documents
 ```
 
 `mrag remove <doc-id>` is a dry-run by default. Pass `--force` to actually delete.
+
+---
+
+## Agentic RAG self-description (`kb_information.yaml`)
+
+Every mrag project includes `kb_information.yaml` — a self-describing metadata file that **external AI agents** read to decide whether a given KB is relevant for a user's query. mrag itself does **not** consume this file at runtime; it exists purely to make KBs discoverable and selectable in Agentic RAG workflows.
+
+### Role separation
+
+| File | Audience | Purpose |
+|---|---|---|
+| `mrag.yaml` | mrag CLI | Runtime configuration (Qdrant mode, default profile, tokenizer) |
+| `kb_information.yaml` | External agents | "What is this KB for?" — description, tags, best_for / avoid_for, preferred_profiles, example_queries |
+
+### Generation modes
+
+`mrag init` always creates `kb_information.yaml`. The richness depends on the mode:
+
+| Mode | Result |
+|---|---|
+| `mrag init` (interactive) | Prompts for `name` / `kb_id` / `description`. Other agent_usage fields stay empty |
+| `mrag init --non-interactive` | Minimal template (empty description, `preferred_profiles: [default]` only) |
+| `mrag init --non-interactive --kb-info-json <path>` | Fully populated from a JSON input file — **recommended for LLM-driven creation** |
+
+### LLM-driven creation pattern
+
+For an AI agent creating a fresh KB project, the canonical flow is:
+
+```bash
+# 1. Get the JSON Schema so the agent knows what fields to fill
+mrag init --print-kb-info-schema > /tmp/kb_schema.json
+
+# 2. Agent generates a kb_info.json matching the schema (description, tags, best_for, ...)
+
+# 3. Create the project with full metadata in one shot
+mrag init ./knowledges/kb-device --non-interactive --kb-info-json /tmp/kb_info.json
+```
+
+### Inspecting and validating
+
+```bash
+mrag kb-info show       # Print the current project's kb_information.yaml
+mrag kb-info validate   # Validate against the v1 schema
+mrag kb-info schema     # Print the JSON Schema (same as --print-kb-info-schema)
+```
+
+### Machine-readable search output
+
+When the calling agent needs to parse search results programmatically, use `mrag search --json`. It emits a single JSON object to stdout (warnings and status lines go to stderr), with this top-level shape:
+
+```
+{
+  "query": str, "profile": str, "strategy": str, "reranked": bool,
+  "result_count": int,
+  "results": [{rank, chunk_id, document_id, filename, score, content, metadata}],
+  "score_stats": {min, max, mean, stdev} | null,
+  "document_distribution": {filename: count}
+}
+```
+
+This lets an agent pipe `mrag search "..." --json | jq ...` without worrying about ANSI escape codes or progress lines.
 
 ---
 

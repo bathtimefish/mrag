@@ -104,7 +104,8 @@ cd my-project
 ```
 
 `mrag init` creates a `my-project/` subdirectory in the current directory with:
-- `mrag.yaml` — project configuration
+- `mrag.yaml` — project configuration (runtime settings)
+- `kb_information.yaml` — agent-facing KB metadata (description / tags / preferred profiles)
 - `profiles/default.yaml` — retrieval profile
 - `profiles/context_prompt.txt` — LLM prompt template for contextual augmentation (editable)
 - `mrag.db` — SQLite database
@@ -117,8 +118,17 @@ The tokenizer is auto-detected at init time. If vaporetto is found, the project 
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated kb_information.yaml
 ✓ Initialized mrag.db
 ```
+
+**LLM-driven project creation:** Pass a JSON file containing the full KB description for fully populated `kb_information.yaml` generation. Recommended for agents:
+
+```bash
+mrag init ./knowledges/kb-device --non-interactive --kb-info-json kb_info.json
+```
+
+See [`kb_information.yaml`](#kb-information-agent-facing-kb-metadata) below for the file's role and schema.
 
 ### 2. Add documents
 
@@ -206,20 +216,130 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 
 | Command | Description |
 |---------|-------------|
-| `mrag init [--name NAME] [--kb-id ID] [--non-interactive] [--force]` | Create a new project in a subdirectory (use `--non-interactive` to skip prompts) |
+| `mrag init [PROJECT_DIR] [--name NAME] [--kb-id ID] [--non-interactive] [--kb-info-json PATH] [--print-kb-info-schema] [--force]` | Create a new project. Use `--non-interactive` to skip prompts, `--kb-info-json` for LLM-driven KB metadata, or `--print-kb-info-schema` to print the input JSON Schema |
 | `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
-| `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |
+| `mrag search <query> [--json]` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`, `--json` for machine-readable output) |
 | `mrag eval <query>` | Evaluate retrieval quality (`--profile P`, `--strategy S`, `--top-k N`, `--no-rerank`) |
 | `mrag serve` | Start FastAPI server (`--host`, `--port`, `--no-rerank`) |
 | `mrag remove <doc-id>` | Dry-run removal (use `--force` to actually delete) |
 | `mrag profiles list` | List profiles registered in the database |
 | `mrag profiles show <name>` | Show profile configuration |
+| `mrag kb-info show` | Print the current project's `kb_information.yaml` |
+| `mrag kb-info validate` | Validate the current project's `kb_information.yaml` |
+| `mrag kb-info schema` | Print the JSON Schema for `--kb-info-json` input |
 | `mrag extract <file>` | Preview extracted text (dry-run, nothing stored) |
 | `mrag show-extracted <doc-id>` | Print stored extracted content |
 | `mrag export-extracted <doc-id>` | Export extracted content to file |
 | `mrag doctor` | Check the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama) — project-independent |
+
+---
+
+## KB Information (agent-facing KB metadata) <a id="kb-information-agent-facing-kb-metadata"></a>
+
+Every mrag project ships with **`kb_information.yaml`** — a self-describing metadata file consumed by external AI agents (Agentic RAG workflows), not by mrag itself at runtime.
+
+### Role separation
+
+```
+mrag.yaml             → runtime configuration (mrag reads this)
+kb_information.yaml   → agent-facing semantic description (external agents read this)
+```
+
+`mrag.yaml` controls execution (Qdrant mode, default profile, tokenizer, …).
+`kb_information.yaml` describes *what the KB is for* so an agent can decide whether to query it.
+
+### Example
+
+```yaml
+version: 1
+
+knowledge_base:
+  id: kb_device
+  name: Device Development Knowledge
+  description: >
+    Knowledge base for M5Stack, SIM7080G, MQTT, LTE, BraveJIG,
+    embedded device development, and field troubleshooting.
+
+agent_usage:
+  tags:
+    - m5stack
+    - sim7080g
+    - mqtt
+    - lte
+
+  best_for:
+    - SIM7080G / LTE module troubleshooting
+    - MQTT publish stop and keepalive issues
+
+  avoid_for:
+    - Contract review
+    - Accounting
+
+  preferred_profiles:
+    - default
+
+  example_queries:
+    - SIM7080G MQTT publish stops after several hours
+```
+
+### Init modes
+
+| Mode | Command | Result |
+|---|---|---|
+| Interactive | `mrag init --name kb-device` | Prompts for name / kb_id / description; other fields stay empty (edit later) |
+| Non-interactive | `mrag init --name kb-device --non-interactive` | Minimal template (empty description, default profile only) |
+| JSON-driven | `mrag init --non-interactive --kb-info-json kb_info.json` | Fully populated from the JSON input — recommended for LLM agents |
+
+### JSON input schema
+
+Get the JSON Schema for the `--kb-info-json` input file:
+
+```bash
+mrag init --print-kb-info-schema
+# or
+mrag kb-info schema
+```
+
+Required top-level fields: `project.name`, `knowledge_base.{id, name, description}`.
+Optional: `agent_usage.{tags, best_for, avoid_for, preferred_profiles, example_queries}`.
+
+Example input JSON:
+
+```json
+{
+  "project": {"name": "device-kb"},
+  "knowledge_base": {
+    "id": "kb_device",
+    "name": "Device Development Knowledge",
+    "description": "Embedded device development knowledge."
+  },
+  "agent_usage": {
+    "tags": ["m5stack", "sim7080g"],
+    "best_for": ["LTE troubleshooting"],
+    "preferred_profiles": ["default"]
+  }
+}
+```
+
+### Inspecting and validating
+
+```bash
+mrag kb-info show       # print the current project's kb_information.yaml
+mrag kb-info validate   # validate against the v1 schema
+mrag kb-info schema     # print the JSON Schema (equivalent to --print-kb-info-schema)
+```
+
+### Machine-readable search output
+
+For Agentic RAG callers, `mrag search --json` emits a single JSON object to stdout (status lines and warnings go to stderr):
+
+```bash
+mrag search "MQTT keepalive" --json
+```
+
+The payload includes `query`, `profile`, `strategy`, `reranked`, `result_count`, `results[]`, `score_stats`, and `document_distribution`.
 
 ---
 

@@ -1,3 +1,5 @@
+import json
+import statistics
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +17,59 @@ from mrag.db.connection import find_db, open_connection
 from mrag.db.qdrant import collection_name, make_client, normalize_name
 
 console = Console()
+err_console = Console(stderr=True)
+
+
+def _build_json_payload(
+    *,
+    query: str,
+    profile_name: str,
+    strategy: str,
+    reranked: bool,
+    results: list,
+    filename_map: dict,
+) -> dict:
+    """Build the structured JSON payload emitted by `mrag search --json`."""
+    result_entries = []
+    for i, r in enumerate(results, 1):
+        entry = {
+            "rank": i,
+            "chunk_id": r.chunk_id,
+            "document_id": r.document_id,
+            "filename": filename_map.get(r.document_id, ""),
+            "score": float(r.score),
+            "content": r.content,
+            "metadata": dict(r.metadata) if r.metadata else {},
+        }
+        # retrieval_score is preserved by the reranker in metadata
+        if "retrieval_score" in entry["metadata"]:
+            entry["retrieval_score"] = float(entry["metadata"]["retrieval_score"])
+        result_entries.append(entry)
+
+    score_stats = None
+    doc_distribution: dict = {}
+    if results:
+        scores = [float(r.score) for r in results]
+        score_stats = {
+            "min": min(scores),
+            "max": max(scores),
+            "mean": statistics.mean(scores),
+            "stdev": statistics.stdev(scores) if len(scores) > 1 else 0.0,
+        }
+        for r in results:
+            name = filename_map.get(r.document_id, r.document_id[:8])
+            doc_distribution[name] = doc_distribution.get(name, 0) + 1
+
+    return {
+        "query": query,
+        "profile": profile_name,
+        "strategy": strategy,
+        "reranked": reranked,
+        "result_count": len(results),
+        "results": result_entries,
+        "score_stats": score_stats,
+        "document_distribution": doc_distribution,
+    }
 
 
 def search(
@@ -25,14 +80,23 @@ def search(
         None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
     ),
     no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a single JSON object to stdout (status/warning messages go to stderr).",
+    ),
 ) -> None:
     """Search the knowledge base."""
+    # In --json mode, status messages and warnings must go to stderr so stdout
+    # contains only the JSON payload.
+    out = err_console if json_output else console
+
     project_dir = Path.cwd()
 
     try:
         config = load_project_config(project_dir)
     except FileNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
     profile_name = profile or config.default_profile
@@ -40,7 +104,7 @@ def search(
     try:
         prof = load_profile(profile_name, project_dir)
     except FileNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
     db_path = find_db(project_dir)
@@ -51,7 +115,7 @@ def search(
     retrieval_top_k = prof.rerank.top_n if use_rerank else top_k
 
     if use_rerank and retrieval_strategy == "parent_child":
-        console.print(
+        out.print(
             "[yellow]WARN[/yellow]  rerank.enabled=true with strategy: parent_child. "
             "Reranking scores parent chunks (~3000 chars) after parent resolution. "
             "BERT-based rerankers truncate at 512 tokens, discarding most parent content. "
@@ -85,7 +149,7 @@ def search(
                     path=project_dir / "qdrant",
                 )
             except ConnectionError as e:
-                console.print(f"[red]Error:[/red] {e}")
+                err_console.print(f"[red]Error:[/red] {e}")
                 raise typer.Exit(1)
 
             col = collection_name(
@@ -141,31 +205,52 @@ def search(
                     tokenizer=tokenizer,
                 )
     except (ConnectionError, RuntimeError) as e:
-        console.print(f"[red]Error:[/red] {e}")
+        err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
+    reranked = False
     if use_rerank and results:
         try:
             from mrag.core.reranking import get_reranker
             reranker = get_reranker(prof.rerank)
             results = reranker.rerank(query, results)[:top_k]
+            reranked = True
         except ImportError as e:
-            console.print(f"[red]Error:[/red] {e}")
+            err_console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1)
 
+    # Look up filenames for display / JSON
+    filename_map: dict = {}
+    if results:
+        conn = open_connection(db_path)
+        doc_rows = conn.execute(
+            "SELECT id, filename FROM documents WHERE id IN (%s)"
+            % ",".join("?" * len({r.document_id for r in results})),
+            list({r.document_id for r in results}),
+        ).fetchall()
+        conn.close()
+        filename_map = {r["id"]: r["filename"] for r in doc_rows}
+
+    # -----------------------------------------------------------------------
+    # Output
+    # -----------------------------------------------------------------------
+    if json_output:
+        payload = _build_json_payload(
+            query=query,
+            profile_name=profile_name,
+            strategy=retrieval_strategy,
+            reranked=reranked,
+            results=results,
+            filename_map=filename_map,
+        )
+        # Emit JSON to stdout (plain print, no rich formatting)
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    # Human-readable output (existing behavior)
     if not results:
         console.print("[yellow]No results found.[/yellow]")
         return
-
-    # Look up filenames for display
-    conn = open_connection(db_path)
-    doc_rows = conn.execute(
-        "SELECT id, filename FROM documents WHERE id IN (%s)"
-        % ",".join("?" * len({r.document_id for r in results})),
-        list({r.document_id for r in results}),
-    ).fetchall()
-    conn.close()
-    filename_map = {r["id"]: r["filename"] for r in doc_rows}
 
     for i, r in enumerate(results, 1):
         filename = filename_map.get(r.document_id, r.document_id[:8])
