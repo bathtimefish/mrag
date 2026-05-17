@@ -94,7 +94,12 @@ ollama pull bge-m3
 ### 1. プロジェクトを初期化する
 
 ```bash
+# 対話モード — プロジェクト名と KB ID をプロンプトで聞く
 mrag init --name my-project
+cd my-project
+
+# 非対話モード — 未指定フィールドはすべてデフォルト値（プロンプトなし）
+mrag init --name my-project --non-interactive
 cd my-project
 ```
 
@@ -202,7 +207,7 @@ mrag serve --no-rerank
 
 | コマンド | 説明 |
 |---------|------|
-| `mrag init [--name NAME]` | サブディレクトリに新しいプロジェクトを作成 |
+| `mrag init [--name NAME] [--kb-id ID] [--non-interactive] [--force]` | サブディレクトリに新しいプロジェクトを作成（`--non-interactive` でプロンプトをスキップ） |
 | `mrag add <file> [file…] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
@@ -215,7 +220,7 @@ mrag serve --no-rerank
 | `mrag extract <file>` | 抽出テキストのプレビュー（保存なし） |
 | `mrag show-extracted <doc-id>` | 保存済みの抽出テキストを表示 |
 | `mrag export-extracted <doc-id>` | 抽出テキストをファイルにエクスポート |
-| `mrag doctor` | 環境チェック（SQLite、vaporetto、Qdrant、Ollama） |
+| `mrag doctor` | mrag ランタイム環境チェック（SQLite、FTS5、vaporetto、Ollama）。プロジェクト非依存 |
 
 ---
 

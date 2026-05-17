@@ -94,7 +94,12 @@ ollama pull bge-m3
 ### 1. Initialize a project
 
 ```bash
+# Interactive — prompts for project name and knowledge base ID
 mrag init --name my-project
+cd my-project
+
+# Non-interactive — uses defaults for all unspecified fields (no prompts)
+mrag init --name my-project --non-interactive
 cd my-project
 ```
 
@@ -201,7 +206,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 
 | Command | Description |
 |---------|-------------|
-| `mrag init [--name NAME]` | Create a new project in a subdirectory |
+| `mrag init [--name NAME] [--kb-id ID] [--non-interactive] [--force]` | Create a new project in a subdirectory (use `--non-interactive` to skip prompts) |
 | `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
@@ -214,7 +219,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | `mrag extract <file>` | Preview extracted text (dry-run, nothing stored) |
 | `mrag show-extracted <doc-id>` | Print stored extracted content |
 | `mrag export-extracted <doc-id>` | Export extracted content to file |
-| `mrag doctor` | Check environment (SQLite, vaporetto, Qdrant, Ollama) |
+| `mrag doctor` | Check the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama) — project-independent |
 
 ---
 

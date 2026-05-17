@@ -13,7 +13,7 @@ runner = CliRunner()
 
 def test_init_from_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["init", "--name", "my-kb", "--yes"], catch_exceptions=False)
+    result = runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
 
     # project is created as a subdirectory
@@ -40,16 +40,16 @@ def test_init_from_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_init_fails_if_already_initialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "--name", "my-kb", "--yes"])
-    result = runner.invoke(app, ["init", "--name", "my-kb", "--yes"])
+    runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
+    result = runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
     assert result.exit_code == 1
     assert "already exists" in result.output
 
 
 def test_init_force_reinitializes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "--name", "my-kb", "--yes"])
-    result = runner.invoke(app, ["init", "--name", "my-kb", "--yes", "--force"])
+    runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
+    result = runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive", "--force"])
     assert result.exit_code == 0
 
 
@@ -57,7 +57,7 @@ def test_init_default_name_from_dirname(tmp_path: Path, monkeypatch: pytest.Monk
     parent = tmp_path / "my-project"
     parent.mkdir()
     monkeypatch.chdir(parent)
-    result = runner.invoke(app, ["init", "--yes"], catch_exceptions=False)
+    result = runner.invoke(app, ["init", "--non-interactive"], catch_exceptions=False)
     assert result.exit_code == 0
     # cwd name is "my-project", so project created at parent / "my-project"
     actual_dir = parent / "my-project"
@@ -67,7 +67,7 @@ def test_init_default_name_from_dirname(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_profile_hash_is_stable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "--name", "my-kb", "--yes"])
+    runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
     project_dir = tmp_path / "my-kb"
     profile = load_profile("default", project_dir)
     h1 = profile.compute_hash()
@@ -78,7 +78,7 @@ def test_profile_hash_is_stable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 def test_profile_hash_changes_on_config_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "--name", "my-kb", "--yes"])
+    runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
     project_dir = tmp_path / "my-kb"
     profile = load_profile("default", project_dir)
     h1 = profile.compute_hash()

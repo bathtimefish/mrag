@@ -62,8 +62,6 @@ If Ollama is not running, start it:
 
 mrag uses Qdrant for vector storage. By default, **Qdrant runs embedded in-process** (`mode: local`) — no Docker or external server is required. The embedded data is stored in the project's `qdrant/` directory.
 
-`mrag doctor` may show a Qdrant WARN when run outside a project directory. This is expected and does not indicate a setup problem for the default local mode.
-
 Docker is only needed if you explicitly set `qdrant.mode: server` in `mrag.yaml`.
 
 ---

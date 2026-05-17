@@ -17,7 +17,7 @@ runner = CliRunner()
 
 def _init_project(parent_dir: Path, name: str = "test-kb") -> Path:
     """Run mrag init and return the project subdirectory."""
-    result = runner.invoke(app, ["init", "--name", name, "--yes"], catch_exceptions=False)
+    result = runner.invoke(app, ["init", "--name", name, "--non-interactive"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
     return parent_dir / name
 

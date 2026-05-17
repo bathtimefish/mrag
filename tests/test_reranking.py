@@ -116,7 +116,7 @@ class TestGetReranker:
 @pytest.fixture
 def indexed_project(tmp_path: Path, sample_txt: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    runner.invoke(cli_app, ["init", "--name", "test-kb", "--yes"], catch_exceptions=False)
+    runner.invoke(cli_app, ["init", "--name", "test-kb", "--non-interactive"], catch_exceptions=False)
     project_dir = tmp_path / "test-kb"
     monkeypatch.chdir(project_dir)
     runner.invoke(cli_app, ["add", str(sample_txt)], catch_exceptions=False)

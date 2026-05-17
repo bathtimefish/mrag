@@ -46,8 +46,8 @@ mrag <command>
 cd /path/to/parent
 
 # 2. Initialize (creates /path/to/parent/<name>/)
-mrag init --name <name> --yes
-# --yes skips interactive prompts and accepts all defaults
+mrag init --name <name> --non-interactive
+# --non-interactive skips prompts and uses defaults for all unspecified fields
 
 # 3. Enter the project directory for all subsequent operations
 cd <name>
@@ -114,24 +114,28 @@ mrag show-extracted <doc-id>   # preview extracted text
 - Qdrant: check `mrag.yaml` — `mode: local` (default) needs nothing; `mode: server` needs a running Qdrant instance
 - If `augmentation.strategy: contextual` is set in the profile: the generation model must also be pulled (`ollama pull gemma4:e4b` or whichever model is configured)
 
-**Steps:**
+**Steps (AI agents — required form):**
+
+AI agents MUST always pipe `mrag index` / `mrag reindex` output through `tee` to a timestamped log file. This ensures the per-chunk progress (`augmenting`, `↻ retry`, `⤵ fallback`) is captured to disk so the agent (or a parallel monitor) can inspect long-running progress without waiting for the run to complete. See "Monitoring index progress in real time" below for the rationale.
 
 ```bash
-# Index all un-indexed documents (differential)
-mrag index
+# Required form for AI agents — always tee the output
+mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 
 # Index a specific document only
-mrag index --document-id <doc-id>
+mrag index --document-id <doc-id> 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 
 # Force full rebuild of the index (drops and recreates all chunks)
-mrag reindex
+mrag reindex 2>&1 | tee mrag-reindex-$(date +%Y%m%d-%H%M%S).log
 
-# Specify a custom log output path
-mrag index --output-log /tmp/my-index-run.json
+# Specify a custom log output path (still tee for the progress stream)
+mrag index --output-log /tmp/my-index-run.json 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 
 # Skip documents that failed in a previous run
-mrag index --skip-list-json logs/20260514103000-index.json
+mrag index --skip-list-json logs/20260514103000-index.json 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 ```
+
+> **Note for human users:** The `tee` requirement applies to AI agents because they cannot watch a streaming terminal interactively. Human operators may omit `| tee ...` and watch the terminal directly — both forms are functionally equivalent. The JSON log (auto-written to `logs/`) is generated either way.
 
 **Expected output:**
 ```
@@ -178,13 +182,19 @@ The skip list JSON only requires `failed_documents[].document_id`. You can also 
 
 **Monitoring index progress in real time:**
 
-The JSON log is a post-run artifact for failure analysis. It does not capture per-chunk progress lines. To monitor ongoing progress — especially during long-running contextual augmentation where each chunk triggers an LLM call — pipe output through `tee`:
+The JSON log is a post-run artifact for failure analysis. It does not capture per-chunk progress lines. **AI agents must always pipe index/reindex through `tee`** so the streaming output (`augmenting`, `↻ retry`, `⤵ fallback`, per-document `[idx/n]` lines) is preserved to a file the agent can poll while the command is still running:
 
 ```bash
 mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 ```
 
-This streams `augmenting`, `↻ retry`, and `⤵ fallback` lines to the terminal in real time while writing them to file. Both you and an LLM monitoring the log file can track how far the run has progressed, spot stalling chunks, and estimate remaining time — without waiting for the run to finish.
+Why this matters for AI agents:
+
+- Contextual augmentation runs make one LLM call per chunk and can take many minutes (or hours for large corpora). Without `tee`, the agent has no way to inspect progress until the command exits.
+- The agent (or a parallel monitor process) can `tail -f` the log to detect stalls, retry storms, or fallback floods early — instead of waiting for the run to complete and then learning from the JSON summary that the run was unhealthy.
+- The JSON log produced at the end is complementary, not redundant: it captures the structured summary and failure list, while the `tee` log captures the chunk-level narrative.
+
+Human users may watch the terminal directly and omit `tee` if they prefer — but for any unattended or long-running invocation (and for all AI-agent invocations), the `tee` form is mandatory.
 
 **`⚠ large chunks` warning during index:**
 
@@ -270,7 +280,7 @@ When the profile uses `strategy: block_aware`, each result that has heading meta
 1. Confirm `mrag index` has been run
 2. Check `fts_tokenizer` in `mrag.yaml` matches what was used at index time
 3. Try a simpler, shorter query term first
-4. Run `mrag doctor` to check Qdrant and Ollama connectivity
+4. Run `mrag doctor` to verify Ollama is reachable (and SQLite/FTS5 capabilities)
 
 ---
 
@@ -406,21 +416,19 @@ mrag search "<term from that document>" --strategy keyword
 
 ## Skill 8 — Check environment health
 
-**Preconditions:** None (works without a project directory)
+**Preconditions:** None — `mrag doctor` is project-independent and runs from any directory.
 
 ```bash
 mrag doctor
 ```
 
 Checks and reports:
-- SQLite version and FTS5 availability
-- `trigram` tokenizer availability
-- vaporetto extension load (if library found)
-- Qdrant reachability (`localhost:6333`)
-- Ollama reachability (`localhost:11434`)
-- `mrag.yaml` validity (if in a project directory)
+- SQLite version (>= 3.35.0)
+- FTS5 `trigram` tokenizer
+- sqlite-vaporetto native library (optional)
+- Ollama reachability at `http://localhost:11434`
 
-**Use this skill** before starting any indexing or serving task to confirm the environment is ready.
+**Use this skill** to verify the mrag install is healthy. Note that `mrag doctor` no longer reads `mrag.yaml` or checks Qdrant — project configuration is validated at runtime by individual commands (`mrag add`, `mrag index`, `mrag search`), and Qdrant runs embedded in-process for the default `mode: local` so a server check is unnecessary.
 
 ---
 
@@ -768,8 +776,9 @@ Need best Japanese retrieval?                               →  ensure fts_toke
 Zero results from keyword search?                           →  check mrag index ran; try single-word query
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
-Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index
-Need to rebuild everything?                                 →  mrag reindex
+Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+Need to rebuild everything?                                 →  mrag reindex 2>&1 | tee mrag-reindex-$(date +%Y%m%d-%H%M%S).log
+AI agent running mrag index/reindex?                        →  ALWAYS pipe through `2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log` (required for AI agents — see Skill 3)
 Some documents failed during index?                         →  re-run mrag index (retries error-status docs automatically); check logs/ for the JSON run log
 Document always fails and blocks the rest?                  →  mrag index --skip-list-json logs/<ts>-index.json  (or create minimal JSON with failed_documents[].document_id)
 Need to expose retrieval over HTTP?                         →  mrag serve (from inside project dir)

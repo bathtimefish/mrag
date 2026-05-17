@@ -92,7 +92,11 @@ def _slugify(name: str) -> str:
 def init(
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Project name"),
     kb_id: Optional[str] = typer.Option(None, "--kb-id", help="Knowledge base ID"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Use defaults without prompting"),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Do not ask prompts; use defaults for all fields not provided on the CLI.",
+    ),
     force: bool = typer.Option(False, "--force", help="Reinitialize existing project"),
 ) -> None:
     """Initialize a new MRAG project in a new subdirectory."""
@@ -100,7 +104,7 @@ def init(
 
     default_name = cwd.name
     if name is None:
-        name = default_name if yes else typer.prompt("Project name", default=default_name)
+        name = default_name if non_interactive else typer.prompt("Project name", default=default_name)
 
     project_dir = cwd / _slugify(name)
 
@@ -111,7 +115,7 @@ def init(
 
     default_kb_id = "kb_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     if kb_id is None:
-        kb_id = default_kb_id if yes else typer.prompt("Knowledge base ID", default=default_kb_id)
+        kb_id = default_kb_id if non_interactive else typer.prompt("Knowledge base ID", default=default_kb_id)
 
     kb_name = name.replace("-", " ").replace("_", " ").title() + " Knowledge Base"
 
