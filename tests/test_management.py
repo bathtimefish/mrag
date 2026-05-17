@@ -22,7 +22,7 @@ runner = CliRunner()
 @pytest.fixture
 def indexed_project(tmp_path: Path, sample_txt: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init", "--name", "test-kb", "--yes"], catch_exceptions=False)
+    runner.invoke(app, ["init", "--name", "test-kb", "--non-interactive"], catch_exceptions=False)
     project_dir = tmp_path / "test-kb"
     monkeypatch.chdir(project_dir)
     runner.invoke(app, ["add", str(sample_txt)], catch_exceptions=False)

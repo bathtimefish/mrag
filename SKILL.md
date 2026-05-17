@@ -46,8 +46,8 @@ mrag <command>
 cd /path/to/parent
 
 # 2. Initialize (creates /path/to/parent/<name>/)
-mrag init --name <name> --yes
-# --yes skips interactive prompts and accepts all defaults
+mrag init --name <name> --non-interactive
+# --non-interactive skips prompts and uses defaults for all unspecified fields
 
 # 3. Enter the project directory for all subsequent operations
 cd <name>

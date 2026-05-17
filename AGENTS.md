@@ -41,7 +41,7 @@ Every mrag project follows this sequence. Steps must be executed in order.
 mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve
 ```
 
-1. **`mrag init --name <name>`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory.
+1. **`mrag init --name <name> [--non-interactive]`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory. AI agents and scripted callers should use `--non-interactive` to skip prompts and accept defaults for any unspecified fields.
 2. **`mrag add <file>`** — Extracts text and stores metadata. No indexing yet.
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents. Always writes a JSON run log to `logs/` (timestamped). Use `--skip-list-json <log>` to skip documents that failed in a previous run.
 4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
@@ -57,12 +57,12 @@ Use **`mrag eval <query>`** at any time after indexing for deeper quality inspec
 ```bash
 # CORRECT: run from parent directory
 cd /workspace
-mrag init --name my-kb
+mrag init --name my-kb --non-interactive
 cd my-kb          # project is at /workspace/my-kb
 
 # WRONG: running from inside the intended project directory
 cd /workspace/my-kb
-mrag init --name my-kb   # creates /workspace/my-kb/my-kb — double nesting
+mrag init --name my-kb --non-interactive   # creates /workspace/my-kb/my-kb — double nesting
 ```
 
 ### `mrag index` must run before any search

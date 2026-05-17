@@ -80,7 +80,7 @@ def _fake_qdrant_client() -> MagicMock:
 
 def _init_project(parent_dir: Path, name: str = "test-kb") -> Path:
     """Run mrag init and return the project subdirectory."""
-    result = runner.invoke(app, ["init", "--name", name, "--yes"], catch_exceptions=False)
+    result = runner.invoke(app, ["init", "--name", name, "--non-interactive"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
     return parent_dir / name
 
@@ -843,7 +843,7 @@ def test_init_creates_context_prompt_file(tmp_path: Path):
 
     with pytest.MonkeyPatch().context() as mp:
         mp.chdir(tmp_path)
-        result = runner.invoke(app, ["init", "--name", "myproj", "--yes"], catch_exceptions=False)
+        result = runner.invoke(app, ["init", "--name", "myproj", "--non-interactive"], catch_exceptions=False)
 
     assert result.exit_code == 0, result.output
     prompt_file = tmp_path / "myproj" / "profiles" / "context_prompt.txt"
@@ -865,7 +865,7 @@ def _run_pc_pipeline(tmp_path: Path, text: str) -> tuple[Path, Path]:
 
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
-        result = runner.invoke(app, ["init", "--name", "pc-kb", "--yes"], catch_exceptions=False)
+        result = runner.invoke(app, ["init", "--name", "pc-kb", "--non-interactive"], catch_exceptions=False)
         assert result.exit_code == 0, result.output
         project_dir = tmp_path / "pc-kb"
         mp.chdir(project_dir)
@@ -986,7 +986,7 @@ def test_pc_pipeline_indexed_count_excludes_parents(tmp_path: Path):
     text = "word " * 200
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
-        runner.invoke(app, ["init", "--name", "pc-kb2", "--yes"], catch_exceptions=False)
+        runner.invoke(app, ["init", "--name", "pc-kb2", "--non-interactive"], catch_exceptions=False)
         project_dir = tmp_path / "pc-kb2"
         mp.chdir(project_dir)
 
