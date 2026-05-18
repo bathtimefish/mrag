@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS profiles (
 --   parent = large context block (parent_child strategy)
 --   child  = search-unit block (parent_child strategy)
 -- source_format: markdown | text (which extracted file was used)
+--
+-- metadata_json schema (JSON object, all fields optional):
+--   heading_path        : list[str]  — H1 > H2 > H3 hierarchy ("preserve_heading_path")
+--   heading_path_text   : str        — joined breadcrumb "H1 > H2 > H3"
+--   section_id          : str        — slug of heading_path ("h1/h2/h3")
+--   section_title       : str        — leaf heading name
+--   section_start_line  : int        — block-aware: source line range start
+--   section_end_line    : int        — block-aware: source line range end
+--   block_types         : list[str]  — block kinds present (heading/paragraph/table/code_block/...)
+--   contains_table      : bool       — at least one BLOCK_TABLE present
+--   contains_code       : bool       — at least one BLOCK_CODE present
+--   language            : str        — code block language hint (when contains_code)
+--   table_count         : int        — number of tables in the chunk
+--   table_columns       : list[str]  — column headers of the (first) table
+--   table_split         : bool       — true when this chunk is a slice of an oversized table
+--   table_id            : str        — group identifier shared by all parts of a split table
+--   table_part          : int        — 1-based part index when table_split=true
+--   table_parts         : int        — total parts when table_split=true
+--   table_header_repeated : bool     — true when the table header was repeated in this part
 -- ================================================================
 CREATE TABLE IF NOT EXISTS chunks (
   id              TEXT PRIMARY KEY,
@@ -82,7 +101,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   source_format   TEXT NOT NULL,
   token_count     INTEGER,
   char_count      INTEGER,
-  metadata_json   TEXT,
+  metadata_json   TEXT,        -- see comment above for the schema of this JSON column
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -94,6 +113,13 @@ CREATE TABLE IF NOT EXISTS chunks (
 --   raw        = content == chunks.content (direct embedding)
 --   contextual = content prepended with LLM-generated context_text
 -- qdrant_collection: full Qdrant collection name for this variant
+--
+-- metadata_json schema (JSON object, all fields optional):
+--   augmentation_status : str  — "fallback_raw" when augmentation retries were
+--                                exhausted and the chunk degraded to a raw variant
+--   augmentation_error  : str  — truncated error message from the failing augmentation
+--                                attempt (paired with augmentation_status="fallback_raw")
+-- When augmentation succeeds normally, metadata_json is NULL.
 -- ================================================================
 CREATE TABLE IF NOT EXISTS chunk_variants (
   id                    TEXT PRIMARY KEY,
@@ -108,7 +134,7 @@ CREATE TABLE IF NOT EXISTS chunk_variants (
   embedding_model_id    TEXT REFERENCES embedding_models(id),
   qdrant_point_id       TEXT,
   qdrant_collection     TEXT,
-  metadata_json         TEXT,
+  metadata_json         TEXT,            -- see comment above for the schema of this JSON column
   created_at            TEXT NOT NULL
 );
 

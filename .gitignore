@@ -44,7 +44,7 @@ htmlcov/
 .DS_Store
 
 # mrag project directories (user data — not part of source)
-e2e_test/
+kbs/
 dev_docs/
 
 # mrag runtime files that may appear at repo root during development

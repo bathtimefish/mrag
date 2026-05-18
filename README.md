@@ -104,7 +104,8 @@ cd my-project
 ```
 
 `mrag init` creates a `my-project/` subdirectory in the current directory with:
-- `mrag.yaml` — project configuration
+- `mrag.yaml` — project configuration (runtime settings)
+- `kb_information.yaml` — agent-facing KB metadata (description / tags / preferred profiles)
 - `profiles/default.yaml` — retrieval profile
 - `profiles/context_prompt.txt` — LLM prompt template for contextual augmentation (editable)
 - `mrag.db` — SQLite database
@@ -117,8 +118,17 @@ The tokenizer is auto-detected at init time. If vaporetto is found, the project 
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated kb_information.yaml
 ✓ Initialized mrag.db
 ```
+
+**LLM-driven project creation:** Pass a JSON file containing the full KB description for fully populated `kb_information.yaml` generation. Recommended for agents:
+
+```bash
+mrag init ./knowledges/kb-device --non-interactive --kb-info-json kb_info.json
+```
+
+See [`kb_information.yaml`](#kb-information-agent-facing-kb-metadata) below for the file's role and schema.
 
 ### 2. Add documents
 
@@ -206,20 +216,228 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 
 | Command | Description |
 |---------|-------------|
-| `mrag init [--name NAME] [--kb-id ID] [--non-interactive] [--force]` | Create a new project in a subdirectory (use `--non-interactive` to skip prompts) |
+| `mrag init [PROJECT_DIR] [--name NAME] [--kb-id ID] [--non-interactive] [--kb-info-json PATH] [--print-kb-info-schema] [--force]` | Create a new project. Use `--non-interactive` to skip prompts, `--kb-info-json` for LLM-driven KB metadata, or `--print-kb-info-schema` to print the input JSON Schema |
 | `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
-| `mrag search <query>` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`) |
+| `mrag search <query> [--json]` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`, `--json` for machine-readable output) |
 | `mrag eval <query>` | Evaluate retrieval quality (`--profile P`, `--strategy S`, `--top-k N`, `--no-rerank`) |
 | `mrag serve` | Start FastAPI server (`--host`, `--port`, `--no-rerank`) |
 | `mrag remove <doc-id>` | Dry-run removal (use `--force` to actually delete) |
 | `mrag profiles list` | List profiles registered in the database |
 | `mrag profiles show <name>` | Show profile configuration |
+| `mrag kb-info show` | Print the current project's `kb_information.yaml` |
+| `mrag kb-info validate` | Validate the current project's `kb_information.yaml` |
+| `mrag kb-info schema` | Print the JSON Schema for `--kb-info-json` input |
+| `mrag inspect document <doc-id> [--profile P] [--json]` | Per-profile chunk & augmentation summary for a document |
+| `mrag inspect chunks <doc-id> [--profile P] [--limit N] [--offset N] [--show-content] [--show-context] [--json]` | List chunks with metadata (default returns all; agent-first) |
+| `mrag inspect chunk <chunk-id> [--json]` | Single-chunk deep-dive (content + context_text always included) |
+| `mrag inspect sections <doc-id> [--profile P] [--json]` | Visualize heading hierarchy or parent/child layered view |
+| `mrag registry generate <root_dir> [--output PATH] [--dry-run]` | Aggregate `<root>/*/kb_information.yaml` into `knowledge_registry.yaml` |
+| `mrag registry validate <registry_path> [--json]` | Validate a `knowledge_registry.yaml` against the filesystem |
 | `mrag extract <file>` | Preview extracted text (dry-run, nothing stored) |
 | `mrag show-extracted <doc-id>` | Print stored extracted content |
 | `mrag export-extracted <doc-id>` | Export extracted content to file |
 | `mrag doctor` | Check the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama) — project-independent |
+
+---
+
+## KB Information (agent-facing KB metadata) <a id="kb-information-agent-facing-kb-metadata"></a>
+
+Every mrag project ships with **`kb_information.yaml`** — a self-describing metadata file consumed by external AI agents (Agentic RAG workflows), not by mrag itself at runtime.
+
+### Role separation
+
+```
+mrag.yaml             → runtime configuration (mrag reads this)
+kb_information.yaml   → agent-facing semantic description (external agents read this)
+```
+
+`mrag.yaml` controls execution (Qdrant mode, default profile, tokenizer, …).
+`kb_information.yaml` describes *what the KB is for* so an agent can decide whether to query it.
+
+### Example
+
+```yaml
+version: 1
+
+knowledge_base:
+  id: kb_device
+  name: Device Development Knowledge
+  description: >
+    Knowledge base for M5Stack, SIM7080G, MQTT, LTE, BraveJIG,
+    embedded device development, and field troubleshooting.
+
+agent_usage:
+  tags:
+    - m5stack
+    - sim7080g
+    - mqtt
+    - lte
+
+  best_for:
+    - SIM7080G / LTE module troubleshooting
+    - MQTT publish stop and keepalive issues
+
+  avoid_for:
+    - Contract review
+    - Accounting
+
+  preferred_profiles:
+    - default
+
+  example_queries:
+    - SIM7080G MQTT publish stops after several hours
+```
+
+### Init modes
+
+| Mode | Command | Result |
+|---|---|---|
+| Interactive | `mrag init --name kb-device` | Prompts for name / kb_id / description; other fields stay empty (edit later) |
+| Non-interactive | `mrag init --name kb-device --non-interactive` | Minimal template (empty description, default profile only) |
+| JSON-driven | `mrag init --non-interactive --kb-info-json kb_info.json` | Fully populated from the JSON input — recommended for LLM agents |
+
+### JSON input schema
+
+Get the JSON Schema for the `--kb-info-json` input file:
+
+```bash
+mrag init --print-kb-info-schema
+# or
+mrag kb-info schema
+```
+
+Required top-level fields: `project.name`, `knowledge_base.{id, name, description}`.
+Optional: `agent_usage.{tags, best_for, avoid_for, preferred_profiles, example_queries}`.
+
+Example input JSON:
+
+```json
+{
+  "project": {"name": "device-kb"},
+  "knowledge_base": {
+    "id": "kb_device",
+    "name": "Device Development Knowledge",
+    "description": "Embedded device development knowledge."
+  },
+  "agent_usage": {
+    "tags": ["m5stack", "sim7080g"],
+    "best_for": ["LTE troubleshooting"],
+    "preferred_profiles": ["default"]
+  }
+}
+```
+
+### Inspecting and validating
+
+```bash
+mrag kb-info show       # print the current project's kb_information.yaml
+mrag kb-info validate   # validate against the v1 schema
+mrag kb-info schema     # print the JSON Schema (equivalent to --print-kb-info-schema)
+```
+
+### Machine-readable search output
+
+For Agentic RAG callers, `mrag search --json` emits a single JSON object to stdout (status lines and warnings go to stderr):
+
+```bash
+mrag search "MQTT keepalive" --json
+```
+
+The payload includes `query`, `profile`, `strategy`, `reranked`, `result_count`, `results[]`, `score_stats`, and `document_distribution`.
+
+---
+
+## Inspecting documents and chunks <a id="inspecting-documents-and-chunks"></a>
+
+`mrag inspect` is a read-only command group for **agent- and developer-driven debugging** of chunking and indexing results. It replaces ad-hoc SQL with structured human and JSON output, and is designed to be called from AI agents (every subcommand supports `--json`).
+
+```bash
+# Per-profile chunk count + augmentation status for a document
+mrag inspect document <doc-id> [--profile P] [--json]
+
+# All chunks for a document (default: every chunk; use --limit/--offset for paging)
+mrag inspect chunks <doc-id> [--profile P] [--show-content] [--show-context] [--json]
+
+# Single chunk deep-dive — content + context_text are always included
+mrag inspect chunk <chunk-id> [--json]
+
+# Heading hierarchy or parent_child layered tree
+mrag inspect sections <doc-id> [--profile P] [--json]
+```
+
+### Typical two-stage workflow for agents
+
+```bash
+# Stage 1 — lightweight metadata survey
+mrag inspect chunks abc123 --json | jq '.chunks[] | select(.metadata.contains_table)'
+
+# Stage 2 — full body + LLM-generated context for the candidate chunk
+mrag inspect chunk c-014 --json
+```
+
+### Profile resolution rule
+
+`inspect chunks` / `inspect sections` require exactly one profile context:
+
+- `--profile` given → used as-is
+- omitted + only one profile indexed this document → auto-selected
+- omitted + multiple profiles → **exit 1** with a candidate list (so agents notice the ambiguity instead of silently picking the wrong one)
+
+### Augmentation status semantics
+
+`mrag inspect document` reports `succeeded` / `raw_fallback` only for variants where augmentation was actually attempted. Profiles without augmentation (e.g. `parent_child` with `augmentation.strategy: none`) produce no Augmentation Status section at all.
+
+---
+
+## Aggregating multiple KBs (`knowledge_registry.yaml`) <a id="aggregating-multiple-kbs-knowledge-registry-yaml"></a>
+
+A `knowledge_registry.yaml` aggregates several mrag projects under one root directory so that an external Agentic RAG agent can discover them and pick the right KB for a query.
+
+```text
+knowledges/
+├── knowledge_registry.yaml     ← generated artifact (agent reads this)
+├── kb-device/
+│   ├── mrag.yaml
+│   ├── kb_information.yaml
+│   └── ...
+└── kb-contract/
+    └── ...
+```
+
+### Generate
+
+```bash
+mrag registry generate ./knowledges
+# → ./knowledges/knowledge_registry.yaml
+```
+
+- Scans `<root>/*/kb_information.yaml` (one level deep, no recursion)
+- Skips subdirectories without `kb_information.yaml` / `mrag.yaml` with a warning
+- Exits 1 if no KBs are found (catches typos and misplaced KBs)
+- `--dry-run` writes to stdout; `--output PATH` overrides the destination
+
+The `knowledge_bases[].path` field is a POSIX relative path **from the directory containing the registry file itself** — so the whole tree can be moved or synced to another machine without breaking.
+
+### Validate
+
+```bash
+mrag registry validate ./knowledges/knowledge_registry.yaml
+mrag registry validate ./knowledges/knowledge_registry.yaml --json
+```
+
+Aggregates **all** issues in one pass (rather than stopping on the first one) so an agent can fix everything in a single round. Stable issue keys for branching:
+
+| Key | Meaning |
+|---|---|
+| `path_not_found` | `knowledge_bases[].path` does not exist |
+| `mrag_yaml_not_found` | KB directory missing `mrag.yaml` |
+| `kb_information_yaml_not_found` | KB directory missing `kb_information.yaml` |
+| `preferred_profile_not_found` | `<path>/profiles/<name>.yaml` missing |
+| `duplicate_id` | Two entries share the same `knowledge_base.id` |
+
+Fatal errors (YAML parse failure, schema mismatch, missing registry file) exit immediately.
 
 ---
 
