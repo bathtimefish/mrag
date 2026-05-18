@@ -369,6 +369,87 @@ This lets an agent pipe `mrag search "..." --json | jq ...` without worrying abo
 
 ---
 
+## Inspecting indexed content (`mrag inspect`)
+
+For debugging chunking / indexing outcomes, mrag exposes a read-only `inspect` command group. All subcommands support `--json` and follow the same stdout/stderr separation as `mrag search --json`.
+
+| Command | Use case |
+|---|---|
+| `mrag inspect document <doc_id>` | "How many chunks does this document have per profile? How healthy is its augmentation?" |
+| `mrag inspect chunks <doc_id>` | "List every chunk's metadata so I can decide which one to look at" |
+| `mrag inspect chunk <chunk_id>` | "Show me the full body + LLM-generated context for this chunk" |
+| `mrag inspect sections <doc_id>` | "Visualize the heading hierarchy or parent_child layered structure" |
+
+### Two-stage agent workflow
+
+```bash
+# 1. Survey: pull lightweight metadata for every chunk
+mrag inspect chunks abc123 --json \
+  | jq '.chunks[] | select(.metadata.contains_table or .metadata.contains_code)'
+
+# 2. Deep-dive: fetch full body + context_text for the candidate chunk_id
+mrag inspect chunk c-014 --json
+```
+
+### Profile resolution
+
+`inspect chunks` / `inspect sections` require a profile context. If the document is indexed under exactly one profile it is auto-selected; if multiple profiles index it, the command exits 1 with a candidate list rather than silently picking a default. Pass `--profile <name>` to disambiguate.
+
+### Augmentation status
+
+`mrag inspect document` reports `succeeded` / `raw_fallback` **only for variants where augmentation was actually attempted**. Profiles with `augmentation.strategy: none` (e.g. `parent_child`) do not produce an Augmentation Status section, since no augmentation was ever invoked.
+
+---
+
+## Aggregating multiple KBs (`mrag registry`)
+
+When the agent operates over **several mrag projects**, generate a `knowledge_registry.yaml` so it can discover and select the right KB per query.
+
+### Directory layout
+
+```text
+knowledges/
+├── knowledge_registry.yaml      ← generated; agent reads this
+├── kb-device/                   ← real mrag projects (1 level deep, no recursion)
+│   ├── mrag.yaml
+│   ├── kb_information.yaml
+│   └── ...
+└── kb-contract/
+    └── ...
+```
+
+### Workflow
+
+```bash
+# 1. Generate the registry (skips dirs without kb_information.yaml + mrag.yaml)
+mrag registry generate ./knowledges
+
+# 2. Verify nothing is missing or misconfigured
+mrag registry validate ./knowledges/knowledge_registry.yaml --json
+
+# 3. Agent reads ./knowledges/knowledge_registry.yaml, picks a KB based on
+#    knowledge_bases[].description / tags / best_for / avoid_for,
+#    then runs the templated search command (cd into kb path + mrag search --json).
+```
+
+### Path semantics
+
+`knowledge_bases[].path` is a **POSIX relative path from the directory containing the registry file itself**. Resolve it as `os.path.join(registry_dir, kb.path)` (or `cd $(dirname registry.yaml) && cd $kb.path`). The registry is portable across machines as long as the whole directory tree is moved together.
+
+### Stable validate issue keys (for agent branching)
+
+| Key | What it means |
+|---|---|
+| `path_not_found` | KB directory deleted or renamed → regenerate the registry |
+| `mrag_yaml_not_found` | Listed path is not an mrag project |
+| `kb_information_yaml_not_found` | Pre-v0.17 project (lacks Phase 1 metadata) |
+| `preferred_profile_not_found` | Profile YAML deleted; either regenerate or remove from `preferred_profiles` |
+| `duplicate_id` | Two KBs share an id — agent cannot disambiguate |
+
+Fatal errors (YAML parse failure, schema mismatch) exit immediately; everything else is aggregated into one `issues[]` array per run.
+
+---
+
 ## Reading project state
 
 Use `mrag doctor` to verify the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama). It is project-independent — run it from any directory to confirm the install:

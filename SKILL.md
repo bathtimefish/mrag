@@ -868,6 +868,192 @@ mrag eval "your query" --profile parent_child --strategy keyword
 
 ---
 
+## Skill 15 — Inspect documents, chunks, and sections
+
+`mrag inspect` is a **read-only, AI-agent-first** command group for debugging chunking and indexing outcomes. Every subcommand supports `--json`; stdout is the payload, stderr carries warnings / errors. Use these instead of querying SQLite by hand.
+
+**Preconditions:**
+- Inside the project directory (`cwd` must contain `mrag.yaml` + `mrag.db`)
+- At least one document has been added and indexed
+
+### Skill 15.1 — Per-document summary
+
+```bash
+mrag inspect document <doc-id>           # human-readable rich Table
+mrag inspect document <doc-id> --json    # JSON for agent consumption
+```
+
+Returns: filename / source_type / extraction_provider / per-profile chunk counts (including parent / child) / augmentation success vs raw_fallback per profile.
+
+### Skill 15.2 — List chunks (full inventory by default)
+
+```bash
+# Returns ALL chunks (agent-first default; no pagination)
+mrag inspect chunks <doc-id> --profile default --json
+
+# Page through a very large document explicitly
+mrag inspect chunks <doc-id> --profile default --limit 50 --offset 0 --json
+mrag inspect chunks <doc-id> --profile default --limit 50 --offset 50 --json
+```
+
+**Paging norm:** for documents with hundreds of chunks (e.g. large PDFs ≥200 pages), prefer `--limit 50` + `--offset N` over emitting thousands of metadata rows in one go. Default-all is for ergonomics on small/medium docs; explicitly page when the run will flood the terminal.
+
+**Multi-profile documents:** if the document is indexed under more than one profile and `--profile` is omitted, the command exits 1 with a candidate list. Always pass `--profile` when you know multiple profiles index the document.
+
+**Optional payload expansion:**
+
+```bash
+mrag inspect chunks <doc-id> --profile default --show-content --json   # adds full body
+mrag inspect chunks <doc-id> --profile default --show-context --json   # adds LLM context_text
+```
+
+### Skill 15.3 — Single-chunk deep dive
+
+```bash
+mrag inspect chunk <chunk-id> --json
+```
+
+Always returns content + context_text. `--profile` is not needed because `chunk_id` is the PRIMARY KEY. Typical pattern: agent gets `chunk_id` from `mrag search --json`, then deep-dives the suspicious chunk.
+
+### Skill 15.4 — Heading hierarchy / parent-child tree
+
+```bash
+mrag inspect sections <doc-id> --profile default          # heading hierarchy
+mrag inspect sections <doc-id> --profile parent-child     # parent → child layered view
+```
+
+If the profile has no heading_path (e.g. `recursive` strategy with `preserve_heading_path: false`), the command exits 1 and points the agent at `inspect chunks`. Use `inspect chunks` for flat listings.
+
+### Two-stage agent workflow (recommended)
+
+```bash
+# Stage 1: lightweight metadata survey, filter for interesting chunks
+mrag inspect chunks abc123 --profile default --json \
+  | jq '.chunks[] | select(.metadata.contains_table or .metadata.contains_code)'
+
+# Stage 2: pull full body + context for the candidate chunk_id
+mrag inspect chunk c-014 --json
+```
+
+This minimizes token usage in agent context windows: Stage 1 is metadata-only, Stage 2 fetches body content only for the specific chunks you actually need.
+
+---
+
+## Skill 16 — Diagnose contextual augmentation quality
+
+When `augmentation.strategy: contextual` is enabled, each chunk gets an LLM-generated context_text. The quality of those generations is **not automatically validated** (the `succeeded` counter only confirms the LLM call returned without falling back to raw). Use this skill to manually audit the output.
+
+**Preconditions:**
+- A profile with `augmentation.strategy: contextual`
+- The document has been indexed under that profile
+
+### Step 1 — High-level health check
+
+```bash
+mrag inspect document <doc-id> --json | jq '.profiles[] | {name, augmentation}'
+```
+
+A non-zero `raw_fallback` count means the LLM exhausted retries on some chunks (look at `augmentation_error` in the DB for details). High `raw_fallback` ratios suggest LLM instability — consider switching `augmentation.model` or raising `retry.max_attempts`.
+
+### Step 2 — Eyeball context_text quality
+
+```bash
+# Sample every context_text in one pass
+mrag inspect chunks <doc-id> --profile <name> --show-context --json \
+  | jq '.chunks[] | {chunk_id, ctx: .context_text}'
+
+# Or deep-dive one suspicious chunk
+mrag inspect chunk <chunk-id> --json | jq '.context_text'
+```
+
+Look for:
+
+- **Language mixing** (e.g. English context for a Japanese chunk) — change `augmentation.model` or edit `profiles/context_prompt.txt`
+- **Generic / vacuous context** ("This is a chunk about X") — refine the prompt to demand more specific framing
+- **Context that contradicts the chunk body** — model hallucination; consider a stronger model
+
+After prompt edits, run `mrag reindex` to regenerate all variants with the new prompt.
+
+---
+
+## Skill 17 — Aggregate multiple KBs into a registry for Agentic RAG
+
+When you maintain several mrag projects and want an external agent (Claude Code, Cline, Cursor, custom Agentic RAG workflow) to discover and pick the right KB per query, generate a `knowledge_registry.yaml`.
+
+**Preconditions:**
+- A parent directory containing one or more mrag projects (each with `mrag.yaml` + `kb_information.yaml`)
+- Projects sit **directly under the root** — registry generate only walks 1 level deep, not recursively
+
+### Directory layout
+
+```text
+knowledges/                          ← <root_dir>
+├── kb-device/
+│   ├── mrag.yaml
+│   ├── kb_information.yaml
+│   └── ...
+├── kb-contract/
+│   └── ...
+└── kb-design/
+    └── ...
+```
+
+### Step 1 — Generate
+
+```bash
+# Default: writes <root>/knowledge_registry.yaml
+mrag registry generate ./knowledges
+
+# Preview without writing
+mrag registry generate ./knowledges --dry-run
+
+# Custom output location
+mrag registry generate ./knowledges --output /elsewhere/registry.yaml
+```
+
+The generator:
+- Walks `<root>/*/kb_information.yaml` (one level deep)
+- Warns + skips directories missing `kb_information.yaml` or `mrag.yaml`
+- Exits 1 if **no** KB matches (so typos and misplaced KBs are caught early)
+- Detects ID collisions and refuses to write a partial registry
+
+**Path semantics:** `knowledge_bases[].path` is stored as POSIX relative path from the registry file's directory (e.g. `./kb-device`). The tree is portable — moving or scp-ing `knowledges/` to another machine works without regeneration.
+
+### Step 2 — Validate
+
+```bash
+mrag registry validate ./knowledges/knowledge_registry.yaml
+
+# Machine-readable for CI / agent automation
+mrag registry validate ./knowledges/knowledge_registry.yaml --json
+```
+
+Aggregates **all** issues in one run (rather than stopping on the first one). Stable issue keys for agent branching:
+
+| `issue` key | Action |
+|---|---|
+| `path_not_found` | Regenerate the registry (KB was deleted / renamed) |
+| `mrag_yaml_not_found` | The listed path is not an mrag project |
+| `kb_information_yaml_not_found` | Pre-v0.17 project; create `kb_information.yaml` manually |
+| `preferred_profile_not_found` | Profile YAML deleted; remove from preferred_profiles or recreate |
+| `duplicate_id` | Two KBs share an id — must rename one |
+
+Fatal errors (YAML parse failure, schema mismatch, missing registry file) exit immediately without aggregating.
+
+### Step 3 — Agent consumption pattern
+
+The agent reads `knowledge_registry.yaml` and selects a KB based on `knowledge_bases[].description / tags / best_for`, then issues:
+
+```bash
+# `path` is relative to the directory containing the registry file
+cd <registry_dir>/<knowledge_bases[i].path>
+mrag search "<user query>" --profile <preferred_profiles[0]> --json
+```
+
+The `agent_instructions.search_command_template` field in the registry encodes this template literally; the agent can substitute `{path}`, `{query}`, `{profile}` directly.
+
+---
+
 ## Quick decision guide
 
 ```
@@ -876,6 +1062,17 @@ Need best Japanese retrieval?                               →  ensure fts_toke
 AI agent parsing mrag search output?                        →  always pass --json (stdout: single JSON object, stderr: warnings)
 AI agent creating a new KB project?                         →  use Skill 1.5 with --kb-info-json for fully populated kb_information.yaml
 Want to know what a KB is for?                              →  mrag kb-info show (or read kb_information.yaml directly)
+Want to see how a document was chunked?                     →  mrag inspect document <doc-id> --json (per-profile chunk + augmentation summary)
+Want to list every chunk's metadata for an agent?           →  mrag inspect chunks <doc-id> --profile <p> --json (default: all chunks)
+Need to deep-dive one chunk's content + LLM context?        →  mrag inspect chunk <chunk-id> --json (no --profile needed)
+Want to see the heading hierarchy or parent/child tree?     →  mrag inspect sections <doc-id> --profile <p> --json
+Inspect chunks errors with "multiple profiles"?             →  add --profile <name>; agent should pick one from the candidate list in stderr
+inspect sections exits with "no section structure"?         →  the profile has preserve_heading_path: false; use inspect chunks instead
+Want to audit contextual augmentation quality?              →  mrag inspect chunks --show-context --json | jq, then mrag inspect chunk for deep-dive
+Augmentation Status section is missing for a profile?       →  that profile has augmentation.strategy: none (no LLM augmentation attempted)
+Want to expose multiple KBs to an Agentic RAG agent?        →  mrag registry generate <root_dir>; agent reads <root>/knowledge_registry.yaml
+Registry generate found nothing?                            →  check the root path; KBs must be at <root>/<kb-name>/ (1 level, no recursion)
+Registry validate reports issues?                           →  branch on the stable issue key (path_not_found / preferred_profile_not_found / duplicate_id / ...)
 kb_information.yaml validation error?                       →  mrag kb-info validate; check knowledge_base.id is lowercase + underscore only
 Zero results from keyword search?                           →  check mrag index ran; try single-word query
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
