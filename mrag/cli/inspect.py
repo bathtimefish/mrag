@@ -43,6 +43,13 @@ def _pluralize(n: int, singular: str, plural: str | None = None) -> str:
     return singular if n == 1 else (plural or f"{singular}s")
 
 
+def _opt(v: Any) -> str:
+    """Render an optional value: '-' if None/empty, str(v) otherwise."""
+    if v is None or v == "":
+        return "-"
+    return str(v)
+
+
 inspect_app = typer.Typer(
     name="inspect",
     help="Inspect documents, chunks, and sections in the local mrag knowledge base.",
@@ -140,11 +147,16 @@ def _build_document_payload(summary: DocumentSummary) -> dict[str, Any]:
 def _render_document_human(summary: DocumentSummary) -> None:
     d = summary.document
     console.print(f"Document: [cyan]{d.id}[/cyan]")
-    console.print(f"  filename             : {d.filename}")
+    # Long values (Japanese filenames, SHA256 hashes) get soft_wrap so rich
+    # doesn't break them mid-token at the console width.
+    console.print(f"  filename             : {d.filename}", soft_wrap=True)
     console.print(f"  source_type          : {d.source_type}")
-    console.print(f"  extraction_provider  : {d.extraction_provider or '-'}")
+    console.print(f"  extraction_provider  : {_opt(d.extraction_provider)}")
     console.print(f"  status               : {d.status}")
-    console.print(f"  extracted_hash       : {d.extracted_hash or '-'}")
+    console.print(
+        f"  extracted_hash       : {_opt(d.extracted_hash)}",
+        soft_wrap=True,
+    )
     console.print()
     if not summary.profiles:
         console.print("[yellow]No profiles have indexed this document.[/yellow]")
@@ -300,11 +312,11 @@ def _render_chunks_human(
     for i, r in enumerate(rows, start=offset + 1):
         meta = r.metadata or {}
         # markup=False so literal `[N]`, list reprs, etc. are not parsed as
-        # rich style tags. soft_wrap=False keeps long lines from being broken
+        # rich style tags. soft_wrap=True keeps long lines from being broken
         # mid-token by the console width.
         console.print(
             f"[{i}] chunk_id={r.chunk_id}  type={r.chunk_type}  "
-            f"chars={r.char_count}  tokens={r.token_count}",
+            f"chars={_opt(r.char_count)}  tokens={_opt(r.token_count)}",
             markup=False, soft_wrap=True,
         )
         if "heading_path" in meta and meta["heading_path"]:
@@ -473,8 +485,8 @@ def _render_chunk_single_human(
     console.print(f"  chunk_index  : {row.chunk_index}")
     if row.parent_chunk_id:
         console.print(f"  parent_chunk_id: {row.parent_chunk_id}")
-    console.print(f"  char_count   : {row.char_count}")
-    console.print(f"  token_count  : {row.token_count}")
+    console.print(f"  char_count   : {_opt(row.char_count)}")
+    console.print(f"  token_count  : {_opt(row.token_count)}")
     if row.metadata:
         console.print("  metadata     :")
         for k, v in row.metadata.items():
@@ -675,14 +687,16 @@ def _render_parent_child_human(
     for g in groups:
         if g["parent_id"]:
             heading = g["metadata"].get("heading_path") or []
-            heading_str = " > ".join(str(s) for s in heading) if heading else ""
-            label = f" {heading_str}" if heading_str else ""
-            console.print(
-                f"§{label} [parent: {g['parent_id']}, {g['char_count']} chars]",
-                markup=False,
-            )
+            if heading:
+                heading_str = " > ".join(str(s) for s in heading)
+                line = f"§ {heading_str} [parent: {g['parent_id']}, {g['char_count']} chars]"
+            else:
+                # No heading metadata — drop the leading "§ " marker so the
+                # output reads cleanly: "[parent: <id>, N chars]".
+                line = f"[parent: {g['parent_id']}, {g['char_count']} chars]"
+            console.print(line, markup=False, soft_wrap=True)
         else:
-            console.print("§ [orphan children]", markup=False)
+            console.print("[orphan children]", markup=False)
         for c in g["children"]:
             console.print(
                 f"    ↳ child: {c['chunk_id']} ({c['char_count']} chars)"

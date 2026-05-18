@@ -167,6 +167,42 @@ class TestParentChild:
         assert result.exit_code == 0
         assert "parent: p0" in result.stdout
         assert "↳ child: c0" in result.stdout
+        # When heading exists, prefix with "§ "
+        assert "§ Ch1 [parent:" in result.stdout
+
+    def test_parent_child_no_heading_drops_section_marker(self, project):
+        # Real-world case (e.g. nee-hokkaido slide PDFs): parent_child profile
+        # has preserve_heading_path: true but PDF lacks Markdown headings, so
+        # heading_path is empty on the parent. Render should omit the awkward
+        # "§ [parent: ...]" and emit just "[parent: ...]".
+        _, db_path = project
+        conn = open_seed_conn(db_path)
+        with conn:
+            seed_document(conn, "d1")
+            seed_profile(conn, "parent-child")
+            seed_chunk(
+                conn, "p0", profile_name="parent-child",
+                chunk_type="parent", chunk_index=0, char_count=1800,
+                metadata={"block_types": ["paragraph"]},  # no heading_path
+            )
+            seed_chunk(
+                conn, "c0", profile_name="parent-child",
+                chunk_type="child", chunk_index=0,
+                parent_chunk_id="p0", char_count=600,
+            )
+        conn.close()
+        result = runner.invoke(
+            app, ["inspect", "sections", "d1"], catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        # The parent line should NOT start with "§ " when heading is missing
+        assert "[parent: p0," in result.stdout
+        # "§ " never appears as a bare prefix on the parent line
+        for line in result.stdout.splitlines():
+            if "parent: p0" in line:
+                assert not line.lstrip().startswith("§ ["), (
+                    f"unexpected '§ [parent:' for empty heading; got: {line!r}"
+                )
 
 
 # ---------------------------------------------------------------------------

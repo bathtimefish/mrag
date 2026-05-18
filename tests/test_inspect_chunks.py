@@ -280,3 +280,25 @@ class TestHumanOutput:
         assert "total chunks: 3" in result.stdout
         assert "chunk_id=c0" in result.stdout
         assert "heading_path:" in result.stdout
+
+    def test_human_output_null_token_count_as_dash(self, project):
+        # Real-world: parent_child profile leaves token_count NULL on chunks.
+        # The render should show "-" rather than the Python repr "None".
+        _, db_path = project
+        conn = open_seed_conn(db_path)
+        with conn:
+            seed_document(conn, "d1")
+            seed_profile(conn, "default")
+            seed_chunk(
+                conn, "c0",
+                chunk_index=0,
+                token_count=None,
+                content="some body",
+            )
+        conn.close()
+        result = runner.invoke(
+            app, ["inspect", "chunks", "d1"], catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert "tokens=-" in result.stdout
+        assert "tokens=None" not in result.stdout

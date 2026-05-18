@@ -187,3 +187,18 @@ class TestHumanOutput:
             app, ["inspect", "chunk", "c0"], catch_exceptions=False
         )
         assert "context for chunk 0" in result.stdout
+
+    def test_human_null_token_count_as_dash(self, project):
+        _, db_path = project
+        conn = open_seed_conn(db_path)
+        with conn:
+            seed_document(conn, "d1")
+            seed_profile(conn, "default")
+            seed_chunk(conn, "c0", chunk_index=0, token_count=None)
+        conn.close()
+        result = runner.invoke(
+            app, ["inspect", "chunk", "c0"], catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert "token_count  : -" in result.stdout
+        assert "token_count  : None" not in result.stdout
