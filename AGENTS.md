@@ -117,14 +117,17 @@ mrag supports two FTS5 tokenizers. The active tokenizer is shown in `mrag.yaml` 
 
 - Requires: `libsqlite_vaporetto.dylib` in `~/.mrag/extensions/` and `apsw` installed
 - Tokenizes Japanese text into morphemes; handles compound words correctly
-- **Space-separated query terms = AND** (each term independently matched)
-- **Continuous Japanese text = phrase query** (all tokens must appear adjacent)
+- **Whitespace-separated tokens = AND** (each token independently matched)
+- **Continuous Japanese text (no spaces) = phrase query** — vaporetto splits it into morphemes which FTS5 then matches as an adjacent sequence
 
 ```bash
 mrag search "error handling retry"    # AND: chunks containing all three terms
-mrag search "error handling"          # phrase: exact token sequence
+mrag search "熱電対の基本仕様"          # phrase: morpheme sequence (continuous Japanese)
+mrag search "人員削減 効果 50%"        # AND across three tokens; '%' is safe
 ```
 
+- Every whitespace-separated token is wrapped as an FTS5 string literal, so FTS5 operators (`*`, `%`, `:`, `^`, `~`, `!`, `-`, `/`, `\`, `(`, `)`) are treated as ordinary characters and cannot cause syntax errors. ASCII `"` in queries is stripped — user-level phrase syntax (`"exact phrase"`) is not supported.
+- Natural-language questions (e.g. `"この論文中で人員削減効果が示されたのは何%ですか"`) collapse into a single phrase token and typically return no results; rewrite them as keyword tokens.
 - Input text is **NFKC-normalized** at both index time and query time. PDF files that use Kangxi radicals (e.g. ⼒ U+2F12) are automatically normalized to standard CJK (力 U+529B).
 
 ### `trigram` (universal fallback)

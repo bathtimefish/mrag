@@ -347,9 +347,10 @@ When reranking is active, each result also exposes a top-level `retrieval_score`
 | Query form | Behaviour |
 |------------|-----------|
 | `word1 word2` | AND — chunks containing both terms |
-| `"exact phrase"` | Phrase match |
 | `product overview` | AND — chunks containing both terms |
-| `"product overview"` | Phrase match |
+| `熱電対の基本仕様` (continuous Japanese, vaporetto) | Phrase — vaporetto tokenizes the run into morphemes and matches them as an adjacent sequence |
+
+Each whitespace-separated token is wrapped as an FTS5 string literal, so characters like `%`, `*`, `:`, `-`, `/`, `(`, `)` are treated as ordinary characters rather than FTS5 operators. ASCII double quotes in the query are stripped — quoted-phrase syntax (`"exact phrase"`) is not supported; pass keyword tokens instead. Long natural-language questions (e.g. `"この論文中で人員削減効果が示されたのは何%ですか"`) are treated as a single phrase and will usually return no results — break them into keywords (`人員削減 効果 %`) for useful hits.
 
 **Expected output:**
 ```
