@@ -1,4 +1,3 @@
-import sqlite3
 import unicodedata
 from pathlib import Path
 
@@ -15,17 +14,8 @@ def keyword_search(
     top_k: int = 20,
     tokenizer: str = TOKENIZER_TRIGRAM,
 ) -> list[RetrievalResult]:
-    """
-    FTS5 MATCH search. BM25 scores are negative — negated so higher = better.
-
-    When tokenizer='vaporetto', uses an apsw-backed connection that loads the
-    vaporetto extension so that the query is tokenized identically to the index.
-    With vaporetto, natural language queries (e.g. "熱電対の基本仕様") work
-    without any manual particle splitting.
-
-    When tokenizer='trigram', applies minimal FTS5 sanitization to prevent
-    syntax errors from special characters like '/', '*', '"'.
-    """
+    """FTS5 MATCH search. BM25 is negated so higher = better. tokenizer selects
+    the FTS5 tokenizer (vaporetto uses apsw + loaded extension)."""
     fts_query = _prepare_query(unicodedata.normalize("NFKC", query_text), tokenizer)
     conn = open_fts_connection(db_path, tokenizer)
     try:
@@ -37,9 +27,11 @@ def keyword_search(
             "LIMIT ?",
             (fts_query, knowledge_id, profile_name, top_k),
         ).fetchall()
-    except sqlite3.OperationalError:
-        # FTS5 syntax errors (e.g. malformed MATCH query) — return empty results.
-        # Other exceptions propagate so real bugs are not silently swallowed.
+    except Exception as exc:
+        # sqlite3.OperationalError (stdlib) and apsw.SQLError (vaporetto) both
+        # signal FTS5 syntax errors — degrade to empty result; re-raise others.
+        if type(exc).__name__ not in ("OperationalError", "SQLError"):
+            raise
         rows = []
     finally:
         conn.close()
@@ -68,15 +60,11 @@ def keyword_search(
 
 
 def _prepare_query(text: str, tokenizer: str) -> str:
-    """
-    With vaporetto: pass through unchanged — the tokenizer handles segmentation.
-    With trigram: strip FTS5 special characters that would cause syntax errors.
-    """
-    if tokenizer != TOKENIZER_TRIGRAM:
+    """Wrap each whitespace-delimited token as an FTS5 string literal so that
+    operators (*, %, :, ^, ~, !, -, /, \\, (, )) are neutralized regardless of
+    tokenizer. ASCII " is stripped, so user-level phrase syntax is unsupported."""
+    del tokenizer
+    tokens = [t for t in text.replace('"', " ").split() if t]
+    if not tokens:
         return text
-
-    import re
-    # Remove characters that break FTS5 query syntax
-    _SPECIAL = re.compile(r'["\*\(\)\:\^\~\!\-\/\\]')
-    sanitized = _SPECIAL.sub(" ", text).strip()
-    return sanitized if sanitized else text
+    return " ".join(f'"{t}"' for t in tokens)

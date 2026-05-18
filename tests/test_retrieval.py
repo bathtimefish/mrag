@@ -147,6 +147,78 @@ def test_keyword_search_result_has_document_id(indexed_project):
 
 
 # ---------------------------------------------------------------------------
+# 6-2b: _prepare_query — FTS5 operator sanitization (BUGREPORT_fts5_special_chars)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_percent_is_safe(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query("test 50%", tokenizer) == '"test" "50%"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_operators_are_neutralized(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    out = _prepare_query("a*b(c)d:e^f~g!h-i/j\\k%l", tokenizer)
+    assert out == '"a*b(c)d:e^f~g!h-i/j\\k%l"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_space_separated_is_and(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query("error handling retry", tokenizer) == '"error" "handling" "retry"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_continuous_japanese_is_single_token(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query("熱電対の基本仕様", tokenizer) == '"熱電対の基本仕様"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_strips_ascii_double_quotes(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query('"exact phrase"', tokenizer) == '"exact" "phrase"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_unbalanced_quote_does_not_raise(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query('test "phrase', tokenizer) == '"test" "phrase"'
+
+
+@pytest.mark.parametrize("tokenizer", ["vaporetto", "trigram"])
+def test_prepare_query_empty_returns_input(tokenizer):
+    from mrag.core.retrieval.keyword import _prepare_query
+    assert _prepare_query("", tokenizer) == ""
+    assert _prepare_query("   ", tokenizer) == "   "
+
+
+def test_keyword_search_with_percent_does_not_crash(indexed_project):
+    """Regression: queries with '%' must not raise FTS5 syntax errors."""
+    results = keyword_search(
+        query_text="Hello 50%",
+        knowledge_id=indexed_project.config.knowledge_id,
+        profile_name="default",
+        db_path=indexed_project.db_path,
+        tokenizer=indexed_project.config.fts_tokenizer,
+    )
+    assert isinstance(results, list)
+
+
+def test_keyword_search_with_operators_does_not_crash(indexed_project):
+    """Regression: queries with FTS5 operator characters must not crash."""
+    results = keyword_search(
+        query_text="a*b(c):d^e~f!g/h\\i%j",
+        knowledge_id=indexed_project.config.knowledge_id,
+        profile_name="default",
+        db_path=indexed_project.db_path,
+        tokenizer=indexed_project.config.fts_tokenizer,
+    )
+    assert isinstance(results, list)
+
+
+# ---------------------------------------------------------------------------
 # 6-1: Vector Retrieval (mocked Qdrant)
 # ---------------------------------------------------------------------------
 
