@@ -135,10 +135,9 @@ mrag init ./knowledges/kb-device --non-interactive --kb-info-json kb_info.json
 
 ```bash
 mrag add report.pdf
-mrag add manual.pdf notes.txt
 ```
 
-ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。
+ドキュメントはテキスト抽出されて `data/documents/` に保存されます。対応フォーマット：PDF、プレーンテキスト、Markdown。複数ファイルを一括登録したい場合は `mrag add` を 1 ファイルずつ繰り返し実行してください。
 
 **PDF 抽出**には PyMuPDF を使用しており、テキストレイヤーを高速に抽出するとともに `find_tables()` によるテーブル検出を行います。スキャン/画像ベースの PDF と判定された場合は警告が出力されます。
 
@@ -218,7 +217,7 @@ mrag serve --no-rerank
 | コマンド | 説明 |
 |---------|------|
 | `mrag init [PROJECT_DIR] [--name NAME] [--kb-id ID] [--non-interactive] [--kb-info-json PATH] [--print-kb-info-schema] [--force]` | 新しいプロジェクトを作成。`--non-interactive` でプロンプトスキップ、`--kb-info-json` で LLM 主導の KB メタデータ生成、`--print-kb-info-schema` で入力 JSON Schema を出力 |
-| `mrag add <file> [file…] [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない） |
+| `mrag add <file> [--force]` | ドキュメントを追加（テキスト抽出のみ。インデックスはしない）。1 回の呼び出しにつき 1 ファイル — 複数まとめて追加したい場合はループ |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | 差分インデックス（最新のドキュメントはスキップ）。JSON ランログを常に出力 |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | プロファイルのインデックスを強制再構築。JSON ランログを常に出力 |
 | `mrag search <query> [--json]` | 検索（`--strategy keyword\|vector\|hybrid`、`--top-k N`、`--no-rerank`、`--json` で機械可読出力） |

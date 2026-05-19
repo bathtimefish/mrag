@@ -134,10 +134,9 @@ See [`kb_information.yaml`](#kb-information-agent-facing-kb-metadata) below for 
 
 ```bash
 mrag add report.pdf
-mrag add manual.pdf notes.txt
 ```
 
-Documents are extracted and stored in `data/documents/`. Supported formats: PDF, plain text, Markdown.
+Documents are extracted and stored in `data/documents/`. Supported formats: PDF, plain text, Markdown. To register multiple files, run `mrag add` once per file.
 
 **PDF extraction** uses PyMuPDF for fast text-layer extraction with table detection (`find_tables()`). A warning is printed if the PDF appears to be scanned/image-based.
 
@@ -217,7 +216,7 @@ Starts a FastAPI server at `http://127.0.0.1:8000`. See [API Reference](#api-ref
 | Command | Description |
 |---------|-------------|
 | `mrag init [PROJECT_DIR] [--name NAME] [--kb-id ID] [--non-interactive] [--kb-info-json PATH] [--print-kb-info-schema] [--force]` | Create a new project. Use `--non-interactive` to skip prompts, `--kb-info-json` for LLM-driven KB metadata, or `--print-kb-info-schema` to print the input JSON Schema |
-| `mrag add <file> [file…] [--force]` | Ingest documents (extract & store; no indexing) |
+| `mrag add <file> [--force]` | Ingest a document (extract & store; no indexing). One file per invocation — loop for multiple files |
 | `mrag index [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Differential index (skips up-to-date docs); always writes a JSON run log |
 | `mrag reindex [--profile P] [--output-log PATH] [--skip-list-json PATH]` | Force-rebuild the entire index for a profile; always writes a JSON run log |
 | `mrag search <query> [--json]` | Search (`--strategy keyword\|vector\|hybrid`, `--top-k N`, `--no-rerank`, `--json` for machine-readable output) |
