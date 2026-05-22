@@ -14,7 +14,7 @@ description: >
 license: AGPL-3.0
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "0.19.0"
+  version: "0.21.0"
 ---
 
 # SKILL.md — mrag Skill Procedures

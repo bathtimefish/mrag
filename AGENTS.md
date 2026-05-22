@@ -295,6 +295,48 @@ Changes to `context_prompt.txt` are picked up at the next `mrag index` run. Sinc
 
 ---
 
+## Embedding fallback (v0.21.0+)
+
+Embedding has its own chunk-granularity fallback, mirroring the augmentation `failure_policy` design above. When the embedding provider returns a hard failure for a batch (e.g. Ollama `bge-m3` returning NaN), mrag isolates the failing chunk via recursive bisection and continues indexing the rest of the document instead of failing the whole document.
+
+```yaml
+embedding:
+  model: bge-m3
+  failure_policy:                # optional — controls behavior when the embedding provider hard-fails
+    mode: fallback_no_vector     # fallback_no_vector (default) | fail_document
+```
+
+| Mode | Behaviour |
+|------|-----------|
+| `fallback_no_vector` (default) | Failed chunks are stored with `chunk_variants.qdrant_point_id = NULL`. They are excluded from Qdrant upserts but remain in FTS5; vector search skips them while keyword search still returns them. |
+| `fail_document` | First batch failure propagates without bisection; the whole document is marked `error` (v0.20.0 behaviour). |
+
+When `fallback_no_vector` is active:
+- A WARN log line is printed with the first 200 chars of the failing input (useful for bug reports against the embedding provider).
+- The `chunk_variants.metadata_json` column records `{"embedding_status": "fallback_no_vector", "embedding_error": "..."}` for auditability.
+- The document-level summary shows `(N embedding fallback)`; when augmentation also fell back, both counts are combined in processing order: `(2 augmentation fallback, 3 embedding fallback)`.
+- `IndexResult.embedding_fallback_chunks` reflects the total count across all documents in the run.
+- `mrag reindex` re-attempts embedding for fallback chunks; if the upstream issue is resolved, they will be embedded normally and `qdrant_point_id` populated.
+
+To audit fallback chunks:
+
+```bash
+# Per-document Embedding Status section (only rendered when fallback > 0)
+mrag inspect document <doc-id>
+
+# Per-chunk embedding_status + has_qdrant_point fields
+mrag inspect chunks <doc-id> --json | jq '.chunks[] | select(.variant.embedding_status == "fallback_no_vector")'
+
+# Single-chunk deep dive with embedding_error message
+mrag inspect chunk <chunk-id>
+```
+
+Changes to `embedding.failure_policy` are excluded from `profile_hash` and do not require re-indexing.
+
+See: `dev_docs/01_EXTENSION_STAGE_1/DESIGN_V21_EMBEDDING_FALLBACK.md` for the full design.
+
+---
+
 ## Document IDs
 
 Document IDs are UUID strings (e.g. `91f28863-b47d-44b6-a534-820b46f06aae`). Retrieve them with:

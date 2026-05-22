@@ -35,8 +35,11 @@ Main fields in the output:
 - Filename, source type (pdf / md / txt), extraction provider (pymupdf, etc.)
 - **Chunk count per profile** (`parent_child` profiles also show parent and child counts separately)
 - **Augmentation status**: `succeeded` / `raw_fallback` counts
+- **Embedding status** (v0.21.0+): `embedded` / `fallback_no_vector` counts
 
 > The augmentation totals cover only variants where augmentation was actually attempted. Profiles with `augmentation.strategy: none` do not produce an Augmentation Status section.
+
+> The Embedding Status section is only emitted when **at least one chunk has `fallback_no_vector`**. When every chunk was embedded successfully, the section is omitted (same rule as Augmentation Status). Chunks marked `fallback_no_vector` have no Qdrant point and will not appear in vector search, but they remain searchable via FTS5 keyword search (→ "Failure behavior — `embedding.failure_policy`" in [contextual-retrieval.md](./contextual-retrieval.md)).
 
 When `--profile` is omitted, the command reports **every profile** under which the document has been indexed.
 
@@ -59,6 +62,14 @@ mrag inspect chunks <doc-id> --profile default --show-context --json
 ```
 
 Each entry in the output carries metadata such as `chunk_id` / `chunk_type` / `chunk_index` / `parent_chunk_id` / `char_count` / `token_count`. `--show-content` and `--show-context` add the chunk body and the LLM context text respectively.
+
+The `variant` object contains these fields:
+
+- `type` — `raw` / `contextual`
+- `qdrant_collection` — Qdrant collection name this chunk belongs to
+- `augmentation_status` — `fallback_raw` / `null`
+- **`embedding_status`** — `fallback_no_vector` / `null` (v0.21.0+. Chunks with `fallback_no_vector` are excluded from vector search.)
+- **`has_qdrant_point`** — `true` / `false` (v0.21.0+. `false` for fallback chunks.)
 
 > Paging rule of thumb: for large PDFs with hundreds of chunks, prefer `--limit 50` so the terminal doesn't flood. For small- and mid-sized documents, you can omit the limit and dump everything.
 

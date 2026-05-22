@@ -83,9 +83,9 @@ For example, when working with Japanese technical documents, the default prompt 
 Biasing the prompt toward the vocabulary that matters in your knowledge base — part numbers, protocol names, command names — can make the generated context more useful for retrieval.
 
 
-## Failure behavior — `failure_policy`
+## Failure behavior — `augmentation.failure_policy`
 
-LLM calls are computationally heavy and may take a long time. Transient failures such as timeouts can occur due to instability of the underlying process. mrag retries each chunk-level call with exponential backoff. The behavior for chunks that still fail after retries is switchable via `failure_policy.mode`.
+LLM calls are computationally heavy and may take a long time. Transient failures such as timeouts can occur due to instability of the underlying process. mrag retries each chunk-level call with exponential backoff. The behavior for chunks that still fail after retries is switchable via `augmentation.failure_policy.mode`.
 
 | Mode | Behavior |
 |------|----------|
@@ -96,6 +96,28 @@ LLM calls are computationally heavy and may take a long time. Transient failures
 > Note: `raw_fallback` mode is a safeguard that prevents one broken chunk from stopping the whole document. If fallbacks happen frequently, look at the source document quality (OCR noise, repeated text) or adjust the retry settings.
 
 
+## Failure behavior — `embedding.failure_policy` (v0.21.0+)
+
+The embedding stage has its own **chunk-granularity fallback** mechanism. After contextual augmentation, the resulting texts are sent to an embedding provider such as Ollama. Certain inputs occasionally cause the entire batch to fail with an HTTP 500 (for example, `bge-m3`'s NaN-return issue). In v0.21.0, mrag **bisects the batch to isolate the failing chunk and stores it without a Qdrant vector** rather than failing the whole document.
+
+```yaml
+embedding:
+  model: bge-m3
+  failure_policy:
+    mode: fallback_no_vector   # default
+    # mode: fail_document      # same as v0.20.0 (whole-document failure)
+```
+
+| Mode | Behavior |
+|------|----------|
+| `fallback_no_vector` (default) | Failed chunks are saved with `qdrant_point_id=NULL`. **They do not appear in vector search but still match keyword (FTS5) search.** |
+| `fail_document` | Treat the chunk failure as an error for the whole document (v0.20.0 compatible) |
+
+> Important: fallback chunks have `{"embedding_status": "fallback_no_vector", "embedding_error": "..."}` recorded in `chunk_variants.metadata_json`. The **Embedding Status** section of `mrag inspect document` and the `variant.embedding_status` field of `mrag inspect chunks --json` surface both the counts and the specific chunks.
+
+> Note: running `mrag reindex` re-attempts embedding for fallback chunks. After an upstream fix (Ollama bug, model swap, etc.), reindexing populates `qdrant_point_id` and brings the chunks back into vector search naturally.
+
+
 ## Reading the index log
 
 While `mrag index` runs, the log includes lines like the following:
@@ -103,7 +125,8 @@ While `mrag index` runs, the log includes lines like the following:
 - `↻ retry` — an LLM call failed and is being retried (informational; counts as a success if it recovers)
 - `⤵ fallback` — a chunk failed even after retries and was switched to raw (worth monitoring)
 - `⚠ large document` — printed at the start of augmentation for documents with 300+ chunks (informational — a heads-up that processing will take a while)
-- `(N raw fallback)` — a per-document tally line showing the number of fallbacks
+- `Embedding fallback for chunk (input prefix: ...) — error: ...` — A chunk failed embedding (v0.21.0+; includes the first 200 chars of the failing input for reproduction/bug reports)
+- `(N augmentation fallback)` / `(M embedding fallback)` — Per-document tally lines for each fallback type (both appear when both occur)
 
 The log ends as usual with `✓ Indexed: ...`.
 

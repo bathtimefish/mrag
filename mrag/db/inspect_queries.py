@@ -52,12 +52,25 @@ class AugmentationStatus:
 
 
 @dataclass
+class EmbeddingStatus:
+    """v0.21.0: counts of chunk_variants by embedding outcome.
+
+    `embedded`: variants with a non-NULL qdrant_point_id (vector available).
+    `fallback_no_vector`: variants whose embedding_status is fallback_no_vector
+        (qdrant_point_id is NULL; FTS5 keyword search still works).
+    """
+    embedded: int = 0
+    fallback_no_vector: int = 0
+
+
+@dataclass
 class DocumentProfileSummary:
     profile_name: str
     status: str
     indexed_at: str | None
     chunk_counts: ProfileChunkCounts
     augmentation: AugmentationStatus
+    embedding: "EmbeddingStatus" = field(default_factory=lambda: EmbeddingStatus())
 
 
 @dataclass
@@ -72,6 +85,9 @@ class ChunkVariantInfo:
     qdrant_collection: str | None
     augmentation_status: str | None
     context_text: str | None
+    embedding_status: str | None = None       # v0.21.0: "fallback_no_vector" or None
+    embedding_error: str | None = None        # v0.21.0: truncated provider error message
+    has_qdrant_point: bool = True             # v0.21.0: False when qdrant_point_id IS NULL
 
 
 @dataclass
@@ -190,29 +206,41 @@ def fetch_document_summary(
     # "succeeded" in any meaningful sense.
     aug_rows = conn.execute(
         f"""
-        SELECT profile_name, variant_type, metadata_json
+        SELECT profile_name, variant_type, qdrant_point_id, metadata_json
         FROM chunk_variants
         WHERE document_id = ? {profile_clause}
         """,
         params,
     ).fetchall()
     aug_by_profile: dict[str, AugmentationStatus] = {}
+    emb_by_profile: dict[str, EmbeddingStatus] = {}
     for r in aug_rows:
         meta = json.loads(r["metadata_json"]) if r["metadata_json"] else {}
-        status = meta.get("augmentation_status")
-        is_contextual = r["variant_type"] == "contextual"
-        is_fallback = status == "fallback_raw"
-        if not (is_contextual or is_fallback):
-            continue
         p = r["profile_name"]
-        aug = aug_by_profile.setdefault(p, AugmentationStatus())
-        if is_fallback:
-            aug.raw_fallback += 1
-        else:
-            aug.succeeded += 1
+
+        # Augmentation: only count variants that were *targets* of augmentation
+        aug_status = meta.get("augmentation_status")
+        is_contextual = r["variant_type"] == "contextual"
+        is_aug_fallback = aug_status == "fallback_raw"
+        if is_contextual or is_aug_fallback:
+            aug = aug_by_profile.setdefault(p, AugmentationStatus())
+            if is_aug_fallback:
+                aug.raw_fallback += 1
+            else:
+                aug.succeeded += 1
+
+        # Embedding: every variant has an embedding outcome
+        emb = emb_by_profile.setdefault(p, EmbeddingStatus())
+        if meta.get("embedding_status") == "fallback_no_vector":
+            emb.fallback_no_vector += 1
+        elif r["qdrant_point_id"] is not None:
+            emb.embedded += 1
 
     profile_keys = (
-        set(index_by_profile) | set(counts_by_profile) | set(aug_by_profile)
+        set(index_by_profile)
+        | set(counts_by_profile)
+        | set(aug_by_profile)
+        | set(emb_by_profile)
     )
     if profile_name is not None:
         profile_keys &= {profile_name}
@@ -227,6 +255,7 @@ def fetch_document_summary(
                 indexed_at=idx["indexed_at"] if idx else None,
                 chunk_counts=counts_by_profile.get(p, ProfileChunkCounts()),
                 augmentation=aug_by_profile.get(p, AugmentationStatus()),
+                embedding=emb_by_profile.get(p, EmbeddingStatus()),
             )
         )
 
@@ -247,13 +276,27 @@ def _extract_augmentation_status(variant_row: sqlite3.Row | None) -> str | None:
     return json.loads(meta_json).get("augmentation_status")
 
 
+def _extract_embedding_meta(
+    variant_row: sqlite3.Row | None,
+) -> tuple[str | None, str | None]:
+    """Return (embedding_status, embedding_error) from variant metadata_json."""
+    if variant_row is None:
+        return None, None
+    meta_json = variant_row["metadata_json"]
+    if not meta_json:
+        return None, None
+    meta = json.loads(meta_json)
+    return meta.get("embedding_status"), meta.get("embedding_error")
+
+
 def _fetch_variant_for_chunk(
     conn: sqlite3.Connection, chunk_id: str, profile_name: str
 ) -> sqlite3.Row | None:
     """Look up the variant row for a chunk; prefer contextual over raw."""
     return conn.execute(
         """
-        SELECT variant_type, qdrant_collection, context_text, metadata_json
+        SELECT variant_type, qdrant_collection, qdrant_point_id,
+               context_text, metadata_json
         FROM chunk_variants
         WHERE chunk_id = ? AND profile_name = ?
         ORDER BY CASE variant_type WHEN 'contextual' THEN 0 ELSE 1 END
@@ -271,6 +314,10 @@ def _build_chunk_row(
     include_context: bool,
 ) -> ChunkRow:
     metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+    emb_status, emb_error = _extract_embedding_meta(variant_row)
+    has_point = (
+        variant_row is not None and variant_row["qdrant_point_id"] is not None
+    )
     variant = ChunkVariantInfo(
         variant_type=variant_row["variant_type"] if variant_row else None,
         qdrant_collection=variant_row["qdrant_collection"] if variant_row else None,
@@ -278,6 +325,9 @@ def _build_chunk_row(
         context_text=(
             variant_row["context_text"] if (variant_row and include_context) else None
         ),
+        embedding_status=emb_status,
+        embedding_error=emb_error,
+        has_qdrant_point=has_point,
     )
     return ChunkRow(
         chunk_id=row["id"],

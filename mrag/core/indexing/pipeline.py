@@ -12,6 +12,7 @@ from mrag.core.chunking.base import ChunkData, get_chunker
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.indexing.diff import plan_indexing
+from mrag.core.indexing.embedding_fallback import embed_with_fallback
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.qdrant import collection_name, delete_points, ensure_collection, make_client, upsert_points
@@ -62,6 +63,7 @@ class IndexResult:
     skipped_by_list: int = 0   # explicitly skipped via --skip-list-json
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document_id, message)
     raw_fallback_chunks: int = 0
+    embedding_fallback_chunks: int = 0   # v0.21.0: chunks with no vector (Qdrant skip)
     failed_docs: list[FailedDocEntry] = field(default_factory=list)
 
 
@@ -102,6 +104,7 @@ def write_index_log(
         "list_skipped_count": result.skipped_by_list,
         "failed_count": len(result.errors),
         "raw_fallback_chunks": result.raw_fallback_chunks,
+        "embedding_fallback_chunks": result.embedding_fallback_chunks,
         "failed_documents": [
             {
                 "document_id": fd.document_id,
@@ -306,11 +309,10 @@ def _index_document(
     chunks = chunker.chunk(text, {"document_id": doc["id"], "profile_name": profile.name})
 
     if not chunks:
-        # Empty document — nothing to index. Return 0 (not None) so the caller's
-        # `result.raw_fallback_chunks += fallback_count` arithmetic succeeds and
-        # the document is correctly recorded as a no-op success rather than as a
-        # TypeError-failure.
-        return 0
+        # Empty document — nothing to index. Return (0, 0) so the caller's
+        # arithmetic succeeds and the document is correctly recorded as a no-op
+        # success rather than as a TypeError-failure.
+        return 0, 0
 
     # 2b. UUID を先払いで割り当て。parent_child の場合は child→parent 参照を解決する。
     chunk_id_list: list[str] = [str(uuid.uuid4()) for _ in chunks]
@@ -371,17 +373,26 @@ def _index_document(
                 _EMBEDDING_INPUT_WARN_THRESHOLD,
             )
 
-    # 4. Embed (with optional cache) — indexable チャンクのみ
+    # 4. Embed (with optional cache + chunk-granularity fallback) — indexable チャンクのみ
+    failure_mode = profile.embedding.failure_policy.mode
+
+    def _do_embed_with_fallback(
+        ts: list[str],
+    ) -> tuple[list[list[float] | None], dict[int, str]]:
+        return embed_with_fallback(ts, provider, mode=failure_mode)
+
     if use_cache:
         from mrag.core.embedding.cache import EmbeddingCache
         cache = EmbeddingCache(cache_dir=cache_dir, db_path=db_path)
         model_id = provider.get_model_id() if provider._dimension else None
         if model_id is None:
-            vectors = provider.embed(contents_for_embedding)
+            vectors, embedding_failures = _do_embed_with_fallback(contents_for_embedding)
         else:
-            vectors = cache.get_or_embed(contents_for_embedding, model_id, provider.embed)
+            vectors, embedding_failures = cache.get_or_embed_with_failures(
+                contents_for_embedding, model_id, _do_embed_with_fallback
+            )
     else:
-        vectors = provider.embed(contents_for_embedding)
+        vectors, embedding_failures = _do_embed_with_fallback(contents_for_embedding)
 
     model_id = provider.get_model_id()
 
@@ -424,15 +435,23 @@ def _index_document(
 
         for i, (chunk_id, chunk) in enumerate(zip(indexable_ids, indexable_chunks)):
             variant_id = str(uuid.uuid4())
-            point_id = str(uuid.uuid4())
+            embedding_failed = i in embedding_failures
+            # Embedding fallback chunks have no Qdrant point. Augmentation
+            # fallback (raw variant + valid embedding) still gets a point_id.
+            point_id: str | None = None if embedding_failed else str(uuid.uuid4())
             variant_ids.append(variant_id)
             point_ids.append(point_id)
-            var_meta = None
+
+            # Merge augmentation + embedding fallback statuses into metadata_json
+            meta_dict: dict[str, str] = {}
             if i in fallback_errors:
-                var_meta = json.dumps(
-                    {"augmentation_status": "fallback_raw", "augmentation_error": fallback_errors[i]},
-                    ensure_ascii=False,
-                )
+                meta_dict["augmentation_status"] = "fallback_raw"
+                meta_dict["augmentation_error"] = fallback_errors[i]
+            if embedding_failed:
+                meta_dict["embedding_status"] = "fallback_no_vector"
+                meta_dict["embedding_error"] = embedding_failures[i]
+            var_meta = json.dumps(meta_dict, ensure_ascii=False) if meta_dict else None
+
             conn.execute(
                 """INSERT INTO chunk_variants
                    (id, knowledge_id, document_id, chunk_id, profile_name,
@@ -475,7 +494,8 @@ def _index_document(
                 doc["id"],
             )
 
-    # 8. Upsert Qdrant — indexable のみ
+    # 8. Upsert Qdrant — indexable のみ、embedding fallback チャンクはスキップ
+    # (point_id is None and vector is None for those indices)
     if qdrant_client is not None:
         points = [
             {
@@ -493,10 +513,12 @@ def _index_document(
             for point_id, chunk_id, chunk, vector in zip(
                 point_ids, indexable_ids, indexable_chunks, vectors
             )
+            if vector is not None and point_id is not None
         ]
-        upsert_points(qdrant_client, col_name, points)
+        if points:
+            upsert_points(qdrant_client, col_name, points)
 
-    return len(fallback_errors)
+    return len(fallback_errors), len(embedding_failures)
 
 
 def run_index(
@@ -671,7 +693,7 @@ def run_index(
                 on_chunk_fallback = _make_fallback_cb(filename)
 
         try:
-            fallback_count = _index_document(
+            fallback_count, embedding_fallback_count = _index_document(
                 doc=doc,
                 profile=profile,
                 profile_hash=profile_hash,
@@ -691,10 +713,18 @@ def run_index(
             )
             _set_indexed_status(db_path, doc["id"], profile_name)
             if console:
-                fallback_note = f"  [yellow]({fallback_count} raw fallback)[/yellow]" if fallback_count else ""
+                # Combine both fallback counts in processing order:
+                # augmentation → embedding (per DESIGN_V21 Resolved Decision #10)
+                notes: list[str] = []
+                if fallback_count:
+                    notes.append(f"{fallback_count} augmentation fallback")
+                if embedding_fallback_count:
+                    notes.append(f"{embedding_fallback_count} embedding fallback")
+                fallback_note = f"  [yellow]({', '.join(notes)})[/yellow]" if notes else ""
                 console.print(f"[dim]{_now_ts()}[/dim]  [{idx}/{n}] [green]✓[/green] {filename}{fallback_note}")
             result.indexed += 1
             result.raw_fallback_chunks += fallback_count
+            result.embedding_fallback_chunks += embedding_fallback_count
         except ConnectionError:
             raise  # Ollama went down mid-run — propagate immediately, do not continue
         except Exception as exc:
