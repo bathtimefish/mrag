@@ -80,3 +80,52 @@ class EmbeddingCache:
                 results[idx] = vector
 
         return results  # type: ignore[return-value]
+
+    def get_or_embed_with_failures(
+        self,
+        texts: list[str],
+        model_id: str,
+        embed_fn_with_failures,
+    ) -> tuple[list[list[float] | None], dict[int, str]]:
+        """Cache-aware version that tolerates per-input embedding failures.
+
+        Only successful embeddings are cached. Failed indices have None vectors
+        in the results and their error messages mapped back to original indices
+        in the failures dict.
+
+        embed_fn_with_failures(texts: list[str])
+            -> tuple[list[list[float] | None], dict[int, str]]
+
+        Returns:
+          (results, failures) where:
+            - results[i] is the cached or newly-embedded vector, or None on failure
+            - failures[i] is the error message keyed by ORIGINAL `texts` index
+        """
+        results: list[list[float] | None] = [None] * len(texts)
+        miss_indices: list[int] = []
+        miss_texts: list[str] = []
+
+        for i, text in enumerate(texts):
+            key = self.key_for(model_id, text)
+            cached = self.get(key)
+            if cached is not None:
+                results[i] = cached
+            else:
+                miss_indices.append(i)
+                miss_texts.append(text)
+
+        if not miss_texts:
+            return results, {}
+
+        miss_vectors, miss_failures = embed_fn_with_failures(miss_texts)
+        failures: dict[int, str] = {}
+        for sub_idx, orig_idx in enumerate(miss_indices):
+            v = miss_vectors[sub_idx]
+            if v is not None:
+                key = self.key_for(model_id, texts[orig_idx])
+                self.put(key, model_id, v)
+                results[orig_idx] = v
+            if sub_idx in miss_failures:
+                failures[orig_idx] = miss_failures[sub_idx]
+
+        return results, failures

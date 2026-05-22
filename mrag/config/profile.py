@@ -83,12 +83,17 @@ class EmbeddingCacheConfig(BaseModel):
     enabled: bool = False
 
 
+class EmbeddingFailurePolicyConfig(BaseModel):
+    mode: str = "fallback_no_vector"    # "fallback_no_vector" | "fail_document"
+
+
 class EmbeddingConfig(BaseModel):
     provider: str = "ollama"
     model: str = "bge-m3"
     endpoint: str = "http://localhost:11434"
     cache: EmbeddingCacheConfig = Field(default_factory=EmbeddingCacheConfig)
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
+    failure_policy: EmbeddingFailurePolicyConfig = Field(default_factory=EmbeddingFailurePolicyConfig)
 
 
 class AugmentationFailurePolicyConfig(BaseModel):
@@ -163,7 +168,7 @@ class ProfileConfig(BaseModel):
         """
         relevant = {
             "chunking": self.chunking.model_dump(),
-            "embedding": self.embedding.model_dump(exclude={"retry"}),
+            "embedding": self.embedding.model_dump(exclude={"retry", "failure_policy"}),
             # weights is retrieval-time only and does not affect what is indexed.
             "retrieval": self.retrieval.model_dump(exclude={"weights"}),
             "augmentation": self.augmentation.model_dump(exclude={"retry", "failure_policy"}),

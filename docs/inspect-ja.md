@@ -35,8 +35,11 @@ mrag inspect document <doc-id> --profile default
 - ファイル名、ソース形式（pdf / md / txt）、抽出プロバイダ（pymupdf など）
 - **プロファイルごと**のチャンク件数（`parent_child` プロファイルでは親・子のカウントも分かれて表示）
 - **拡張処理（augmentation）のステータス**：`succeeded` / `raw_fallback` の件数
+- **Embedding 処理のステータス**（v0.21.0+）：`embedded` / `fallback_no_vector` の件数
 
 > 拡張ステータスの集計は「実際に拡張処理が走った variant」だけが対象です。`augmentation.strategy: none` のプロファイルでは Augmentation Status セクションは出力されません。
+
+> Embedding Status セクションは **`fallback_no_vector` が 1 件以上ある場合のみ表示** されます。全チャンクが正常に埋め込まれた場合はセクション自体が出力されません（augmentation と同じ省略ルール）。`fallback_no_vector` のチャンクは Qdrant に point を持たないため vector 検索ではヒットしませんが、FTS5 keyword 検索ではヒットします（→ [contextual-retrieval-ja.md](./contextual-retrieval-ja.md) の "Embedding 失敗時の挙動" 節）。
 
 `--profile` を省略すると、そのドキュメントをインデックスしている**すべてのプロファイル**が表示されます。
 
@@ -59,6 +62,14 @@ mrag inspect chunks <doc-id> --profile default --show-context --json
 ```
 
 出力の各エントリには、`chunk_id` / `chunk_type` / `chunk_index` / `parent_chunk_id` / `char_count` / `token_count` などのメタデータが含まれます。`--show-content` / `--show-context` を付けるとそれぞれ本文と LLM コンテキスト文も追加されます。
+
+`variant` オブジェクトには次のフィールドが含まれます：
+
+- `type` — `raw` / `contextual`
+- `qdrant_collection` — このチャンクが属する Qdrant コレクション名
+- `augmentation_status` — `fallback_raw` / `null`
+- **`embedding_status`** — `fallback_no_vector` / `null`（v0.21.0+。`fallback_no_vector` のチャンクは vector 検索でヒットしない）
+- **`has_qdrant_point`** — `true` / `false`（v0.21.0+。fallback チャンクは `false`）
 
 > ページングの目安：数百チャンクを超える大型 PDF などでは `--limit 50` でターミナルを溢れさせない運用がおすすめです。小〜中規模のドキュメントなら省略（全件出力）で問題ありません。
 

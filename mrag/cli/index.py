@@ -71,10 +71,18 @@ def index(
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
+    # Combine fallback counters in processing order (DESIGN_V21 Resolved Decision #10)
+    fb_notes: list[str] = []
+    if result.raw_fallback_chunks:
+        fb_notes.append(f"{result.raw_fallback_chunks} augmentation fallback")
+    if result.embedding_fallback_chunks:
+        fb_notes.append(f"{result.embedding_fallback_chunks} embedding fallback")
+    fb_suffix = f"  ({', '.join(fb_notes)})" if fb_notes else ""
     console.print(
         f"[green]✓[/green] Indexed: {result.indexed}  "
         f"Up-to-date: {result.skipped}  "
         f"List-skipped: {result.skipped_by_list}"
+        f"{fb_suffix}"
     )
 
     for doc_id, msg in result.errors:

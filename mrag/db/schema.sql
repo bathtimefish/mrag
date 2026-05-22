@@ -119,7 +119,15 @@ CREATE TABLE IF NOT EXISTS chunks (
 --                                exhausted and the chunk degraded to a raw variant
 --   augmentation_error  : str  — truncated error message from the failing augmentation
 --                                attempt (paired with augmentation_status="fallback_raw")
--- When augmentation succeeds normally, metadata_json is NULL.
+--   embedding_status    : str  — "fallback_no_vector" (v0.21.0+) when embedding
+--                                retries + bisection failed for this chunk.
+--                                qdrant_point_id is NULL for these variants;
+--                                vector search cannot return them but FTS5
+--                                keyword search still does.
+--   embedding_error     : str  — truncated error message (max 500 chars) from
+--                                the failing embedding attempt (paired with
+--                                embedding_status="fallback_no_vector")
+-- When both stages succeed normally, metadata_json is NULL.
 -- ================================================================
 CREATE TABLE IF NOT EXISTS chunk_variants (
   id                    TEXT PRIMARY KEY,

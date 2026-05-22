@@ -138,6 +138,10 @@ def _build_document_payload(summary: DocumentSummary) -> dict[str, Any]:
                     "succeeded": p.augmentation.succeeded,
                     "raw_fallback": p.augmentation.raw_fallback,
                 },
+                "embedding": {
+                    "embedded": p.embedding.embedded,
+                    "fallback_no_vector": p.embedding.fallback_no_vector,
+                },
             }
             for p in summary.profiles
         ],
@@ -191,6 +195,21 @@ def _render_document_human(summary: DocumentSummary) -> None:
         )
         console.print(
             f"  raw_fallback                : {p.augmentation.raw_fallback}"
+        )
+
+    # v0.21.0: Embedding Status — only render when at least one chunk has a
+    # fallback_no_vector entry. Successful-only profiles produce no section
+    # (mirrors the Augmentation Status omission rule).
+    for p in summary.profiles:
+        if p.embedding.fallback_no_vector == 0:
+            continue
+        console.print()
+        console.print(f"Embedding Status ({p.profile_name}):")
+        console.print(
+            f"  embedded            : {p.embedding.embedded}"
+        )
+        console.print(
+            f"  fallback_no_vector  : {p.embedding.fallback_no_vector}"
         )
 
 
@@ -249,6 +268,8 @@ def _build_chunk_entry(
             "type": row.variant.variant_type,
             "qdrant_collection": row.variant.qdrant_collection,
             "augmentation_status": row.variant.augmentation_status,
+            "embedding_status": row.variant.embedding_status,
+            "has_qdrant_point": row.variant.has_qdrant_point,
         },
     }
     if include_content:
@@ -348,6 +369,10 @@ def _render_chunks_human(
         if r.variant.augmentation_status:
             console.print(
                 f"    augmentation_status: {r.variant.augmentation_status}"
+            )
+        if r.variant.embedding_status:
+            console.print(
+                f"    embedding_status   : [yellow]{r.variant.embedding_status}[/yellow]"
             )
         if include_context:
             ctx = r.variant.context_text
@@ -454,6 +479,9 @@ def _build_chunk_single_payload(
             "type": row.variant.variant_type,
             "qdrant_collection": row.variant.qdrant_collection,
             "augmentation_status": row.variant.augmentation_status,
+            "embedding_status": row.variant.embedding_status,
+            "embedding_error": row.variant.embedding_error,
+            "has_qdrant_point": row.variant.has_qdrant_point,
         },
         "content": row.content,
         "context_text": row.variant.context_text,
@@ -503,6 +531,22 @@ def _render_chunk_single_human(
     console.print(
         f"    augmentation_status: {row.variant.augmentation_status or '-'}"
     )
+    if row.variant.embedding_status:
+        # v0.21.0: surface fallback prominently — the chunk is searchable
+        # via FTS only, vector search will not return it.
+        console.print(
+            f"    embedding_status   : [yellow]{row.variant.embedding_status}[/yellow]"
+        )
+        if row.variant.embedding_error:
+            console.print(
+                f"    embedding_error    : {row.variant.embedding_error}",
+                soft_wrap=True,
+            )
+        console.print()
+        console.print(
+            "[yellow]⚠ Embedding fallback:[/yellow] this chunk has no Qdrant vector. "
+            "Vector search will not return it; keyword (FTS5) search still works."
+        )
     console.print()
     console.print("Context (LLM-generated):")
     ctx = row.variant.context_text

@@ -83,9 +83,9 @@ Please give a short succinct context to situate this chunk within the overall do
 ナレッジベースのドメインに応じて「型番」「プロトコル名」「コマンド名」など、ナレッジベースで重要な語彙にバイアスをかけると、コンテキスト文の有用性が上がる可能性があります。
 
 
-## 失敗時の挙動 — `failure_policy`
+## 失敗時の挙動 — `augmentation.failure_policy`
 
-LLM 呼び出しは処理負荷が高く長時間になることがあります。そのため処理の不安定さに起因するタイムアウトなどの一時的な失敗が起きえます。mrag はチャンク単位でリトライ（指数バックオフ）をサポートしています。さらにリトライ数を超えて失敗した場合の挙動を `failure_policy.mode` で切り替えられます。
+LLM 呼び出しは処理負荷が高く長時間になることがあります。そのため処理の不安定さに起因するタイムアウトなどの一時的な失敗が起きえます。mrag はチャンク単位でリトライ（指数バックオフ）をサポートしています。さらにリトライ数を超えて失敗した場合の挙動を `augmentation.failure_policy.mode` で切り替えられます。
 
 | モード | 挙動 |
 |--------|------|
@@ -96,6 +96,28 @@ LLM 呼び出しは処理負荷が高く長時間になることがあります�
 > 注意：`raw_fallback` モードは「壊れたチャンクで全体を止めない」ためのセーフガードです。フォールバックが多発する場合は元のドキュメント品質（OCR ノイズ・繰り返しテキストなど）か、retry 設定の調整を検討してください。
 
 
+## 失敗時の挙動 — `embedding.failure_policy`（v0.21.0+）
+
+Embedding（埋め込み）処理でも同種の **チャンク粒度フォールバック** が用意されています。コンテキスト拡張後のテキストを Ollama などの Embedding プロバイダに渡すと、まれに特定の入力（例：`bge-m3` の NaN 返却問題）でバッチ全体が HTTP 500 を返すケースがあります。v0.21.0 ではこのケースを **バイセクションで失敗チャンクを特定し、そのチャンクだけ vector を持たない状態で保存**する挙動になりました。
+
+```yaml
+embedding:
+  model: bge-m3
+  failure_policy:
+    mode: fallback_no_vector   # デフォルト
+    # mode: fail_document      # v0.20.0 までと同じ挙動（ドキュメント全体失敗）
+```
+
+| モード | 挙動 |
+|--------|------|
+| `fallback_no_vector`（デフォルト） | 失敗チャンクは `qdrant_point_id=NULL` で保存。**vector 検索ではヒットしないが、FTS5 keyword 検索ではヒットする** |
+| `fail_document` | そのチャンクの失敗をドキュメント全体のエラーとして扱う（v0.20.0 互換） |
+
+> 重要：fallback されたチャンクは `chunk_variants.metadata_json` に `{"embedding_status": "fallback_no_vector", "embedding_error": "..."}` が記録されます。`mrag inspect document` の **Embedding Status** セクションや `mrag inspect chunks --json` の `variant.embedding_status` フィールドで件数・該当チャンクを確認できます。
+
+> 注意：`mrag reindex` を実行すると fallback チャンクも再度 embedding が試行されます。Ollama 側のバグが修正された、あるいはモデルを変更したタイミングで再インデックスすれば、自然に `qdrant_point_id` が埋まり vector 検索でもヒットするようになります。
+
+
 ## インデックスログの読み方
 
 `mrag index` 実行中、ログには以下のような行が混じります：
@@ -103,7 +125,8 @@ LLM 呼び出しは処理負荷が高く長時間になることがあります�
 - `↻ retry` — LLM 呼び出しに失敗してリトライしている（情報。回復すれば成功扱い）
 - `⤵ fallback` — リトライしきっても失敗したチャンクで raw に切り替えた（要監視）
 - `⚠ large document` — 300 チャンク以上のドキュメントで拡張処理を開始するときに出る（情報。長時間処理の予告）
-- `(N raw fallback)` — ドキュメント単位の集計行に出るフォールバック件数
+- `Embedding fallback for chunk (input prefix: ...) — error: ...` — Embedding がチャンク単位で失敗（v0.21.0+。Ollama / モデル側のバグ報告に引用可能な先頭 200 文字を含む）
+- `(N augmentation fallback)` / `(M embedding fallback)` — ドキュメント単位の集計行に出るフォールバック件数（両方発生時は併記）
 
 ログ末尾は通常の `✓ Indexed: ...` で締めくくられます。
 
