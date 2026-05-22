@@ -11,7 +11,7 @@ description: >
   on an existing knowledge base, inspecting how documents were chunked and
   augmented, aggregating multiple knowledge bases into a registry for Agentic
   RAG workflows, and serving the knowledge base over the HTTP API.
-license: AGPL-3.0-or-later
+license: AGPL-3.0
 metadata:
   upstream: https://github.com/bathtimefish/mrag
   version: "0.19.0"
