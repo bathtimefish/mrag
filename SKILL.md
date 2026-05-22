@@ -1,3 +1,22 @@
+---
+name: mrag
+description: >
+  Step-by-step procedures for operating mrag — a lightweight, local-first RAG
+  knowledge base CLI. Use this skill when the user wants to build, search,
+  inspect, evaluate, or serve a small-scale RAG pipeline from local documents
+  (PDF / Markdown / text) with hybrid keyword+vector retrieval, contextual
+  augmentation, parent-child retrieval, reranking, or Dify external knowledge
+  API integration. Common user intents include: building a local RAG knowledge
+  base from a folder of PDFs or Markdown, querying or tuning retrieval quality
+  on an existing knowledge base, inspecting how documents were chunked and
+  augmented, aggregating multiple knowledge bases into a registry for Agentic
+  RAG workflows, and serving the knowledge base over the HTTP API.
+license: AGPL-3.0
+metadata:
+  upstream: https://github.com/bathtimefish/mrag
+  version: "0.19.0"
+---
+
 # SKILL.md — mrag Skill Procedures
 
 Concrete, step-by-step procedures for AI agents operating mrag. Each skill lists preconditions, exact commands, expected output, and verification steps.
@@ -382,6 +401,18 @@ When the profile uses `strategy: block_aware`, each result that has heading meta
 2. Check `fts_tokenizer` in `mrag.yaml` matches what was used at index time
 3. Try a simpler, shorter query term first
 4. Run `mrag doctor` to verify Ollama is reachable (and SQLite/FTS5 capabilities)
+
+**Verifying keyword presence (false-negative guard):**
+
+When `rerank.enabled: true`, results are reordered by semantic relevance and the 200-character preview may not include the matched keyword if it appears later in the chunk — easy to misread as "the corpus does not contain this keyword." To confirm literal presence in the index, run keyword-only retrieval with the reranker disabled:
+
+```bash
+mrag search "<keyword>" --strategy keyword --no-rerank --top-k 10
+# --json `content` field has the full chunk body — no need for inspect chunk
+mrag search "<keyword>" --strategy keyword --no-rerank --json
+```
+
+`--strategy keyword` runs FTS5 BM25 only (no vector retrieval). `--no-rerank` overrides the profile's `rerank.enabled: true` so scores stay pure BM25 (typically 0–20+ for hits). Zero results here means the keyword truly is not indexed; non-zero results means it exists and prior hybrid+rerank previews were just hiding it. Use this **fact-check mode** before concluding the corpus lacks a topic, and for vocabulary-variant audits (e.g. `ドローン` vs `UAV` vs `無人航空機`) where one variant may be indexed while another is not.
 
 ---
 
@@ -1077,6 +1108,7 @@ Registry validate reports issues?                           →  branch on the s
 kb_information.yaml validation error?                       →  mrag kb-info validate; check knowledge_base.id is lowercase + underscore only
 Zero results from keyword search?                           →  check mrag index ran; try single-word query
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
+Reranker hides keyword in preview — looks like a miss?      →  mrag search "<word>" --strategy keyword --no-rerank [--json]  (BM25-only fact check; --json .content has full body)
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
 Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 Need to rebuild everything?                                 →  mrag reindex 2>&1 | tee mrag-reindex-$(date +%Y%m%d-%H%M%S).log
