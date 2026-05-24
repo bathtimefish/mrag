@@ -14,7 +14,7 @@ description: >
 license: AGPL-3.0
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "0.21.0"
+  version: "0.21.1"
 ---
 
 # SKILL.md — mrag Skill Procedures
@@ -370,6 +370,8 @@ When reranking is active, each result also exposes a top-level `retrieval_score`
 | `熱電対の基本仕様` (continuous Japanese, vaporetto) | Phrase — vaporetto tokenizes the run into morphemes and matches them as an adjacent sequence |
 
 Each whitespace-separated token is wrapped as an FTS5 string literal, so characters like `%`, `*`, `:`, `-`, `/`, `(`, `)` are treated as ordinary characters rather than FTS5 operators. ASCII double quotes in the query are stripped — quoted-phrase syntax (`"exact phrase"`) is not supported; pass keyword tokens instead. Long natural-language questions (e.g. `"この論文中で人員削減効果が示されたのは何%ですか"`) are treated as a single phrase and will usually return no results — break them into keywords (`人員削減 効果 %`) for useful hits.
+
+Note — natural-language queries on contextual KBs: for profiles with `augmentation.strategy: contextual`, the same long natural-language question often still retrieves well under `--strategy vector` or `hybrid`, because `context_text` is embedded alongside chunk content. The whitespace-tokenization advice above applies to `--strategy keyword` only. See **Skill 16 Step 3** for a per-strategy audit procedure.
 
 **Expected output:**
 ```
@@ -761,6 +763,10 @@ Workarounds:
 - Documents with **300 or more chunks** trigger a `⚠ large document` warning at index time. This is informational — retry and fallback are active and the index will proceed.
 - The `embedding` section supports the same `retry` block for controlling embedding call retry behaviour.
 
+**Retrieval-side benefit:**
+
+Because `context_text + chunk content` is written to both the vector index and the FTS5 index, contextual augmentation is not only about generating richer chunk metadata — it materially changes what retrieval can find. Table fragments, OCR-noisy spans, and mid-section chunks that are weak on their own become retrievable by natural-language questions through the semantic label in `context_text`. To verify this on a specific KB after indexing, follow **Skill 16 Step 3**.
+
 ---
 
 ## Skill 13 — Choosing between search and eval
@@ -1005,6 +1011,31 @@ Look for:
 - **Context that contradicts the chunk body** — model hallucination; consider a stronger model
 
 After prompt edits, run `mrag reindex` to regenerate all variants with the new prompt.
+
+### Step 3 — Natural-language query audit
+
+Contextual augmentation indexes `context_text + content` into both the vector store and FTS5, so a natural-language question that would fail under plain keyword retrieval may still succeed under `vector` / `hybrid`. Use this step to confirm dense retrieval is actually doing that work on your KB — not just assume it.
+
+```bash
+# Same natural-language question, three strategies in sequence
+mrag search "<natural-language question>" --strategy hybrid  --top-k 5 --json
+mrag search "<natural-language question>" --strategy vector  --top-k 5 --json
+mrag search "<natural-language question>" --strategy keyword --top-k 5 --json
+
+# Then deep-dive a top chunk_id to see WHY it matched
+mrag inspect chunk <chunk-id> --json | jq '{content, context_text}'
+
+# Optional: rewrite the question as space-separated keywords
+mrag search "term1 term2 term3" --strategy keyword --top-k 5 --json
+```
+
+Evaluation criteria (read together with Step 2):
+
+1. Does `vector` (and therefore `hybrid`) return relevant chunks for the natural-language form? If `keyword` is 0-hit while `vector` succeeds, dense retrieval is carrying the query — expected on a healthy contextual KB.
+2. Does the keyword-rewritten query recover hits under `--strategy keyword`? That confirms FTS5 still needs tokenized input even though `context_text` is indexed on the FTS side.
+3. For each top chunk, does `context_text` give a concrete semantic label — naming the table, section, or topic — rather than restating the body? Fragmentary `content` is acceptable if `context_text` carries the meaning; a vacuous or generic `context_text` is the failure mode to flag (see Step 2 for prompt fixes).
+
+Agent-side caveat: OCR noise and duplicate neighboring chunks are downstream synthesis concerns. When mrag returns several near-duplicate chunks from the same `document_id` with adjacent `chunk_index`, the agent should deduplicate and prefer the chunk whose `context_text` is most specific.
 
 ---
 
