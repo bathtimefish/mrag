@@ -103,7 +103,7 @@ class AugmentationFailurePolicyConfig(BaseModel):
 class AugmentationConfig(BaseModel):
     strategy: str = "none"        # none | contextual | raptor | ...
     provider: str = "ollama"
-    model: str = "gemma4:e4b"
+    model: str = "gemma4:e2b"
     endpoint: str = "http://localhost:11434"
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
     failure_policy: AugmentationFailurePolicyConfig = Field(default_factory=AugmentationFailurePolicyConfig)
