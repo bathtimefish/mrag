@@ -224,7 +224,7 @@ Skip this if you do not plan to use `augmentation.strategy: contextual`.
 If the project profile uses contextual augmentation, the generation model must also be pulled before `mrag index`:
 
 ```bash
-ollama pull gemma4:e4b   # default model; check profiles/default.yaml → augmentation.model
+ollama pull gemma4:e2b   # default model; check profiles/default.yaml → augmentation.model
 ```
 
 The generation model is separate from the embedding model — it generates a short context text per chunk at index time only.
