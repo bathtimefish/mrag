@@ -13,7 +13,7 @@ mragは小規模なRAGナレッジベースを作成、運用するためのCLI�
 | コンポーネント | 備考 |
 |---|---|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | `ollama serve` が起動済みであること。デフォルトでは Embedding に `bge-m3`、コンテキスト拡張に `gemma4:e4b` を使用 |
+| [Ollama](https://ollama.com) | `ollama serve` が起動済みであること。デフォルトでは Embedding に `bge-m3`、コンテキスト拡張に `gemma4:e2b` を使用 |
 | [Qdrant](https://qdrant.tech) | デフォルトの `local` モードではプロセス内 Qdrantを利用。`qdrant.mode: server` を指定したときのみ Docker版 Qdrantが必要 |
 
 
