@@ -196,7 +196,7 @@ mrag show-extracted <doc-id>   # preview extracted text
 - At least one document has been added (`mrag add` completed)
 - Ollama is running and the embedding model (default: `bge-m3`) is pulled
 - Qdrant: check `mrag.yaml` — `mode: local` (default) needs nothing; `mode: server` needs a running Qdrant instance
-- If `augmentation.strategy: contextual` is set in the profile: the generation model must also be pulled (`ollama pull gemma4:e4b` or whichever model is configured)
+- If `augmentation.strategy: contextual` is set in the profile: the generation model must also be pulled (`ollama pull gemma4:e2b` or whichever model is configured)
 
 **Steps (AI agents — required form):**
 
@@ -682,7 +682,7 @@ Contextual augmentation runs an Ollama LLM once per chunk during `mrag index` to
 
 **Preconditions:**
 - Inside the project directory
-- Ollama is running and the generation model is pulled: `ollama pull gemma4:e4b`
+- Ollama is running and the generation model is pulled: `ollama pull gemma4:e2b`
 
 **Steps:**
 
@@ -697,7 +697,7 @@ Add (or update) the `augmentation` section:
 augmentation:
   strategy: contextual        # was: none
   provider: ollama
-  model: gemma4:e4b           # any Ollama-compatible chat/generation model
+  model: gemma4:e2b           # any Ollama-compatible chat/generation model
   endpoint: http://localhost:11434
   # retry:                    # optional — defaults shown below
   #   max_attempts: 3
@@ -745,7 +745,7 @@ When enabled, mrag applies both **Contextual Embeddings** (vector index) and **C
 
 **Known constraint — document truncation (8000 chars):**
 
-The `{document}` placeholder in the prompt is truncated to **8000 characters** before being sent to the local LLM. This is a pragmatic trade-off for local-first operation with limited-context-window models like `gemma4:e4b`.
+The `{document}` placeholder in the prompt is truncated to **8000 characters** before being sent to the local LLM. This is a pragmatic trade-off for local-first operation with limited-context-window models like `gemma4:e2b`.
 
 - For documents **≤ 8000 chars**: every chunk receives context generated from the full document — no degradation.
 - For documents **> 8000 chars**: chunks near the end receive context generated from only the document prefix, which can produce less relevant context text.
@@ -757,7 +757,7 @@ Workarounds:
 
 **Performance and reliability notes:**
 
-- Indexing with `strategy: contextual` is significantly slower than `strategy: none` — one LLM call per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e4b`) or index overnight for large corpora.
+- Indexing with `strategy: contextual` is significantly slower than `strategy: none` — one LLM call per chunk. For a 100-chunk document, expect roughly 100 × (LLM generation time). Use a fast model (`gemma4:e2b`) or index overnight for large corpora.
 - Transient Ollama timeouts and HTTP 5xx errors are retried automatically (default: 3 attempts, exponential backoff). Watch for `↻ retry` lines in the log.
 - If a chunk still fails after all retries, the default `failure_policy.mode: raw_fallback` stores the raw chunk instead of failing the whole document. The success line shows `(N raw fallback)` and `⤵ fallback` log lines identify affected chunks. Set `mode: fail_document` to restore pre-0.7 strict behaviour.
 - Documents with **300 or more chunks** trigger a `⚠ large document` warning at index time. This is informational — retry and fallback are active and the index will proceed.
