@@ -13,7 +13,7 @@ mrag is a CLI for building and operating small-scale RAG knowledge bases. It pro
 | Component | Notes |
 |---|---|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | `ollama serve` must be running. Defaults use `bge-m3` for embeddings and `gemma4:e4b` for contextual augmentation |
+| [Ollama](https://ollama.com) | `ollama serve` must be running. Defaults use `bge-m3` for embeddings and `gemma4:e2b` for contextual augmentation |
 | [Qdrant](https://qdrant.tech) | The default `local` mode runs Qdrant in-process. Docker Qdrant is required only when `qdrant.mode: server` is set |
 
 
