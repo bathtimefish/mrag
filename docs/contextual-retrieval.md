@@ -27,7 +27,7 @@ Set the `augmentation` section in `profiles/<profile-name>.yaml` as follows:
 augmentation:
   strategy: contextual           # none (default) | contextual
   provider: ollama
-  model: gemma4:e4b              # generation LLM — separate from the embedding model
+  model: gemma4:e2b              # generation LLM — separate from the embedding model
   endpoint: http://localhost:11434
   retry:                         # optional — defaults shown
     max_attempts: 3
@@ -133,7 +133,7 @@ The log ends as usual with `✓ Indexed: ...`.
 
 ## Real-world impressions
 
-For reference, observed values when running a local Ollama with `gemma4:e4b` on an Apple Silicon Mac:
+For reference, observed values when running a local Ollama with `gemma4:e2b` on an Apple Silicon Mac:
 
 - Roughly **tens of seconds per chunk** (varies with model and body size)
 - For documents with more than 500 chunks, transient failures from VRAM pressure become common; raising `initial_delay_seconds` (e.g. 2 → 5) helps recovery
