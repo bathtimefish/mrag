@@ -98,7 +98,7 @@ ollama pull bge-m3     # must be pulled before first index
 If a profile has `augmentation.strategy: contextual`, the **generation model** must also be pulled before indexing:
 
 ```bash
-ollama pull gemma4:e4b   # default augmentation model
+ollama pull gemma4:e2b   # default augmentation model
 ```
 
 The augmentation model is separate from the embedding model — it generates a short context text per chunk at index time. Embedding still uses `bge-m3` (or whatever is set in `embedding.model`).
@@ -244,7 +244,7 @@ When `augmentation.strategy: contextual` is set in a profile, mrag calls an Olla
 augmentation:
   strategy: contextual   # none (default) | contextual
   provider: ollama
-  model: gemma4:e4b      # generation model — separate from embedding.model
+  model: gemma4:e2b      # generation model — separate from embedding.model
   endpoint: http://localhost:11434
   retry:                 # optional — these are the defaults
     max_attempts: 3
@@ -548,7 +548,7 @@ The interactive API docs are available at `http://127.0.0.1:8000/docs`.
 | Zero search results | `mrag index` not run, or wrong tokenizer | Run `mrag index`; check `fts_tokenizer` in `mrag.yaml` |
 | `Collection not found` error | Qdrant server not running (`mode: server`) | Start Qdrant, or switch to `mode: local` |
 | Indexing fails with connection error | Ollama not running or embedding model not pulled | `ollama serve` + `ollama pull bge-m3` |
-| Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e4b` (or whatever `augmentation.model` is set to) |
+| Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e2b` (or whatever `augmentation.model` is set to) |
 | `mrag index` very slow | `augmentation.strategy: contextual` calls LLM once per chunk | Expected; use `strategy: none` to skip augmentation |
 | Contextual indexing fails on large documents | Many sequential LLM calls increase exposure to transient Ollama errors | Retry is automatic (3 attempts); increase `augmentation.retry.max_attempts` for very large documents; `failure_policy.mode: raw_fallback` (default) prevents document-level failure |
 | Log shows many `↻ retry` lines | Ollama under load or model stalling | Retry is working; if all retries fail, `raw_fallback` stores raw variant instead of failing the document |
