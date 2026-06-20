@@ -87,8 +87,7 @@ def write_index_log(
     profile_name: str,
 ) -> None:
     try:
-        from importlib.metadata import version as _pkg_version
-        mrag_version = _pkg_version("mrag")
+        from mrag import __version__ as mrag_version
     except Exception:
         mrag_version = "unknown"
 

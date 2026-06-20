@@ -132,6 +132,10 @@ Per-feature details live under `./docs/`.
 - [dify-api.md](./docs/dify-api.md) — Dify External Knowledge API compatible endpoint
 - [native-api.md](./docs/native-api.md) — mrag Native REST API
 
+### Deployment
+
+- [packaging.md](./docs/packaging.md) — Single-binary packaging with PyInstaller (optional distribution method)
+
 
 ## License
 
