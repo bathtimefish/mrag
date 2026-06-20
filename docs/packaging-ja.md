@@ -50,9 +50,11 @@ packaging/build.sh --help
 | モード | 同梱内容 | 目安サイズ | 用途 |
 |---|---|---|---|
 | LEAN（既定） | torch / sentence-transformers を**除外** | 約 60〜200MB | リランキングを使わない通常運用 |
-| フル（`--with-reranker`） | CrossEncoder リランカー一式を同梱 | **1GB 超** | リランキングまで単一バイナリで完結させたい場合 |
+| フル（`--with-reranker`） | CrossEncoder リランカー一式を同梱 | プラットフォーム依存（後述） | リランキングまで単一バイナリで完結させたい場合 |
 
-リランキング（`rerank.enabled: true`）はオプショナル機能です。使わないなら LEAN を選んでください。フルビルドは PyTorch を丸ごと含むためサイズが急増し、ビルド時間も起動時間も伸びます。`--with-reranker` を使う前に、対象環境に `uv pip install -e ".[reranker]"` で reranker extras が入っている必要があります。
+リランキング（`rerank.enabled: true`）はオプショナル機能です。使わないなら LEAN を選んでください。フルビルドは PyTorch を丸ごと含むためサイズが大きくなり、ビルド時間も起動時間も伸びます。`--with-reranker` を使う前に、対象環境に `uv pip install -e ".[reranker]"` で reranker extras が入っている必要があります。
+
+フルビルドのサイズは **同梱される torch のビルドに大きく依存**します。実測では macOS arm64（CUDA を含まない CPU/MPS 版 torch）の onefile で **約 231MB** でした。一方、**Linux で CUDA 対応 torch** を含む場合は CUDA ランタイムを丸ごと抱えるため **1GB を超える**ことがあります。リランカーのモデル重み自体はバイナリに含まれず、初回検索時に HuggingFace からダウンロードされます。
 
 ### onefile と onedir
 
