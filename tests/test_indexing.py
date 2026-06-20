@@ -700,7 +700,7 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
     (project_dir / "profiles").mkdir()
     profile_data = ProfileConfig(name="default").model_dump()
     profile_data["augmentation"] = {"strategy": "contextual", "provider": "ollama",
-                                     "model": "gemma4:e4b", "endpoint": "http://localhost:11434"}
+                                     "model": "gemma4:e2b", "endpoint": "http://localhost:11434"}
     (project_dir / "profiles" / "default.yaml").write_text(
         yaml.dump(profile_data), encoding="utf-8"
     )
@@ -786,7 +786,7 @@ def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample
     (project_dir / "profiles").mkdir()
     profile_data = ProfileConfig(name="default").model_dump()
     profile_data["augmentation"] = {"strategy": "contextual", "provider": "ollama",
-                                     "model": "gemma4:e4b", "endpoint": "http://localhost:11434"}
+                                     "model": "gemma4:e2b", "endpoint": "http://localhost:11434"}
     (project_dir / "profiles" / "default.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
 
     custom_template = "Custom prompt: doc={document} chunk={chunk}"

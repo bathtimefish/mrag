@@ -27,7 +27,7 @@ mrag では、プロファイルの `augmentation.strategy: contextual` を有�
 augmentation:
   strategy: contextual           # none（デフォルト） | contextual
   provider: ollama
-  model: gemma4:e4b              # 生成用 LLM。Embedding Model とは別に指定
+  model: gemma4:e2b              # 生成用 LLM。Embedding Model とは別に指定
   endpoint: http://localhost:11434
   retry:                         # 任意。以下は既定値
     max_attempts: 3
@@ -133,7 +133,7 @@ embedding:
 
 ## 実運用での所感
 
-参考までに、Apple Silicon Mac 環境でローカルの Ollama に `gemma4:e4b` を使った場合の体感値：
+参考までに、Apple Silicon Mac 環境でローカルの Ollama に `gemma4:e2b` を使った場合の体感値：
 
 - 1 チャンクあたりおよそ **数十秒**（モデル・本文量に依存）
 - 500 チャンクを超えるようなドキュメントでは VRAM 逼迫起因の一時失敗が起きやすく、`initial_delay_seconds` を上げる（例：2 → 5）と回復しやすくなる
