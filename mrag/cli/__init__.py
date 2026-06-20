@@ -1,7 +1,8 @@
-from importlib.metadata import version as _pkg_version
 from typing import Optional
 
 import typer
+
+from mrag import __version__
 
 from mrag.cli.init import init
 from mrag.cli.add import add
@@ -28,7 +29,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(_pkg_version("mrag"))
+        typer.echo(__version__)
         raise typer.Exit()
 
 

@@ -133,6 +133,10 @@ mrag search "クエリ"
 - [dify-api-ja.md](./docs/dify-api-ja.md) — Dify External Knowledge API 互換エンドポイント
 - [native-api-ja.md](./docs/native-api-ja.md) — mrag ネイティブ REST API
 
+### デプロイ (Deployment)
+
+- [packaging-ja.md](./docs/packaging-ja.md) — PyInstaller による単一バイナリ化（任意の配布手段）
+
 
 ## ライセンス
 

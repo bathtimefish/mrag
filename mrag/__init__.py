@@ -1,3 +1,10 @@
-from importlib.metadata import version as _pkg_version
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-__version__ = _pkg_version("mrag")
+# Fallback used when distribution metadata is unavailable — e.g. a PyInstaller
+# frozen build without --copy-metadata. Keep in sync with pyproject.toml.
+_FALLBACK_VERSION = "0.21.2"
+
+try:
+    __version__ = _pkg_version("mrag")
+except PackageNotFoundError:
+    __version__ = _FALLBACK_VERSION
