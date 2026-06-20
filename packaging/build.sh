@@ -27,8 +27,9 @@
 #   * PyInstaller cannot cross-compile. Run this on each target OS/arch
 #     (macOS arm64, macOS x86_64, Linux, ...). Windows users: see the
 #     PowerShell notes at the bottom of this file.
-#   * The lean build is ~80-200 MB. --with-reranker bundles PyTorch and can
-#     exceed 1 GB with a noticeably slower onefile startup.
+#   * The lean build is ~60-200 MB. --with-reranker bundles PyTorch: ~230 MB on
+#     macOS arm64 (CPU/MPS), but can exceed 1 GB with CUDA-enabled torch on
+#     Linux — with a noticeably slower onefile startup either way.
 #   * The vaporetto FTS tokenizer is loaded at runtime from
 #     ~/.mrag/extensions and is intentionally NOT bundled — it stays an
 #     external, swappable plugin regardless of how mrag is packaged.
@@ -118,7 +119,8 @@ if [ "$WITH_RERANKER" -eq 1 ]; then
   for pkg in sentence_transformers transformers torch tokenizers safetensors; do
     add_collect_if_present "$pkg"
   done
-  echo "    NOTE: this produces a >1 GB binary with slower onefile startup."
+  echo "    NOTE: large binary and slower startup. Size depends on the torch build:"
+  echo "          ~230 MB on macOS arm64 (CPU/MPS); >1 GB with CUDA-enabled torch on Linux."
 else
   echo "==> Mode: LEAN (reranker excluded)"
   RERANKER_ARGS+=(
@@ -147,8 +149,8 @@ echo "==> Running PyInstaller ($PACKAGE_MODE)"
   --copy-metadata mrag \
   --collect-submodules mrag \
   --collect-data mrag \
-  "${COLLECT_ARGS[@]}" \
-  "${RERANKER_ARGS[@]}" \
+  ${COLLECT_ARGS[@]+"${COLLECT_ARGS[@]}"} \
+  ${RERANKER_ARGS[@]+"${RERANKER_ARGS[@]}"} \
   packaging/mrag_entry.py
 
 # ---------------------------------------------------------------------------

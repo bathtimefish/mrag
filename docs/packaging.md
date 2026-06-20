@@ -50,9 +50,11 @@ Combined with mrag's source-level hardening for freezing (v0.21.2), these work w
 | Mode | Bundled | Approx. size | Use case |
 |---|---|---|---|
 | LEAN (default) | **Excludes** torch / sentence-transformers | ~60–200 MB | Normal use without reranking |
-| Full (`--with-reranker`) | Includes the CrossEncoder reranker stack | **>1 GB** | Self-contained binary including reranking |
+| Full (`--with-reranker`) | Includes the CrossEncoder reranker stack | Platform-dependent (see below) | Self-contained binary including reranking |
 
-Reranking (`rerank.enabled: true`) is an optional feature. If you don't use it, choose LEAN. The full build embeds all of PyTorch, so size, build time, and startup time all grow significantly. Before using `--with-reranker`, the target environment must have the reranker extras installed (`uv pip install -e ".[reranker]"`).
+Reranking (`rerank.enabled: true`) is an optional feature. If you don't use it, choose LEAN. The full build embeds all of PyTorch, so size, build time, and startup time all grow. Before using `--with-reranker`, the target environment must have the reranker extras installed (`uv pip install -e ".[reranker]"`).
+
+The full build's size **depends heavily on the bundled torch build**. Measured at **~231 MB** for an onefile build on macOS arm64 (CPU/MPS torch, no CUDA). On **Linux with CUDA-enabled torch**, it can **exceed 1 GB** because the entire CUDA runtime is pulled in. The reranker model weights themselves are not bundled — they are downloaded from HuggingFace on first search.
 
 ### onefile vs onedir
 
