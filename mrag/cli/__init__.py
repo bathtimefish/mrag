@@ -1,4 +1,16 @@
+import sys
 from typing import Optional
+
+# Force UTF-8 stdio so Rich and plain print() don't choke on non-mappable
+# characters when the console uses a legacy code page (e.g. cp932 on Japanese
+# Windows). Effectively a no-op on Linux/macOS where stdio is already UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        try:
+            _reconfigure(encoding="utf-8", errors="backslashreplace")
+        except Exception:
+            pass
 
 import typer
 
