@@ -93,6 +93,7 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | `mrag search <query>` | Run a search |
 | `mrag eval <query>` | Evaluate retrieval quality |
 | `mrag serve` | Start the HTTP API server |
+| `mrag mcp` | Expose the project as a read-only MCP server |
 | `mrag remove <doc-id>` | Remove a document |
 | `mrag profiles list \| show <name>` | List or show profile details |
 | `mrag kb-info show \| validate \| schema` | Manage the knowledge-base self-description |
@@ -129,6 +130,7 @@ Per-feature details live under `./docs/`.
 
 ### API
 
+- [mcp.md](./docs/mcp.md) — Model Context Protocol server (`mrag mcp`)
 - [dify-api.md](./docs/dify-api.md) — Dify External Knowledge API compatible endpoint
 - [native-api.md](./docs/native-api.md) — mrag Native REST API
 

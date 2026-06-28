@@ -1,14 +1,10 @@
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from mrag.config.profile import load_profile
-from mrag.core.retrieval.hybrid import hybrid_search
-from mrag.core.retrieval.keyword import keyword_search
-from mrag.core.retrieval.vector import vector_search
-from mrag.db.connection import open_connection
+from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 
 router = APIRouter()
 
@@ -84,83 +80,19 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
     strategy = prof.retrieval.strategy
     top_k = req.retrieval_setting.top_k
     score_threshold = req.retrieval_setting.score_threshold
-    tokenizer = config.fts_tokenizer
-    reranker = state.reranker
-
-    retrieval_top_k = prof.rerank.top_n if reranker is not None else top_k
-
-    if strategy == "keyword":
-        results = keyword_search(
-            query_text=req.query,
-            knowledge_id=config.knowledge_id,
-            profile_name=state.profile_name,
-            db_path=state.db_path,
-            top_k=retrieval_top_k,
-            tokenizer=tokenizer,
-        )
-    elif strategy == "vector":
-        results = vector_search(
-            query_text=req.query,
-            knowledge_id=config.knowledge_id,
-            profile_name=state.profile_name,
-            db_path=state.db_path,
-            embedding_provider=state.embedding_provider,
-            qdrant_client=state.qdrant_client,
-            col_name=state.col_name,
-            top_k=retrieval_top_k,
-        )
-    elif strategy == "parent_child":
-        results = hybrid_search(
-            query_text=req.query,
-            knowledge_id=config.knowledge_id,
-            profile_name=state.profile_name,
-            db_path=state.db_path,
-            embedding_provider=state.embedding_provider,
-            qdrant_client=state.qdrant_client,
-            col_name=state.col_name,
-            dense_top_k=prof.retrieval.dense_top_k,
-            keyword_top_k=prof.retrieval.keyword_top_k,
-            top_k=retrieval_top_k * 3,
-            fusion=prof.retrieval.fusion,
-            weights=prof.retrieval.weights,
-            tokenizer=tokenizer,
-        )
-        from mrag.core.retrieval.parent_child import resolve_to_parent
-        results = resolve_to_parent(results, state.db_path)
-        results = results[:retrieval_top_k]
-    else:  # hybrid
-        results = hybrid_search(
-            query_text=req.query,
-            knowledge_id=config.knowledge_id,
-            profile_name=state.profile_name,
-            db_path=state.db_path,
-            embedding_provider=state.embedding_provider,
-            qdrant_client=state.qdrant_client,
-            col_name=state.col_name,
-            dense_top_k=prof.retrieval.dense_top_k,
-            keyword_top_k=prof.retrieval.keyword_top_k,
-            top_k=retrieval_top_k,
-            fusion=prof.retrieval.fusion,
-            weights=prof.retrieval.weights,
-            tokenizer=tokenizer,
-        )
-
-    if reranker is not None and results:
-        results = reranker.rerank(req.query, results)[:top_k]
-
-    doc_ids = list({r.document_id for r in results})
-    conn = open_connection(state.db_path)
-    doc_rows = (
-        conn.execute(
-            "SELECT id, filename FROM documents WHERE id IN (%s)"
-            % ",".join("?" * len(doc_ids)),
-            doc_ids,
-        ).fetchall()
-        if doc_ids
-        else []
+    run = run_retrieval(
+        query=req.query,
+        project_dir=state.project_dir,
+        config=config,
+        profile_name=state.profile_name,
+        strategy=strategy,
+        top_k=top_k,
+        embedding_provider=state.embedding_provider,
+        qdrant_client=state.qdrant_client,
+        reranker=state.reranker,
     )
-    conn.close()
-    filename_map = {r["id"]: r["filename"] for r in doc_rows}
+    results = run.results
+    filename_map = fetch_filename_map(state.db_path, results)
 
     records: list[DifyRecord] = []
     for r in results:

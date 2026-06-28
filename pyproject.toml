@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mrag"
-version = "0.21.2"
+version = "0.22.0"
 description = "Micro RAG — A lightweight, local-first retrieval runtime"
 license = { text = "AGPL-3.0" }
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 vaporetto = ["apsw>=3.43"]
 reranker = ["sentence-transformers>=3.0"]
+mcp = ["mcp>=1.0,<2"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",

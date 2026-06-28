@@ -1117,6 +1117,108 @@ The `agent_instructions.search_command_template` field in the registry encodes t
 
 ---
 
+## Skill 18 — Expose one KB as an MCP server
+
+Use `mrag mcp` when an MCP-capable client should call a single mrag project through standard MCP tools/resources instead of shelling out to `mrag search --json`.
+
+### Step 1 — Install MCP support
+
+```bash
+uv pip install -e ".[mcp]"
+```
+
+Combine extras as needed:
+
+```bash
+uv pip install -e ".[vaporetto,reranker,mcp]"
+```
+
+### Step 2 — Start with stdio
+
+Run from inside the project directory:
+
+```bash
+cd <mrag-project>
+mrag mcp
+```
+
+Default behaviour:
+
+- transport: `stdio`
+- project_dir: current directory
+- profile: `mrag.yaml.default_profile`
+- strategy: profile `retrieval.strategy`
+- top_k default: profile `retrieval.top_k`
+
+`stdio` is strict: stdout is reserved for MCP JSON-RPC messages. Logs and warnings go to stderr.
+
+### Step 3 — Use config for daemon/container operation
+
+Create a config:
+
+```bash
+mrag mcp init-config > mrag-mcp.yaml
+```
+
+Typical HTTP config:
+
+```yaml
+project_dir: /data/kb
+transport: streamable-http
+http:
+  host: 127.0.0.1
+  port: 8001
+  path: /mcp
+auth:
+  bearer_token_env: MRAG_MCP_API_KEY
+```
+
+Validate and start:
+
+```bash
+mrag mcp validate --config ./mrag-mcp.yaml
+mrag mcp --config ./mrag-mcp.yaml
+```
+
+Environment variables override YAML values:
+
+```bash
+MRAG_MCP_CONFIG=/etc/mrag/mcp.yaml
+MRAG_PROJECT_DIR=/data/kb
+MRAG_MCP_TRANSPORT=streamable-http
+MRAG_MCP_PORT=8001
+MRAG_MCP_API_KEY=...
+```
+
+Use `mrag mcp --config ./mrag-mcp.yaml --print-effective-config` to debug resolved settings. Secret values are masked.
+
+### Step 4 — Available surface
+
+Current MCP support is read-only. Tools:
+
+- `search`
+- `list_documents`
+- `list_profiles`
+- `inspect_document`
+- `inspect_chunks`
+- `inspect_chunk`
+- `inspect_sections`
+
+Resources:
+
+- `mrag://kb/info`
+- `mrag://profiles`
+- `mrag://profiles/{profile}`
+- `mrag://documents`
+- `mrag://documents/{document_id}`
+- `mrag://documents/{document_id}/extracted.txt`
+- `mrag://documents/{document_id}/extracted.md`
+- `mrag://chunks/{chunk_id}`
+
+Do not expect write tools. `add`, `index`, `reindex`, `remove`, and profile editing are intentionally not exposed through MCP.
+
+---
+
 ## Quick decision guide
 
 ```
@@ -1134,6 +1236,7 @@ inspect sections exits with "no section structure"?         →  the profile has
 Want to audit contextual augmentation quality?              →  mrag inspect chunks --show-context --json | jq, then mrag inspect chunk for deep-dive
 Augmentation Status section is missing for a profile?       →  that profile has augmentation.strategy: none (no LLM augmentation attempted)
 Want to expose multiple KBs to an Agentic RAG agent?        →  mrag registry generate <root_dir>; agent reads <root>/knowledge_registry.yaml
+Want to expose one KB to an MCP-capable agent?              →  uv pip install -e ".[mcp]"; cd <project>; mrag mcp
 Registry generate found nothing?                            →  check the root path; KBs must be at <root>/<kb-name>/ (1 level, no recursion)
 Registry validate reports issues?                           →  branch on the stable issue key (path_not_found / preferred_profile_not_found / duplicate_id / ...)
 kb_information.yaml validation error?                       →  mrag kb-info validate; check knowledge_base.id is lowercase + underscore only
