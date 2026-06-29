@@ -10,9 +10,7 @@ from mrag.api.models import (
     RetrieveResponse,
 )
 from mrag.config.profile import load_profile
-from mrag.core.retrieval.hybrid import hybrid_search
-from mrag.core.retrieval.keyword import keyword_search
-from mrag.core.retrieval.vector import vector_search
+from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import open_connection
 
 router = APIRouter(prefix="/api/v1")
@@ -31,90 +29,27 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     profile_name = req.profile or config.default_profile
 
     try:
-        prof = load_profile(profile_name, state.project_dir)
+        load_profile(profile_name, state.project_dir)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    retrieval_strategy = req.strategy or prof.retrieval.strategy
-    top_k = req.top_k
-    tokenizer = config.fts_tokenizer
-    reranker = state.reranker
-
-    retrieval_top_k = prof.rerank.top_n if reranker is not None else top_k
-
     try:
-        if retrieval_strategy == "keyword":
-            results = keyword_search(
-                query_text=req.query,
-                knowledge_id=config.knowledge_id,
-                profile_name=profile_name,
-                db_path=db_path,
-                top_k=retrieval_top_k,
-                tokenizer=tokenizer,
-            )
-        elif retrieval_strategy == "vector":
-            results = vector_search(
-                query_text=req.query,
-                knowledge_id=config.knowledge_id,
-                profile_name=profile_name,
-                db_path=db_path,
-                embedding_provider=state.embedding_provider,
-                qdrant_client=state.qdrant_client,
-                col_name=state.col_name,
-                top_k=retrieval_top_k,
-            )
-        elif retrieval_strategy == "parent_child":
-            results = hybrid_search(
-                query_text=req.query,
-                knowledge_id=config.knowledge_id,
-                profile_name=profile_name,
-                db_path=db_path,
-                embedding_provider=state.embedding_provider,
-                qdrant_client=state.qdrant_client,
-                col_name=state.col_name,
-                dense_top_k=prof.retrieval.dense_top_k,
-                keyword_top_k=prof.retrieval.keyword_top_k,
-                top_k=retrieval_top_k * 3,
-                fusion=prof.retrieval.fusion,
-                weights=prof.retrieval.weights,
-                tokenizer=tokenizer,
-            )
-            from mrag.core.retrieval.parent_child import resolve_to_parent
-            results = resolve_to_parent(results, db_path)
-            results = results[:retrieval_top_k]
-        else:  # hybrid
-            results = hybrid_search(
-                query_text=req.query,
-                knowledge_id=config.knowledge_id,
-                profile_name=profile_name,
-                db_path=db_path,
-                embedding_provider=state.embedding_provider,
-                qdrant_client=state.qdrant_client,
-                col_name=state.col_name,
-                dense_top_k=prof.retrieval.dense_top_k,
-                keyword_top_k=prof.retrieval.keyword_top_k,
-                top_k=retrieval_top_k,
-                fusion=prof.retrieval.fusion,
-                weights=prof.retrieval.weights,
-                tokenizer=tokenizer,
-            )
+        run = run_retrieval(
+            query=req.query,
+            project_dir=state.project_dir,
+            config=config,
+            profile_name=profile_name,
+            strategy=req.strategy,
+            top_k=req.top_k,
+            embedding_provider=state.embedding_provider,
+            qdrant_client=state.qdrant_client,
+            reranker=state.reranker,
+        )
     except (ConnectionError, RuntimeError) as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    reranked = False
-    if reranker is not None and results:
-        results = reranker.rerank(req.query, results)[:top_k]
-        reranked = True
-
-    doc_ids = list({r.document_id for r in results})
-    conn = open_connection(db_path)
-    doc_rows = conn.execute(
-        "SELECT id, filename FROM documents WHERE id IN (%s)"
-        % ",".join("?" * len(doc_ids)),
-        doc_ids,
-    ).fetchall() if doc_ids else []
-    conn.close()
-    filename_map = {r["id"]: r["filename"] for r in doc_rows}
+    results = run.results
+    filename_map = fetch_filename_map(db_path, results)
 
     chunk_results = [
         ChunkResult(
@@ -131,8 +66,8 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     return RetrieveResponse(
         query=req.query,
         profile=profile_name,
-        strategy=retrieval_strategy,
-        reranked=reranked,
+        strategy=run.strategy,
+        reranked=run.reranked,
         results=chunk_results,
     )
 

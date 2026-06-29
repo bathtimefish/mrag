@@ -39,13 +39,13 @@ One project = one knowledge base. Do not mix documents from unrelated domains in
 Every mrag project follows this sequence. Steps must be executed in order.
 
 ```
-mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve
+mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve / mrag mcp
 ```
 
 1. **`mrag init --name <name> [--non-interactive]`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory. AI agents and scripted callers should use `--non-interactive` to skip prompts and accept defaults for any unspecified fields.
 2. **`mrag add <file>`** — Extracts text and stores metadata. No indexing yet.
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents. Always writes a JSON run log to `logs/` (timestamped). Use `--skip-list-json <log>` to skip documents that failed in a previous run.
-4. **`mrag search <query>`** or **`mrag serve`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
+4. **`mrag search <query>`**, **`mrag serve`**, or **`mrag mcp`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
 
 Use **`mrag eval <query>`** at any time after indexing for deeper quality inspection: duplicate chunk detection and multi-profile comparison.
 
@@ -537,6 +537,47 @@ Authorization: Bearer <key>
 ```
 
 The interactive API docs are available at `http://127.0.0.1:8000/docs`.
+
+---
+
+## MCP server
+
+Start with `mrag mcp` from inside a project directory to expose the current KB as a read-only MCP server.
+
+```bash
+cd my-kb
+mrag mcp
+```
+
+Default behaviour:
+
+| Field | Default |
+|---|---|
+| transport | `stdio` |
+| project_dir | current directory |
+| profile | `mrag.yaml.default_profile` |
+| retrieval strategy | profile `retrieval.strategy` |
+| top_k default | profile `retrieval.top_k` |
+
+For daemon/container use, put options in `mrag-mcp.yaml` and start with:
+
+```bash
+mrag mcp --config /etc/mrag/mcp.yaml
+```
+
+Environment variables override YAML values. Common container variables:
+
+```bash
+MRAG_MCP_CONFIG=/etc/mrag/mcp.yaml
+MRAG_PROJECT_DIR=/data/kb
+MRAG_MCP_TRANSPORT=streamable-http
+MRAG_MCP_PORT=8001
+MRAG_MCP_API_KEY=...
+```
+
+`stdio` transport is strict: stdout must contain only MCP JSON-RPC messages. Logs and warnings go to stderr.
+
+MCP is read-only in the current implementation. It exposes search/list/inspect tools and resources such as `mrag://kb/info`, `mrag://profiles/{profile}`, `mrag://documents/{document_id}/extracted.txt`, and `mrag://chunks/{chunk_id}`. It does **not** expose `add`, `index`, `reindex`, `remove`, or profile editing tools.
 
 ---
 

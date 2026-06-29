@@ -94,6 +94,7 @@ mrag search "クエリ"
 | `mrag search <query>` | 検索する |
 | `mrag eval <query>` | 検索品質を評価する |
 | `mrag serve` | HTTP API サーバーを起動する |
+| `mrag mcp` | プロジェクトを read-only MCP server として公開する |
 | `mrag remove <doc-id>` | ドキュメントを削除する |
 | `mrag profiles list \| show <name>` | プロファイルの一覧 / 詳細を表示する |
 | `mrag kb-info show \| validate \| schema` | ナレッジベース自己記述メタデータを扱う |
@@ -130,6 +131,7 @@ mrag search "クエリ"
 
 ### API
 
+- [mcp-ja.md](./docs/mcp-ja.md) — Model Context Protocol server（`mrag mcp`）
 - [dify-api-ja.md](./docs/dify-api-ja.md) — Dify External Knowledge API 互換エンドポイント
 - [native-api-ja.md](./docs/native-api-ja.md) — mrag ネイティブ REST API
 
