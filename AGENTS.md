@@ -105,7 +105,7 @@ The augmentation model is separate from the embedding model — it generates a s
 
 ### Do not change the tokenizer after `mrag init`
 
-The FTS5 tokenizer (`vaporetto` or `trigram`) is chosen at init time and stored in `mrag.yaml`. Changing it after indexing causes MATCH failures. To change tokenizer: `mrag reindex` after updating the profile YAML.
+The FTS5 tokenizer (`vaporetto` or `trigram`) is chosen at init time, stored in `mrag.yaml`, and fixed in the single FTS5 table schema. `mrag.yaml.fts_tokenizer` is the OSS runtime source of truth; an explicit `profile.keyword.tokenizer` must match it. A mismatch is an error because `mrag reindex` does not recreate the FTS5 table with a different tokenizer. Create a new project or explicitly rebuild/migrate the database schema to change it safely.
 
 ---
 
@@ -195,7 +195,7 @@ retrieval:
   keyword_top_k: 60
 ```
 
-Changing any `chunking` field (including `preserve_*`) invalidates the profile hash and triggers full re-indexing on the next `mrag index`.
+Changing any `chunking` field (including `preserve_*`) invalidates the index identity and triggers full re-indexing on the next `mrag index`. Query-time settings (`top_k`, candidate limits, fusion/weights, and rerank) do not invalidate it.
 
 ---
 
@@ -291,7 +291,7 @@ cat profiles/context_prompt.txt
 nano profiles/context_prompt.txt
 ```
 
-Changes to `context_prompt.txt` are picked up at the next `mrag index` run. Since the prompt is not part of `profile_hash`, editing it does not automatically trigger re-indexing — run `mrag reindex` manually if you want all existing chunks re-augmented with the new prompt.
+For contextual profiles, the effective `context_prompt.txt` content hash is part of the index identity. Changes are detected by the next ordinary `mrag index` run and automatically re-augment existing documents. For profiles with `augmentation.strategy: none`, prompt edits do not trigger unnecessary re-indexing.
 
 ---
 
@@ -598,7 +598,7 @@ MCP is read-only in the current implementation. It exposes search/list/inspect t
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
 | Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |
-| Contextual prompt not taking effect | `context_prompt.txt` edited but no reindex run | Run `mrag reindex` to re-augment all chunks with the new prompt |
+| Contextual prompt not taking effect | `context_prompt.txt` edited but `mrag index` has not run | Run `mrag index`; the prompt hash automatically invalidates contextual indexes |
 | `mrag search` results have no `section:` line | `preserve_heading_path` not enabled or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_heading_path: true` in chunking config; run `mrag reindex` |
 | Tables or code blocks split across chunks | `preserve_tables`/`preserve_code_blocks` not enabled, or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_tables: true` + `preserve_code_blocks: true`; run `mrag reindex` |
 | `parent_child` profile validation error | `chunking.strategy` and `retrieval.strategy` must both be `parent_child` | Update the profile so both fields are `parent_child` |

@@ -4,7 +4,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from mrag.config.profile import load_profile
+from mrag.config.profile import load_profile, validate_effective_tokenizer
 from mrag.config.project import load_project_config
 from mrag.db.connection import find_db
 from mrag.db.qdrant import make_client
@@ -35,7 +35,8 @@ def serve(
 
     try:
         prof = load_profile(profile_name, project_dir)
-    except FileNotFoundError as e:
+        validate_effective_tokenizer(prof, config.fts_tokenizer)
+    except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
@@ -79,6 +80,7 @@ def serve(
         profile_name=profile_name,
         config=config,
         reranker=reranker,
+        reranking_allowed=not no_rerank,
     )
 
     rerank_status = "disabled (--no-rerank)" if no_rerank else (

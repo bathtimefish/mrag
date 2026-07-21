@@ -34,6 +34,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
         raise HTTPException(status_code=404, detail=str(e))
 
     try:
+        uses_startup_profile = profile_name == state.profile_name
         run = run_retrieval(
             query=req.query,
             project_dir=state.project_dir,
@@ -41,10 +42,21 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
             profile_name=profile_name,
             strategy=req.strategy,
             top_k=req.top_k,
-            embedding_provider=state.embedding_provider,
+            # The startup provider is valid only for the profile that created
+            # it.  Other profiles must resolve their own model and endpoint.
+            embedding_provider=(
+                state.embedding_provider if uses_startup_profile else None
+            ),
             qdrant_client=state.qdrant_client,
-            reranker=state.reranker,
+            reranker=state.reranker if uses_startup_profile else None,
+            load_reranker=(
+                state.reranking_allowed
+                and (not uses_startup_profile or state.reranker is None)
+            ),
+            no_rerank=not state.reranking_allowed,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except (ConnectionError, RuntimeError) as e:
         raise HTTPException(status_code=503, detail=str(e))
 

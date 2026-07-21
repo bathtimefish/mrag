@@ -70,7 +70,7 @@ Please give a short succinct context to situate this chunk within the overall do
 - The document body is expanded into `{document}` up to the first 8000 characters
 - Edits are picked up from the next `mrag index` run
 
-> `context_prompt.txt` is not part of `profile_hash`. Rewriting the prompt does not trigger automatic re-indexing. **To regenerate the contexts of existing chunks with the new prompt, run `mrag reindex` explicitly.**
+> For contextual profiles, the effective `context_prompt.txt` content hash is part of the index identity. Rewriting the prompt triggers automatic re-indexing on the next ordinary **`mrag index`** run. Profiles using `augmentation.strategy: none` are unaffected.
 
 ### Domain-specific tuning example
 

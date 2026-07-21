@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS embedding_models (
 -- profiles
 -- Populated by: mrag index (on first use or config change)
 -- config_json: canonical JSON of chunking/embedding/retrieval/contextual/rerank settings
--- profile_hash: SHA256 of config_json (used for differential indexing)
+-- profile_hash: versioned SHA256 index identity (used for differential indexing)
 -- ================================================================
 CREATE TABLE IF NOT EXISTS profiles (
   name          TEXT PRIMARY KEY,
@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
 -- document_indexes (differential indexing state)
 -- Populated by: mrag index / mrag reindex
 -- status: pending | indexing | indexed | error
--- profile_hash snapshot at index time (for change detection)
+-- profile_hash index-identity snapshot at index time (for change detection)
 -- ================================================================
 CREATE TABLE IF NOT EXISTS document_indexes (
   id                  TEXT PRIMARY KEY,

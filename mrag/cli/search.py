@@ -116,7 +116,7 @@ def search(
             load_reranker=True,
             warn=lambda msg: out.print(f"[yellow]WARN[/yellow]  {msg}"),
         )
-    except (ConnectionError, RuntimeError, ImportError) as e:
+    except (ConnectionError, RuntimeError, ImportError, ValueError) as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 

@@ -631,8 +631,10 @@ def test_search_command_hybrid_with_mock(indexed_project, monkeypatch):
 
     fake_provider = FakeEmbeddingProvider()
 
-    with patch("mrag.cli.search.OllamaEmbeddingProvider", return_value=fake_provider), \
-         patch("mrag.cli.search.make_client", return_value=mock_qdrant):
+    with patch(
+        "mrag.core.retrieval.runner.OllamaEmbeddingProvider",
+        return_value=fake_provider,
+    ), patch("mrag.core.retrieval.runner.make_client", return_value=mock_qdrant):
         result = runner.invoke(
             app, ["search", "Hello", "--strategy", "hybrid", "--top-k", "3"],
             catch_exceptions=False,

@@ -110,6 +110,46 @@ def test_search_tool_rejects_top_k_above_limit(tmp_path: Path, monkeypatch):
         search_tool(ctx, query="alpha", strategy="keyword", top_k=999)
 
 
+def test_search_tool_resolves_defaults_from_requested_profile(tmp_path: Path, monkeypatch):
+    import yaml
+    import mrag.mcp.tools as tools_module
+
+    ctx = _seed_mcp_project(tmp_path, monkeypatch)
+    default_path = ctx.project_dir / "profiles" / "default.yaml"
+    alternate_path = ctx.project_dir / "profiles" / "alternate.yaml"
+    profile_data = yaml.safe_load(default_path.read_text(encoding="utf-8"))
+    profile_data["name"] = "alternate"
+    profile_data["retrieval"].update({"strategy": "keyword", "top_k": 9})
+    alternate_path.write_text(
+        yaml.safe_dump(profile_data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return type(
+            "Run",
+            (),
+            {
+                "results": [],
+                "profile_name": "alternate",
+                "strategy": "keyword",
+                "reranked": False,
+            },
+        )()
+
+    monkeypatch.setattr(tools_module, "run_retrieval", fake_run_retrieval)
+
+    payload = search_tool(ctx, query="alpha", profile="alternate")
+
+    assert payload["profile"] == "alternate"
+    assert captured["profile_name"] == "alternate"
+    assert captured["strategy"] is None
+    assert captured["top_k"] == 9
+
+
 def test_inspect_document_tool(tmp_path: Path, monkeypatch):
     ctx = _seed_mcp_project(tmp_path, monkeypatch)
 

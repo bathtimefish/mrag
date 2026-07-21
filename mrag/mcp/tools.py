@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from mrag.config.mcp import EffectiveMcpConfig
+from mrag.config.profile import load_profile
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
@@ -113,7 +114,13 @@ def search_tool(
     no_rerank: bool | None = None,
 ) -> dict[str, Any]:
     cfg = ctx.effective.raw
-    resolved_top_k = top_k or ctx.effective.top_k_default
+    resolved_profile = profile or ctx.effective.profile_name
+    selected_profile = load_profile(resolved_profile, ctx.project_dir)
+    resolved_top_k = top_k
+    if resolved_top_k is None:
+        resolved_top_k = cfg.retrieval.top_k_default
+    if resolved_top_k is None:
+        resolved_top_k = selected_profile.retrieval.top_k
     if resolved_top_k > cfg.retrieval.top_k_max:
         raise ValueError(
             f"top_k must be <= retrieval.top_k_max ({cfg.retrieval.top_k_max})"
@@ -122,8 +129,11 @@ def search_tool(
         query=query,
         project_dir=ctx.project_dir,
         config=ctx.effective.project_config,
-        profile_name=profile or ctx.effective.profile_name,
-        strategy=strategy or ctx.effective.retrieval_strategy,
+        profile_name=resolved_profile,
+        # An explicit MCP-wide strategy remains an override. Otherwise let
+        # run_retrieval resolve the selected profile instead of leaking the
+        # startup profile's strategy into an alternate-profile request.
+        strategy=strategy or cfg.retrieval.strategy,
         top_k=resolved_top_k,
         no_rerank=cfg.retrieval.no_rerank if no_rerank is None else no_rerank,
         load_reranker=True,

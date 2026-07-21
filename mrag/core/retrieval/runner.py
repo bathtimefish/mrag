@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from mrag.config.profile import ProfileConfig, load_profile
+from mrag.config.profile import (
+    ProfileConfig,
+    load_profile,
+    validate_effective_tokenizer,
+)
 from mrag.config.project import ProjectConfig
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
@@ -80,7 +84,7 @@ def run_retrieval(
     profile = load_profile(resolved_profile_name, project_dir)
     db_path = find_db(project_dir)
     resolved_strategy = strategy or profile.retrieval.strategy
-    tokenizer = config.fts_tokenizer
+    tokenizer = validate_effective_tokenizer(profile, config.fts_tokenizer)
 
     active_reranker = reranker
     if active_reranker is None and load_reranker and profile.rerank.enabled and not no_rerank:

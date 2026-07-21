@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from mrag.config.profile import ProfileConfig
+from mrag.config.profile import ProfileConfig, validate_effective_tokenizer
 
 
 class TestParentChildValidation:
@@ -117,8 +117,97 @@ class TestRetrievalFusionValidation:
         with pytest.raises(ValidationError, match="positive value"):
             ProfileConfig(name="bad", retrieval={"fusion": "weighted", "weights": [0.0, 0.0]})
 
+    @pytest.mark.parametrize("weights", [[-0.1, 1.1], [float("nan"), 1.0], [float("inf"), 1.0]])
+    def test_weights_negative_or_nonfinite_raise(self, weights):
+        with pytest.raises(ValidationError, match="finite and non-negative"):
+            ProfileConfig(name="bad", retrieval={"fusion": "weighted", "weights": weights})
+
+    @pytest.mark.parametrize(
+        "retrieval",
+        [
+            {"top_k": 0},
+            {"strategy": "hybrid", "top_k": 8, "dense_top_k": 7},
+            {"strategy": "hybrid", "top_k": 8, "keyword_top_k": 7},
+        ],
+    )
+    def test_candidate_limits_are_validated(self, retrieval):
+        with pytest.raises(ValidationError):
+            ProfileConfig(name="bad", retrieval=retrieval)
+
     def test_weights_excluded_from_profile_hash(self):
         """Changing weights should not invalidate the index (retrieval-time only)."""
         a = ProfileConfig(name="a", retrieval={"fusion": "weighted", "weights": [0.5, 0.5]})
         b = ProfileConfig(name="a", retrieval={"fusion": "weighted", "weights": [0.9, 0.1]})
         assert a.compute_hash() == b.compute_hash()
+
+
+class TestIndexIdentity:
+    def test_all_query_time_retrieval_fields_are_excluded(self):
+        baseline = ProfileConfig(name="same")
+        tuned = ProfileConfig(
+            name="same",
+            retrieval={
+                "strategy": "hybrid",
+                "top_k": 12,
+                "dense_top_k": 60,
+                "keyword_top_k": 70,
+                "fusion": "weighted",
+                "weights": [0.8, 0.2],
+            },
+        )
+
+        assert baseline.compute_hash() == tuned.compute_hash()
+        assert baseline.compute_config_hash() != tuned.compute_config_hash()
+
+    def test_embedding_cache_is_excluded_but_endpoint_remains_conservative(self):
+        baseline = ProfileConfig(name="same")
+        cached = ProfileConfig(name="same", embedding={"cache": {"enabled": True}})
+        remote = ProfileConfig(
+            name="same",
+            embedding={"endpoint": "http://other-host:11434"},
+        )
+
+        assert baseline.compute_hash() == cached.compute_hash()
+        assert baseline.compute_hash() != remote.compute_hash()
+
+    def test_context_prompt_changes_identity_only_when_contextual(self):
+        raw = ProfileConfig(name="raw")
+        assert raw.compute_hash(context_prompt="prompt-a") == raw.compute_hash(
+            context_prompt="prompt-b"
+        )
+
+        contextual = ProfileConfig(
+            name="contextual",
+            augmentation={"strategy": "contextual"},
+        )
+        assert contextual.compute_hash(context_prompt="prompt-a") != contextual.compute_hash(
+            context_prompt="prompt-b"
+        )
+
+    def test_unused_augmentation_runtime_values_are_excluded(self):
+        baseline = ProfileConfig(name="raw")
+        unused = ProfileConfig(
+            name="raw",
+            augmentation={
+                "strategy": "none",
+                "model": "unused-model",
+                "endpoint": "http://unused-host:11434",
+            },
+        )
+
+        assert baseline.compute_hash() == unused.compute_hash()
+
+    def test_effective_tokenizer_participates_in_identity(self):
+        profile = ProfileConfig(name="same")
+
+        assert profile.compute_hash(effective_tokenizer="trigram") != profile.compute_hash(
+            effective_tokenizer="vaporetto"
+        )
+
+    def test_project_and_profile_tokenizer_must_match(self):
+        profile = ProfileConfig(name="same", keyword={"tokenizer": "vaporetto"})
+
+        with pytest.raises(ValueError, match="Tokenizer mismatch"):
+            validate_effective_tokenizer(profile, "trigram")
+
+        assert validate_effective_tokenizer(profile, "vaporetto") == "vaporetto"
