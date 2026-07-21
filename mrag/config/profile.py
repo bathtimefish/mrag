@@ -1,10 +1,18 @@
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
+
+
+# Bump whenever index-producing semantics change without a corresponding
+# profile field change.  Version 2 separates index identity from query-time
+# tuning and includes the effective contextual prompt and tokenizer.
+INDEX_IDENTITY_VERSION = 2
+TEXT_NORMALIZATION_IDENTITY = "NFKC-v1"
 
 
 class ParentConfig(BaseModel):
@@ -49,9 +57,9 @@ class ChunkingConfig(BaseModel):
 
 class RetrievalConfig(BaseModel):
     strategy: str = "hybrid"
-    top_k: int = 8
-    dense_top_k: int = 20
-    keyword_top_k: int = 20
+    top_k: int = Field(default=8, ge=1)
+    dense_top_k: int = Field(default=20, ge=1)
+    keyword_top_k: int = Field(default=20, ge=1)
     fusion: Literal["rrf", "weighted"] = "rrf"
     weights: list[float] | None = None
     """When ``fusion='weighted'``, the fusion weight for each retrieval list in
@@ -67,8 +75,20 @@ class RetrievalConfig(BaseModel):
                 "retrieval.weights must have exactly 2 elements [vector, keyword]; "
                 f"got {len(self.weights)}"
             )
+        if any(not math.isfinite(weight) or weight < 0 for weight in self.weights):
+            raise ValueError("retrieval.weights must be finite and non-negative")
         if sum(self.weights) <= 0:
             raise ValueError("retrieval.weights must sum to a positive value")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_candidate_limits(self) -> "RetrievalConfig":
+        if self.strategy in {"vector", "hybrid", "parent_child"}:
+            if self.dense_top_k < self.top_k:
+                raise ValueError("retrieval.dense_top_k must be >= retrieval.top_k")
+        if self.strategy in {"keyword", "hybrid", "parent_child"}:
+            if self.keyword_top_k < self.top_k:
+                raise ValueError("retrieval.keyword_top_k must be >= retrieval.top_k")
         return self
 
 
@@ -160,22 +180,91 @@ class ProfileConfig(BaseModel):
             )
         return self
 
-    def compute_hash(self) -> str:
-        """SHA256 of index-affecting fields, used for differential indexing.
+    def compute_hash(
+        self,
+        *,
+        context_prompt: str | None = None,
+        effective_tokenizer: str | None = None,
+    ) -> str:
+        """Return the versioned index identity used for differential indexing.
 
-        rerank is intentionally excluded: it is applied at retrieval time and
-        does not affect stored chunks, embeddings, or FTS5 data.
+        Query-time retrieval and rerank settings are intentionally excluded.
+        The endpoint remains included as a conservative proxy until Ollama's
+        immutable model digest is recorded.  For contextual augmentation, the
+        exact effective prompt content participates in the identity.
         """
+        tokenizer = effective_tokenizer or self.keyword.tokenizer
+        augmentation: dict = {"strategy": self.augmentation.strategy}
+        if self.augmentation.strategy == "contextual":
+            if context_prompt is None:
+                from mrag.core.indexing.context_prompt_template import (
+                    DEFAULT_CONTEXT_PROMPT_TEMPLATE,
+                )
+
+                context_prompt = DEFAULT_CONTEXT_PROMPT_TEMPLATE
+            augmentation.update(
+                {
+                    "provider": self.augmentation.provider,
+                    "model": self.augmentation.model,
+                    "endpoint": self.augmentation.endpoint,
+                    "context_prompt_hash": hashlib.sha256(
+                        context_prompt.encode("utf-8")
+                    ).hexdigest(),
+                }
+            )
+
         relevant = {
+            "index_identity_version": INDEX_IDENTITY_VERSION,
             "chunking": self.chunking.model_dump(),
-            "embedding": self.embedding.model_dump(exclude={"retry", "failure_policy"}),
-            # weights is retrieval-time only and does not affect what is indexed.
-            "retrieval": self.retrieval.model_dump(exclude={"weights"}),
-            "augmentation": self.augmentation.model_dump(exclude={"retry", "failure_policy"}),
-            "keyword": self.keyword.model_dump(),
+            "embedding": self.embedding.model_dump(
+                exclude={"cache", "retry", "failure_policy"}
+            ),
+            "augmentation": augmentation,
+            "keyword": {
+                "provider": self.keyword.provider,
+                "tokenizer": tokenizer,
+            },
+            "text_normalization": TEXT_NORMALIZATION_IDENTITY,
         }
         canonical = json.dumps(relevant, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def compute_config_hash(self) -> str:
+        """Return a deterministic hash of all non-name profile settings.
+
+        This audit hash is deliberately separate from :meth:`compute_hash`;
+        changing it does not imply that stored index artifacts are stale.
+        """
+        canonical = json.dumps(
+            self.model_dump(exclude={"name"}),
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def validate_effective_tokenizer(
+    profile: ProfileConfig,
+    project_tokenizer: str,
+) -> str:
+    """Return the project tokenizer after rejecting misleading profile drift.
+
+    The current OSS schema has one FTS5 table whose tokenizer is fixed by
+    ``mrag init``.  Per-profile tokenizers therefore cannot be honored safely
+    without a database migration.
+    """
+    if (
+        "tokenizer" in profile.keyword.model_fields_set
+        and profile.keyword.tokenizer != project_tokenizer
+    ):
+        raise ValueError(
+            "Tokenizer mismatch: mrag.yaml fts_tokenizer "
+            f"({project_tokenizer!r}) must match profile keyword.tokenizer "
+            f"({profile.keyword.tokenizer!r}). The project tokenizer is fixed "
+            "when the FTS5 table is created; restore matching values before "
+            "indexing or searching."
+        )
+    return project_tokenizer
 
 
 def load_profile(profile_name: str, project_dir: Path | None = None) -> ProfileConfig:

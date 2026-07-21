@@ -70,7 +70,7 @@ Please give a short succinct context to situate this chunk within the overall do
 - ドキュメント本文は冒頭 8000 文字までが `{document}` に展開されます
 - 編集後は次回 `mrag index` 実行時から新プロンプトが使われます
 
-> `context_prompt.txt` は `profile_hash` の対象外です。プロンプトを書き換えても自動再インデックスは走りません。**既存チャンクを新プロンプトで再生成したい場合は `mrag reindex` を明示的に実行してください**。
+> contextual profileでは、有効な`context_prompt.txt`のcontent hashがindex identityに含まれます。プロンプトを書き換えると、次回の通常の **`mrag index`** で自動的に再インデックスされます。`augmentation.strategy: none`のprofileは影響を受けません。
 
 ### ドメイン特化のチューニング例
 
@@ -147,4 +147,3 @@ embedding:
 - 検索戦略との関係：コンテキスチュアル拡張は `vector` および `hybrid` のベクター段の品質に効きます。`keyword` 単独や `parent_child` のキーワード段は変わりません（→ [retrieval-strategies-ja.md](./retrieval-strategies-ja.md)）
 - チャンキング戦略との関係：拡張処理はチャンキング後に各チャンクへ適用されるため、どのチャンキング戦略とも組み合わせられます（→ [chunking-strategies-ja.md](./chunking-strategies-ja.md)）
 - `parent_child` プロファイルでは `augmentation.strategy: none` を推奨します。親チャンクで広い文脈を返すため、コンテキスト前置の効果が薄いケースが多いためです。
-

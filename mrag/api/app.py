@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from mrag.api.routers.dify import DifyError
 from mrag.api.routers.dify import router as dify_router
 from mrag.api.routers.native import router as native_router
-from mrag.config.profile import load_profile
+from mrag.config.profile import load_profile, validate_effective_tokenizer
 from mrag.config.project import ProjectConfig
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
@@ -25,11 +25,13 @@ def create_app(
     _embedding_provider: BaseEmbeddingProvider | None = None,
     _qdrant_client=None,
     reranker=None,
+    reranking_allowed: bool = True,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         db_path = find_db(project_dir)
         prof = load_profile(profile_name, project_dir)
+        validate_effective_tokenizer(prof, config.fts_tokenizer)
 
         if _embedding_provider is not None:
             provider = _embedding_provider
@@ -67,6 +69,7 @@ def create_app(
         app.state.qdrant_client = qdrant
         app.state.col_name = col
         app.state.reranker = reranker
+        app.state.reranking_allowed = reranking_allowed
 
         yield
 

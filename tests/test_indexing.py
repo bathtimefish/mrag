@@ -391,6 +391,84 @@ def test_pipeline_idempotent_skips_second_run(tmp_path: Path, sample_txt: Path):
     assert result2.errors == []
 
 
+def test_query_time_profile_change_does_not_reindex(tmp_path: Path, sample_txt: Path):
+    """Candidate and fusion tuning must reuse the existing index artifacts."""
+    import yaml
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, sample_txt)
+
+        from mrag.config.project import load_project_config
+
+        config = load_project_config(project_dir)
+        provider = FakeEmbeddingProvider()
+        qdrant = _fake_qdrant_client()
+        run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=provider,
+            qdrant_client=qdrant,
+        )
+
+        profile_path = project_dir / "profiles" / "default.yaml"
+        profile_data = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        profile_data["retrieval"].update(
+            {
+                "top_k": 12,
+                "dense_top_k": 60,
+                "keyword_top_k": 70,
+                "fusion": "weighted",
+                "weights": [0.8, 0.2],
+            }
+        )
+        profile_path.write_text(
+            yaml.safe_dump(profile_data, sort_keys=False),
+            encoding="utf-8",
+        )
+
+        result = run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=provider,
+            qdrant_client=qdrant,
+        )
+
+    assert result.indexed == 0
+    assert result.skipped == 1
+
+
+def test_pipeline_rejects_project_profile_tokenizer_mismatch(
+    tmp_path: Path,
+    sample_txt: Path,
+):
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, sample_txt)
+
+        from mrag.config.project import load_project_config
+
+        config = load_project_config(project_dir)
+        config.fts_tokenizer = (
+            "trigram" if config.fts_tokenizer == "vaporetto" else "vaporetto"
+        )
+
+        with pytest.raises(ValueError, match="Tokenizer mismatch"):
+            run_index(
+                project_dir=project_dir,
+                config=config,
+                profile_name="default",
+                embedding_provider=FakeEmbeddingProvider(),
+                qdrant_client=_fake_qdrant_client(),
+            )
+
+
 def test_pipeline_no_documents_returns_empty(tmp_path: Path):
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
@@ -471,6 +549,36 @@ def test_cleanup_profile_index_removes_data(tmp_path: Path, sample_txt: Path):
     assert variants == 0
     assert indexes == 0
     assert fts_rows == 0
+
+
+def test_cleanup_rejects_tokenizer_mismatch_before_deleting(
+    tmp_path: Path,
+    sample_txt: Path,
+):
+    _, db = _run_pipeline(tmp_path, sample_txt)
+    project_dir = tmp_path / "test-kb"
+
+    from mrag.config.project import load_project_config
+
+    config = load_project_config(project_dir)
+    config.fts_tokenizer = (
+        "trigram" if config.fts_tokenizer == "vaporetto" else "vaporetto"
+    )
+    conn = open_connection(db)
+    before = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    conn.close()
+
+    with pytest.raises(ValueError, match="Tokenizer mismatch"):
+        cleanup_profile_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+        )
+
+    conn = open_connection(db)
+    after = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    conn.close()
+    assert after == before
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +883,7 @@ def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample
     """When profiles/context_prompt.txt exists, its content is used as the prompt template."""
     from unittest.mock import patch
     from mrag.config.project import load_project_config
-    from mrag.config.profile import ProfileConfig
+    from mrag.config.profile import ProfileConfig, load_profile
     from mrag.db.connection import db_connection
     import yaml
     import uuid as _uuid
@@ -824,7 +932,8 @@ def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample
         captured_templates.append(prompt_template)
         return "context"
 
-    with patch("mrag.core.indexing.augmentation.generate_context", side_effect=fake_generate):
+    with patch("mrag.core.indexing.augmentation.generate_context", side_effect=fake_generate), \
+         patch("mrag.core.ollama_client.probe_connection"):
         run_index(
             project_dir=project_dir,
             config=config,
@@ -835,6 +944,43 @@ def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample
 
     assert captured_templates, "generate_context was not called"
     assert all(t == custom_template for t in captured_templates)
+
+    profile = load_profile("default", project_dir)
+    conn = open_connection(db_path)
+    first_hash = conn.execute(
+        "SELECT profile_hash FROM profiles WHERE name='default'"
+    ).fetchone()[0]
+    conn.close()
+    assert first_hash == profile.compute_hash(
+        context_prompt=custom_template,
+        effective_tokenizer=config.fts_tokenizer,
+    )
+
+    changed_template = "Changed prompt: doc={document} chunk={chunk}"
+    (project_dir / "profiles" / "context_prompt.txt").write_text(
+        changed_template,
+        encoding="utf-8",
+    )
+    captured_templates.clear()
+    with patch("mrag.core.indexing.augmentation.generate_context", side_effect=fake_generate), \
+         patch("mrag.core.ollama_client.probe_connection"):
+        result = run_index(
+            project_dir=project_dir,
+            config=config,
+            profile_name="default",
+            embedding_provider=FakeEmbeddingProvider(),
+            qdrant_client=_fake_qdrant_client(),
+        )
+
+    assert result.indexed == 1
+    assert captured_templates
+    assert all(t == changed_template for t in captured_templates)
+    conn = open_connection(db_path)
+    changed_hash = conn.execute(
+        "SELECT profile_hash FROM profiles WHERE name='default'"
+    ).fetchone()[0]
+    conn.close()
+    assert changed_hash != first_hash
 
 
 def test_init_creates_context_prompt_file(tmp_path: Path):
@@ -870,20 +1016,23 @@ def _run_pc_pipeline(tmp_path: Path, text: str) -> tuple[Path, Path]:
         project_dir = tmp_path / "pc-kb"
         mp.chdir(project_dir)
 
+        from mrag.config.project import load_project_config
+
+        config = load_project_config(project_dir)
+
         # Write a parent_child profile
         profile_data = ProfileConfig(name="pc").model_dump()
         profile_data["chunking"]["strategy"] = "parent_child"
         profile_data["chunking"]["parent"] = {"strategy": "fixed_size", "max_chars": 200}
         profile_data["chunking"]["child"] = {"strategy": "recursive", "chunk_size": 60, "overlap": 10}
         profile_data["retrieval"]["strategy"] = "parent_child"
+        profile_data["keyword"]["tokenizer"] = config.fts_tokenizer
         (project_dir / "profiles" / "pc.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
 
         doc_file = tmp_path / "pc_doc.txt"
         doc_file.write_text(text, encoding="utf-8")
         _add_document(project_dir, doc_file)
 
-        from mrag.config.project import load_project_config
-        config = load_project_config(project_dir)
         provider = FakeEmbeddingProvider()
         qdrant = _fake_qdrant_client()
 
@@ -990,19 +1139,22 @@ def test_pc_pipeline_indexed_count_excludes_parents(tmp_path: Path):
         project_dir = tmp_path / "pc-kb2"
         mp.chdir(project_dir)
 
+        from mrag.config.project import load_project_config
+
+        config = load_project_config(project_dir)
+
         profile_data = ProfileConfig(name="pc").model_dump()
         profile_data["chunking"]["strategy"] = "parent_child"
         profile_data["chunking"]["parent"] = {"strategy": "fixed_size", "max_chars": 200}
         profile_data["chunking"]["child"] = {"strategy": "recursive", "chunk_size": 60, "overlap": 10}
         profile_data["retrieval"]["strategy"] = "parent_child"
+        profile_data["keyword"]["tokenizer"] = config.fts_tokenizer
         (project_dir / "profiles" / "pc.yaml").write_text(yaml.dump(profile_data), encoding="utf-8")
 
         doc_file = tmp_path / "pc_doc2.txt"
         doc_file.write_text(text, encoding="utf-8")
         _add_document(project_dir, doc_file)
 
-        from mrag.config.project import load_project_config
-        config = load_project_config(project_dir)
         provider = FakeEmbeddingProvider()
         qdrant = _fake_qdrant_client()
 

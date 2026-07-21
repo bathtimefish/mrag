@@ -36,7 +36,7 @@ def reindex(
 
     try:
         cleanup_profile_index(project_dir=project_dir, config=config, profile_name=profile_name)
-    except (FileNotFoundError, ConnectionError) as e:
+    except (FileNotFoundError, ConnectionError, ValueError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
@@ -50,7 +50,7 @@ def reindex(
             skip_document_ids=skip_ids or None,
             console=console,
         )
-    except (FileNotFoundError, ConnectionError) as e:
+    except (FileNotFoundError, ConnectionError, ValueError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 

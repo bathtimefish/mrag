@@ -7,7 +7,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from mrag.config.profile import load_profile
+from mrag.config.profile import load_profile, validate_effective_tokenizer
 from mrag.config.project import load_project_config
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.retrieval.base import RetrievalResult
@@ -32,7 +32,7 @@ def _run_search(
     prof = load_profile(profile_name, project_dir)
     db_path = find_db(project_dir)
     retrieval_strategy = strategy or prof.retrieval.strategy
-    tokenizer = config.fts_tokenizer
+    tokenizer = validate_effective_tokenizer(prof, config.fts_tokenizer)
 
     use_rerank = prof.rerank.enabled and not no_rerank
     retrieval_top_k = prof.rerank.top_n if use_rerank else top_k
@@ -329,7 +329,7 @@ def eval_cmd(
                 strategy=strategy,
                 no_rerank=no_rerank,
             )
-        except (ConnectionError, RuntimeError, ImportError) as e:
+        except (ConnectionError, RuntimeError, ImportError, ValueError) as e:
             console.print(f"[red]Error[/red] (profile={p}): {e}")
             raise typer.Exit(1)
         profile_results[p] = (results, used_strategy, reranked)

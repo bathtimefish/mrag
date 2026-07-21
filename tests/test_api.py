@@ -122,6 +122,49 @@ def test_retrieve_unknown_profile(api_client):
     assert resp.status_code == 404
 
 
+def test_retrieve_alternate_profile_does_not_reuse_startup_provider(
+    api_client,
+    monkeypatch,
+):
+    """A request profile must resolve its own embedding and rerank providers."""
+    import yaml
+    import mrag.api.routers.native as native_router
+
+    default_path = api_client.tmp_path / "profiles" / "default.yaml"
+    alternate_path = api_client.tmp_path / "profiles" / "alternate.yaml"
+    profile_data = yaml.safe_load(default_path.read_text(encoding="utf-8"))
+    profile_data["name"] = "alternate"
+    profile_data["embedding"]["model"] = "alternate-model"
+    alternate_path.write_text(
+        yaml.safe_dump(profile_data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            results=[],
+            profile_name="alternate",
+            strategy="hybrid",
+            reranked=False,
+        )
+
+    monkeypatch.setattr(native_router, "run_retrieval", fake_run_retrieval)
+
+    response = api_client.client.post(
+        "/api/v1/retrieve",
+        json={"query": "Hello", "profile": "alternate"},
+    )
+
+    assert response.status_code == 200
+    assert captured["profile_name"] == "alternate"
+    assert captured["embedding_provider"] is None
+    assert captured["reranker"] is None
+    assert captured["load_reranker"] is True
+
+
 # ---------------------------------------------------------------------------
 # GET /api/v1/documents
 # ---------------------------------------------------------------------------

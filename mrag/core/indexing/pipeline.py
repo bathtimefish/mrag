@@ -6,13 +6,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from mrag.config.profile import ProfileConfig, load_profile
+from mrag.config.profile import (
+    ProfileConfig,
+    load_profile,
+    validate_effective_tokenizer,
+)
 from mrag.config.project import ProjectConfig
 from mrag.core.chunking.base import ChunkData, get_chunker
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.indexing.diff import plan_indexing
 from mrag.core.indexing.embedding_fallback import embed_with_fallback
+from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.qdrant import collection_name, delete_points, ensure_collection, make_client, upsert_points
@@ -35,12 +40,12 @@ def _now_ts() -> str:
     return datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 
-def _load_context_prompt(project_dir: Path) -> str | None:
-    """Read profiles/context_prompt.txt if it exists; return None to use the built-in default."""
+def _load_context_prompt(project_dir: Path) -> str:
+    """Read the effective prompt once so one index run uses one identity."""
     prompt_path = project_dir / "profiles" / "context_prompt.txt"
     if prompt_path.exists():
         return prompt_path.read_text(encoding="utf-8")
-    return None
+    return DEFAULT_CONTEXT_PROMPT_TEMPLATE
 
 
 @dataclass
@@ -278,6 +283,7 @@ def _index_document(
     col_name: str,
     use_cache: bool,
     cache_dir: Path,
+    context_prompt: str,
     tokenizer: str = "trigram",
     on_doc_start: Callable[[int], None] | None = None,
     on_chunk_augmented: Callable[[int, int], None] | None = None,
@@ -339,14 +345,13 @@ def _index_document(
 
     if profile.augmentation.strategy == "contextual":
         from mrag.core.indexing.augmentation import augment_chunks
-        prompt_template = _load_context_prompt(project_dir)
 
         def _capture_fallback(cur: int, total: int, exc: Exception) -> None:
             fallback_errors[cur - 1] = str(exc)[:200]
             if on_chunk_fallback is not None:
                 on_chunk_fallback(cur, total, exc)
 
-        ctx_list = augment_chunks(indexable_chunks, text, profile.augmentation, prompt_template,
+        ctx_list = augment_chunks(indexable_chunks, text, profile.augmentation, context_prompt,
                                   on_chunk=on_chunk_augmented,
                                   on_chunk_retry=on_chunk_retry,
                                   on_chunk_fallback=_capture_fallback)
@@ -533,7 +538,16 @@ def run_index(
 ) -> IndexResult:
     db_path = find_db(project_dir)
     profile = load_profile(profile_name, project_dir)
-    profile_hash = profile.compute_hash()
+    tokenizer = validate_effective_tokenizer(profile, config.fts_tokenizer)
+    context_prompt = (
+        _load_context_prompt(project_dir)
+        if profile.augmentation.strategy == "contextual"
+        else DEFAULT_CONTEXT_PROMPT_TEMPLATE
+    )
+    profile_hash = profile.compute_hash(
+        context_prompt=context_prompt,
+        effective_tokenizer=tokenizer,
+    )
 
     _upsert_profile(db_path, profile, config.knowledge_id, profile_hash)
 
@@ -612,8 +626,6 @@ def run_index(
 
     use_cache = profile.embedding.cache.enabled
     cache_dir = project_dir / "cache" / "embeddings"
-
-    tokenizer = config.fts_tokenizer
 
     n = len(docs_to_index)
     for idx, (doc, reason) in enumerate(docs_to_index, 1):
@@ -703,6 +715,7 @@ def run_index(
                 col_name=col_name,
                 use_cache=use_cache,
                 cache_dir=cache_dir,
+                context_prompt=context_prompt,
                 tokenizer=tokenizer,
                 on_doc_start=on_doc_start,
                 on_chunk_augmented=on_chunk_augmented,
@@ -755,6 +768,8 @@ def cleanup_profile_index(
     qdrant_client=None,
 ) -> None:
     """Delete all index data for a profile (used by mrag reindex)."""
+    profile = load_profile(profile_name, project_dir)
+    validate_effective_tokenizer(profile, config.fts_tokenizer)
     db_path = find_db(project_dir)
 
     conn = open_connection(db_path)
