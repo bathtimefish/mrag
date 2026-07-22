@@ -76,6 +76,7 @@ ollama pull bge-m3
 mrag init my-kb --non-interactive
 cd my-kb
 mrag add /path/to/report.pdf
+mrag add /path/to/documents --recursive --include '**/*.md'
 mrag index
 mrag search "クエリ"
 ```
@@ -88,7 +89,7 @@ mrag search "クエリ"
 | コマンド | 役割 |
 |---|---|
 | `mrag init [PROJECT_DIR]` | プロジェクトを初期化する |
-| `mrag add <file>` | ドキュメントを追加する（PDF / Markdown / テキスト） |
+| `mrag add <path>` | 単一ドキュメント、または `--recursive` でディレクトリを追加する |
 | `mrag index` | インデックスを構築する |
 | `mrag reindex` | インデックスを再構築する |
 | `mrag search <query>` | 検索する |
@@ -106,6 +107,12 @@ mrag search "クエリ"
 | `mrag doctor` | 環境をチェックする |
 
 各コマンドの詳細なオプションは `mrag <command> --help` で確認できます。
+
+ディレクトリ追加は `--recursive` を明示した場合だけ有効で、安定した相対パス順に処理します。
+repeatable な `--include` / `--exclude` glob、`!` 否定を含むルート
+`.mragignore`、`--hidden`、cycle を防止する `--follow-symlinks`、`--dry-run`、
+`--strict`、`--json`、および `--converter-jobs` による PDF/extractor の bounded
+並列処理をサポートします。project の `data/` と同一 symlink target は再取り込みしません。
 
 
 ## ドキュメント

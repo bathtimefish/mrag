@@ -75,6 +75,7 @@ Four commands are all it takes to create a KB and search it:
 mrag init my-kb --non-interactive
 cd my-kb
 mrag add /path/to/report.pdf
+mrag add /path/to/documents --recursive --include '**/*.md'
 mrag index
 mrag search "your query"
 ```
@@ -87,7 +88,7 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | Command | Role |
 |---|---|
 | `mrag init [PROJECT_DIR]` | Initialize a project |
-| `mrag add <file>` | Add a document (PDF / Markdown / text) |
+| `mrag add <path>` | Add one document, or a directory with `--recursive` |
 | `mrag index` | Build the index |
 | `mrag reindex` | Rebuild the index |
 | `mrag search <query>` | Run a search |
@@ -105,6 +106,12 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | `mrag doctor` | Check the environment |
 
 Run `mrag <command> --help` for the full set of options.
+
+Recursive add is opt-in and processes files in stable relative-path order. It
+supports repeatable `--include` / `--exclude` globs, a root `.mragignore` with
+`!` negation, `--hidden`, cycle-safe `--follow-symlinks`, `--dry-run`,
+`--strict`, `--json`, and bounded PDF/extractor work via `--converter-jobs`.
+The project `data/` subtree and duplicate symlink targets are never re-ingested.
 
 
 ## Documentation
