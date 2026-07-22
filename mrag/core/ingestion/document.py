@@ -2,12 +2,14 @@ import hashlib
 import json
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from mrag.config.project import ProjectConfig
 from mrag.db.connection import db_connection, find_db
 from mrag.extractors import detect_source_type, get_extractor
+from mrag.extractors.base import ExtractionResult
 
 
 def _sha256(data: bytes | str) -> str:
@@ -34,6 +36,50 @@ def find_duplicate(file_hash: str, db_path: Path) -> str | None:
         conn.close()
 
 
+class DuplicateDocumentError(FileExistsError):
+    """A content-identical document is already registered."""
+
+    def __init__(self, document_id: str) -> None:
+        self.document_id = document_id
+        super().__init__(
+            f"Document already exists (id={document_id}). Use --force to re-add."
+        )
+
+
+@dataclass(frozen=True)
+class PreparedDocument:
+    file_path: Path
+    file_hash: str
+    source_type: str
+    provider: str | None
+    extraction: ExtractionResult
+
+
+def hash_document(file_path: Path) -> str:
+    return _sha256(file_path.read_bytes())
+
+
+def prepare_document(
+    file_path: Path,
+    config: ProjectConfig,
+    extractor_override: str | None = None,
+    file_hash: str | None = None,
+) -> PreparedDocument:
+    """Read and extract one source without changing project state."""
+    source_type = detect_source_type(file_path)
+    provider = extractor_override or (
+        config.default_extraction.pdf.provider if source_type == "pdf" else None
+    )
+    extractor = get_extractor(source_type, provider)
+    return PreparedDocument(
+        file_path=file_path,
+        file_hash=file_hash or hash_document(file_path),
+        source_type=source_type,
+        provider=provider,
+        extraction=extractor.extract(file_path),
+    )
+
+
 def add_document(
     file_path: Path,
     project_dir: Path,
@@ -48,22 +94,46 @@ def add_document(
     Raises FileExistsError if the same file_hash is already registered and force=False.
     """
     db_path = find_db(project_dir)
-    file_hash = _sha256(file_path.read_bytes())
+    file_hash = hash_document(file_path)
 
     existing_id = find_duplicate(file_hash, db_path)
     if existing_id and not force:
-        raise FileExistsError(
-            f"Document already exists (id={existing_id}). "
-            "Use --force to re-add."
-        )
-
-    source_type = detect_source_type(file_path)
-    provider = extractor_override or (
-        config.default_extraction.pdf.provider if source_type == "pdf" else None
+        raise DuplicateDocumentError(existing_id)
+    prepared = prepare_document(
+        file_path,
+        config,
+        extractor_override,
+        file_hash=file_hash,
+    )
+    return persist_prepared_document(
+        prepared,
+        project_dir,
+        config,
+        existing_id=existing_id,
+        force=force,
     )
 
-    extractor = get_extractor(source_type, provider)
-    result = extractor.extract(file_path)
+
+def persist_prepared_document(
+    prepared: PreparedDocument,
+    project_dir: Path,
+    config: ProjectConfig,
+    *,
+    existing_id: str | None = None,
+    force: bool = False,
+) -> tuple[str, list[str]]:
+    """Persist a prepared extraction; callers serialize this write boundary."""
+    db_path = find_db(project_dir)
+    file_path = prepared.file_path
+    file_hash = prepared.file_hash
+    source_type = prepared.source_type
+    provider = prepared.provider
+    result = prepared.extraction
+    registered_id = find_duplicate(file_hash, db_path)
+    if registered_id and not force:
+        raise DuplicateDocumentError(registered_id)
+    if registered_id:
+        existing_id = registered_id
 
     # Reuse existing_id on force so INSERT OR REPLACE hits the PK and replaces the row.
     document_id = existing_id if (existing_id and force) else str(uuid.uuid4())

@@ -50,6 +50,12 @@ class PyMuPDFExtractor(BaseExtractor):
     def extract(self, file_path: Path) -> ExtractionResult:
         import fitz
 
+        # PyMuPDF otherwise prints an optional-package recommendation to stdout
+        # on the first table analysis, which would corrupt `mrag add --json`.
+        no_recommend_layout = getattr(fitz, "no_recommend_layout", None)
+        if no_recommend_layout is not None:
+            no_recommend_layout()
+
         doc = fitz.open(str(file_path))
         page_texts: list[str] = []
         page_markdowns: list[str] = []

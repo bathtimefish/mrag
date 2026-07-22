@@ -21,9 +21,24 @@ def fetch_chunks(db_path: Path, chunk_ids: list[str]) -> dict[str, dict]:
     conn = open_connection(db_path)
     try:
         placeholders = ",".join("?" * len(chunk_ids))
-        rows = conn.execute(
-            f"SELECT * FROM chunks WHERE id IN ({placeholders})", chunk_ids
-        ).fetchall()
+        from mrag.db.exclusions import exclusions_schema_exists
+
+        if exclusions_schema_exists(conn):
+            rows = conn.execute(
+                f"""SELECT c.* FROM chunks c
+                    WHERE c.id IN ({placeholders})
+                      AND NOT EXISTS (
+                        SELECT 1 FROM document_exclusions e
+                        WHERE e.document_id = c.document_id
+                          AND e.revoked_at IS NULL
+                          AND (e.profile_name IS NULL OR e.profile_name = c.profile_name)
+                      )""",
+                chunk_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT * FROM chunks WHERE id IN ({placeholders})", chunk_ids
+            ).fetchall()
         return {dict(r)["id"]: dict(r) for r in rows}
     finally:
         conn.close()

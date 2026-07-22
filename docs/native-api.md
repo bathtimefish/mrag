@@ -99,6 +99,11 @@ Field semantics:
 - **`results[].score`** — The retrieval strategy's native score (when reranking is enabled, this is replaced by the CrossEncoder output. **No `[0, 1]` normalization is applied here, unlike the Dify API**).
 - **`results[].metadata.retrieval_score`** — Present only when reranking is enabled. The score before reranking (→ [reranking.md](./reranking.md)).
 
+Active document exclusions are enforced for every strategy before results are
+returned. Because an exclusion retains the source document, the same document
+continues to appear in `GET /api/v1/documents` even though retrieval suppresses
+all of its chunks. See [document retrieval exclusions](./document-exclusions.md).
+
 
 ## `GET /api/v1/documents` — document list / detail
 

@@ -28,6 +28,17 @@ def delete_by_document(
     )
 
 
+def delete_document_all_profiles(
+    conn: sqlite3.Connection,
+    knowledge_id: str,
+    document_id: str,
+) -> None:
+    conn.execute(
+        "DELETE FROM fts_chunks WHERE knowledge_id=? AND document_id=?",
+        (knowledge_id, document_id),
+    )
+
+
 def delete_by_profile(
     conn: sqlite3.Connection,
     knowledge_id: str,

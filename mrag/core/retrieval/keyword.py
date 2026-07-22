@@ -3,6 +3,7 @@ from pathlib import Path
 
 from mrag.core.retrieval.base import RetrievalResult, fetch_chunk_metadata, fetch_chunks
 from mrag.db.connection import open_fts_connection
+from mrag.db.exclusions import exclusions_schema_exists
 from mrag.db.tokenizer import TOKENIZER_TRIGRAM
 
 
@@ -19,10 +20,21 @@ def keyword_search(
     fts_query = _prepare_query(unicodedata.normalize("NFKC", query_text), tokenizer)
     conn = open_fts_connection(db_path, tokenizer)
     try:
+        exclusion_clause = ""
+        if exclusions_schema_exists(conn):
+            exclusion_clause = (
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM document_exclusions e "
+                "WHERE e.document_id=fts_chunks.document_id "
+                "AND e.revoked_at IS NULL "
+                "AND (e.profile_name IS NULL OR e.profile_name=fts_chunks.profile_name)"
+                ") "
+            )
         rows = conn.execute(
             "SELECT chunk_id, document_id, bm25(fts_chunks) AS bm25_score "
             "FROM fts_chunks "
             "WHERE fts_chunks MATCH ? AND knowledge_id=? AND profile_name=? "
+            f"{exclusion_clause}"
             "ORDER BY bm25_score "
             "LIMIT ?",
             (fts_query, knowledge_id, profile_name, top_k),

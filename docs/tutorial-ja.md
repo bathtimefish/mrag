@@ -36,13 +36,28 @@ cd my-first-kb
 
 これで「空のナレッジベース」ができました。
 
-### Step 2. PDF を投入する
+### Step 2. ドキュメントを投入する
 
-`mrag add` で PDF を登録します。
+`mrag add`でPDF、text、Markdownの単一fileを登録します。
 
 ```bash
 mrag add ./sample.pdf
 ```
+
+directoryを投入する場合は`--recursive`を明示します。書き込む前に決定的な選択結果を
+previewしてください。
+
+```bash
+mrag add ./documents --recursive --dry-run --json \
+  --include '**/*.pdf' --include '**/*.md'
+
+mrag add ./documents --recursive --json \
+  --include '**/*.pdf' --include '**/*.md'
+```
+
+再帰追加はrepeatableな`--include`／`--exclude` glob、root `.mragignore`、hidden pathと
+symlinkの制御、converter並列数の上限、部分失敗の明示的reportをサポートします。完全な仕様は
+[ディレクトリの再帰追加](./recursive-add-ja.md)を参照してください。
 
 このコマンドは次の処理をまとめて行います：
 
@@ -50,7 +65,9 @@ mrag add ./sample.pdf
 2. 抽出結果を `data/documents/` に保存
 3. 中身のハッシュをとってドキュメント ID を割り当て、`mrag.db` に登録
 
-この段階では「ドキュメントが登録された」だけで、**まだ検索はできません**。検索可能にするには次の Step 3 でインデックスを構築する必要があります。
+この段階では各ドキュメントが登録されただけで、**まだ検索はできません**。検索可能にするには
+次のStep 3でインデックスを構築する必要があります。再帰modeを含め、`mrag add`が暗黙に
+indexを開始することはありません。
 
 ### Step 3. インデックスを構築する
 
@@ -144,6 +161,33 @@ mrag search "知りたいキーワード" --top-k 3
 mrag search "知りたいキーワード" --no-rerank
 ```
 
+### Step 5. 正本を削除せずに古いナレッジを除外する
+
+保持documentからCLI、HTTP API、MCP検索への寄与を止める場合はdocument levelのexclusionを
+使用します。`mrag search --json`または`GET /api/v1/documents`から`document_id`を取得し、
+cleanupをpreviewしてから適用します。
+
+```bash
+mrag exclusions add --document-id <DOCUMENT_ID>
+mrag exclusions add --document-id <DOCUMENT_ID> \
+  --reason "superseded specification" --force
+```
+
+最初にexclusion policyが有効になり、その後`--force`がFTS、chunk／variant、document index、
+Qdrantの派生dataを物理cleanupします。originalと抽出成果物は保持し、index／reindexも対象を
+skipし続けます。
+
+復帰するときは`mrag exclusions list`が返すexclusion IDを使用し、保持documentを明示的に
+indexします。
+
+```bash
+mrag exclusions restore <EXCLUSION_ID> --force
+mrag index --document-id <DOCUMENT_ID>
+```
+
+profile scope、Qdrant cleanup degraded時のretry、破壊的な`mrag remove --force`との違いは
+[ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
+
 ---
 
 ## AI エージェントで mrag を操作する
@@ -167,9 +211,15 @@ Claude CodeなどのAIエージェントに[AGENTS.md](../AGENTS.md),[SKILL.md](
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb && for f in ../data/*.pdf;
-      do /home/user/tools/mrag/.venv/bin/mrag add "$f"; done 2>&1 |   
-      grep -E "✓ Added|Error|Failed")
+⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+      --include '**/*.pdf' --dry-run --json)
+
+...
+
+⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+      --include '**/*.pdf' --strict --json)
 
 ...
 

@@ -70,15 +70,18 @@ ollama pull bge-m3
 
 ## Quick Start
 
-最短の 4 コマンドで KB を作成・検索できます：
+4つのmragコマンドでディレクトリからKBを作成・検索できます：
 
 ```bash
 mrag init my-kb --non-interactive
 cd my-kb
-mrag add /path/to/report.pdf
+mrag add /path/to/documents --recursive --include '**/*.pdf'
 mrag index
 mrag search "クエリ"
 ```
+
+一括投入が不要な場合は、ディレクトリの代わりに単一ファイルを指定します。
+ドキュメント追加とインデックス構築は意図的に別の操作になっています。
 
 各ステップの詳細とエージェント連携の手順は [docs/tutorial-ja.md](./docs/tutorial-ja.md) を参照してください。
 
@@ -88,7 +91,7 @@ mrag search "クエリ"
 | コマンド | 役割 |
 |---|---|
 | `mrag init [PROJECT_DIR]` | プロジェクトを初期化する |
-| `mrag add <file>` | ドキュメントを追加する（PDF / Markdown / テキスト） |
+| `mrag add <path>` | 単一ドキュメント、または `--recursive` でディレクトリを追加する |
 | `mrag index` | インデックスを構築する |
 | `mrag reindex` | インデックスを再構築する |
 | `mrag search <query>` | 検索する |
@@ -96,6 +99,7 @@ mrag search "クエリ"
 | `mrag serve` | HTTP API サーバーを起動する |
 | `mrag mcp` | プロジェクトを read-only MCP server として公開する |
 | `mrag remove <doc-id>` | ドキュメントを削除する |
+| `mrag exclusions add \| list \| restore` | 正本を保持したまま検索対象から除外する |
 | `mrag profiles list \| show <name>` | プロファイルの一覧 / 詳細を表示する |
 | `mrag kb-info show \| validate \| schema` | ナレッジベース自己記述メタデータを扱う |
 | `mrag inspect document \| chunks \| chunk \| sections` | インデックスの内部構造を調査する |
@@ -107,6 +111,15 @@ mrag search "クエリ"
 
 各コマンドの詳細なオプションは `mrag <command> --help` で確認できます。
 
+ディレクトリ投入では、最初に `mrag add <dir> --recursive --dry-run --json`
+で対象を確認し、同じ選択条件から `--dry-run` を外して適用してください。filter、symlink、
+duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
+を参照してください。
+
+正本を保持したままナレッジへの寄与を止める場合は、`mrag remove`ではなくdry-runから始める
+`mrag exclusions`を使用します。cleanup、復帰、障害時挙動の詳細は
+[ドキュメントの検索除外](./docs/document-exclusions-ja.md)を参照してください。
+
 
 ## ドキュメント
 
@@ -115,6 +128,7 @@ mrag search "クエリ"
 ### Getting Started
 
 - [tutorial-ja.md](./docs/tutorial-ja.md) — はじめての mrag（init → add → index → search の最短フロー）
+- [recursive-add-ja.md](./docs/recursive-add-ja.md) — filterと決定的reportを備えた安全な一括投入
 
 ### 検索 (Retrieval)
 
@@ -125,6 +139,7 @@ mrag search "クエリ"
 
 ### 運用 (Operations)
 
+- [document-exclusions-ja.md](./docs/document-exclusions-ja.md) — 正本を保持したドキュメントを検索から可逆的に除外
 - [inspect-ja.md](./docs/inspect-ja.md) — インデックスの調査
 - [kb-information-ja.md](./docs/kb-information-ja.md) — ナレッジベースの自己記述（`kb_information.yaml`）
 - [registry-ja.md](./docs/registry-ja.md) — 複数 KB の集約（`knowledge_registry.yaml`）

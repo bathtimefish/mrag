@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS profiles (
 --   parent = large context block (parent_child strategy)
 --   child  = search-unit block (parent_child strategy)
 -- source_format: markdown | text (which extracted file was used)
+--
+-- metadata_json schema (JSON object, all fields optional):
+--   heading_path        : list[str]  — H1 > H2 > H3 hierarchy ("preserve_heading_path")
+--   heading_path_text   : str        — joined breadcrumb "H1 > H2 > H3"
+--   section_id          : str        — slug of heading_path ("h1/h2/h3")
+--   section_title       : str        — leaf heading name
+--   section_start_line  : int        — block-aware: source line range start
+--   section_end_line    : int        — block-aware: source line range end
+--   block_types         : list[str]  — block kinds present (heading/paragraph/table/code_block/...)
+--   contains_table      : bool       — at least one BLOCK_TABLE present
+--   contains_code       : bool       — at least one BLOCK_CODE present
+--   language            : str        — code block language hint (when contains_code)
+--   table_count         : int        — number of tables in the chunk
+--   table_columns       : list[str]  — column headers of the (first) table
+--   table_split         : bool       — true when this chunk is a slice of an oversized table
+--   table_id            : str        — group identifier shared by all parts of a split table
+--   table_part          : int        — 1-based part index when table_split=true
+--   table_parts         : int        — total parts when table_split=true
+--   table_header_repeated : bool     — true when the table header was repeated in this part
 -- ================================================================
 CREATE TABLE IF NOT EXISTS chunks (
   id              TEXT PRIMARY KEY,
@@ -82,7 +101,7 @@ CREATE TABLE IF NOT EXISTS chunks (
   source_format   TEXT NOT NULL,
   token_count     INTEGER,
   char_count      INTEGER,
-  metadata_json   TEXT,
+  metadata_json   TEXT,        -- see comment above for the schema of this JSON column
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -94,6 +113,21 @@ CREATE TABLE IF NOT EXISTS chunks (
 --   raw        = content == chunks.content (direct embedding)
 --   contextual = content prepended with LLM-generated context_text
 -- qdrant_collection: full Qdrant collection name for this variant
+--
+-- metadata_json schema (JSON object, all fields optional):
+--   augmentation_status : str  — "fallback_raw" when augmentation retries were
+--                                exhausted and the chunk degraded to a raw variant
+--   augmentation_error  : str  — truncated error message from the failing augmentation
+--                                attempt (paired with augmentation_status="fallback_raw")
+--   embedding_status    : str  — "fallback_no_vector" (v0.21.0+) when embedding
+--                                retries + bisection failed for this chunk.
+--                                qdrant_point_id is NULL for these variants;
+--                                vector search cannot return them but FTS5
+--                                keyword search still does.
+--   embedding_error     : str  — truncated error message (max 500 chars) from
+--                                the failing embedding attempt (paired with
+--                                embedding_status="fallback_no_vector")
+-- When both stages succeed normally, metadata_json is NULL.
 -- ================================================================
 CREATE TABLE IF NOT EXISTS chunk_variants (
   id                    TEXT PRIMARY KEY,
@@ -108,7 +142,7 @@ CREATE TABLE IF NOT EXISTS chunk_variants (
   embedding_model_id    TEXT REFERENCES embedding_models(id),
   qdrant_point_id       TEXT,
   qdrant_collection     TEXT,
-  metadata_json         TEXT,
+  metadata_json         TEXT,            -- see comment above for the schema of this JSON column
   created_at            TEXT NOT NULL
 );
 
@@ -147,6 +181,21 @@ CREATE TABLE IF NOT EXISTS document_indexes (
 );
 
 -- ================================================================
+-- document_exclusions
+-- Persistent retrieval policy. NULL profile_name means every current and
+-- future profile. document_id intentionally has no FK: OSS force re-add uses
+-- row replacement while retaining the stable document ID and policy.
+-- ================================================================
+CREATE TABLE IF NOT EXISTS document_exclusions (
+  id           TEXT PRIMARY KEY,
+  document_id  TEXT NOT NULL,
+  profile_name TEXT,
+  reason       TEXT CHECK(reason IS NULL OR length(reason) <= 1000),
+  created_at   TEXT NOT NULL,
+  revoked_at   TEXT
+);
+
+-- ================================================================
 -- fts_chunks (FTS5 virtual table for keyword search)
 -- Populated by: mrag index
 -- Default tokenizer: trigram (no extra dependencies)
@@ -180,5 +229,15 @@ CREATE INDEX IF NOT EXISTS idx_chunk_variants_qdrant    ON chunk_variants(qdrant
 
 CREATE INDEX IF NOT EXISTS idx_document_indexes_lookup  ON document_indexes(document_id, profile_name);
 CREATE INDEX IF NOT EXISTS idx_document_indexes_status  ON document_indexes(knowledge_id, status);
+CREATE INDEX IF NOT EXISTS idx_document_exclusions_document
+  ON document_exclusions(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_exclusions_active_profile
+  ON document_exclusions(profile_name, document_id) WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_exclusions_active_global
+  ON document_exclusions(document_id)
+  WHERE profile_name IS NULL AND revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_exclusions_active_profile
+  ON document_exclusions(document_id, profile_name)
+  WHERE profile_name IS NOT NULL AND revoked_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_embedding_cache_key      ON embedding_cache(cache_key);

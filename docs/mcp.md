@@ -125,7 +125,12 @@ The MVP server exposes read-only tools:
 | `inspect_chunk` | Inspect one chunk with content/context |
 | `inspect_sections` | Inspect heading or parent-child structure |
 
-Write/management tools such as add, index, reindex, remove, and profile editing are intentionally not exposed.
+The `search` tool honors active document exclusions. `list_documents` still
+lists an excluded document because its source is retained. Exclusion management
+is intentionally CLI-only; see [document retrieval exclusions](./document-exclusions.md).
+
+Write/management tools such as add, index, reindex, remove, exclusions, and
+profile editing are intentionally not exposed.
 
 ## Resources
 
@@ -159,4 +164,3 @@ auth:
 ```
 
 The default host is `127.0.0.1`. If you bind to `0.0.0.0` without a bearer token, mrag prints a warning.
-

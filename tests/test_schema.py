@@ -10,6 +10,7 @@ EXPECTED_TABLES = {
     "chunk_variants",
     "embedding_cache",
     "document_indexes",
+    "document_exclusions",
 }
 
 
@@ -43,6 +44,7 @@ def test_indexes_created(db_conn: sqlite3.Connection) -> None:
     assert "idx_chunks_document_profile" in indexes
     assert "idx_chunk_variants_chunk_id" in indexes
     assert "idx_document_indexes_lookup" in indexes
+    assert "idx_document_exclusions_active_profile" in indexes
 
 
 def _insert_document(conn: sqlite3.Connection, doc_id: str, status: str) -> None:

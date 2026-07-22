@@ -96,6 +96,9 @@ Content-Type: application/json
 - **`title`** — ヒットしたチャンクが属するドキュメントのファイル名。ファイル名が解決できない場合は `document_id` の先頭 8 文字
 - **`metadata`** — チャンクに紐づく内部メタデータ（`chunk_id` / `document_id` など）
 
+activeなdocument exclusionは、すべての検索strategyでresponse構築前に適用されます。詳細は
+[ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
+
 
 ## スコアの正規化
 

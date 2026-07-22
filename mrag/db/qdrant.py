@@ -79,13 +79,29 @@ def search(
     col_name: str,
     vector: list[float],
     top_k: int = 10,
+    excluded_document_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    result = client.query_points(
-        collection_name=col_name,
-        query=vector,
-        limit=top_k,
-        with_payload=True,
-    )
+    query_filter = None
+    if excluded_document_ids:
+        from qdrant_client.models import FieldCondition, Filter, MatchAny
+
+        query_filter = Filter(
+            must_not=[
+                FieldCondition(
+                    key="document_id",
+                    match=MatchAny(any=sorted(excluded_document_ids)),
+                )
+            ]
+        )
+    kwargs: dict[str, Any] = {
+        "collection_name": col_name,
+        "query": vector,
+        "limit": top_k,
+        "with_payload": True,
+    }
+    if query_filter is not None:
+        kwargs["query_filter"] = query_filter
+    result = client.query_points(**kwargs)
     return [
         {"id": str(h.id), "score": h.score, "payload": h.payload}
         for h in result.points

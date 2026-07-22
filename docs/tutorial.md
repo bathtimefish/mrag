@@ -36,13 +36,29 @@ During initialization, mrag auto-detects the available tokenizer. If vaporetto i
 
 You now have an empty knowledge base.
 
-### Step 2. Ingest a PDF
+### Step 2. Ingest documents
 
-Use `mrag add` to register a PDF.
+Use `mrag add` to register one PDF, text, or Markdown file.
 
 ```bash
 mrag add ./sample.pdf
 ```
+
+To ingest a directory, opt in with `--recursive`. Preview the deterministic
+selection before writing it:
+
+```bash
+mrag add ./documents --recursive --dry-run --json \
+  --include '**/*.pdf' --include '**/*.md'
+
+mrag add ./documents --recursive --json \
+  --include '**/*.pdf' --include '**/*.md'
+```
+
+Recursive add supports repeatable `--include` / `--exclude` globs, a root
+`.mragignore`, hidden-path and symlink controls, bounded converter concurrency,
+and explicit partial-failure reporting. See [recursive directory
+ingestion](./recursive-add.md) for the complete contract.
 
 The command performs the following in one go:
 
@@ -50,7 +66,9 @@ The command performs the following in one go:
 2. Saves the extracted content under `data/documents/`
 3. Computes a content hash to assign a document ID and registers the entry in `mrag.db`
 
-At this stage the document is *registered* but **not yet searchable**. To make it searchable you need to build the index in Step 3.
+At this stage each document is *registered* but **not yet searchable**. To make
+it searchable you need to build the index in Step 3. `mrag add` never starts
+indexing implicitly, including in recursive mode.
 
 ### Step 3. Build the index
 
@@ -144,6 +162,36 @@ mrag search "your query" --top-k 3
 mrag search "your query" --no-rerank
 ```
 
+### Step 5. Exclude outdated knowledge without deleting its source
+
+Use a document-level exclusion when a retained document must stop contributing
+to CLI, HTTP API, and MCP retrieval. Obtain its `document_id` from
+`mrag search --json` or `GET /api/v1/documents`, preview the cleanup, then apply
+it:
+
+```bash
+mrag exclusions add --document-id <DOCUMENT_ID>
+mrag exclusions add --document-id <DOCUMENT_ID> \
+  --reason "superseded specification" --force
+```
+
+The exclusion policy becomes active first, then `--force` physically cleans
+derived FTS, chunk/variant, document-index, and Qdrant data while retaining the
+original and extracted artifacts. Index and reindex continue to skip the
+document.
+
+To restore it, use the exclusion ID returned by `mrag exclusions list`, then
+index the retained document explicitly:
+
+```bash
+mrag exclusions restore <EXCLUSION_ID> --force
+mrag index --document-id <DOCUMENT_ID>
+```
+
+See [document retrieval exclusions](./document-exclusions.md) for profile scope,
+degraded Qdrant cleanup, retry behavior, and the distinction from destructive
+`mrag remove --force`.
+
 ---
 
 ## Operating mrag with AI agents
@@ -167,9 +215,15 @@ By having an AI agent like Claude Code read [AGENTS.md](../AGENTS.md) and [SKILL
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb && for f in ../data/*.pdf;
-      do /home/user/tools/mrag/.venv/bin/mrag add "$f"; done 2>&1 |   
-      grep -E "✓ Added|Error|Failed")
+⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+      --include '**/*.pdf' --dry-run --json)
+
+...
+
+⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+      --include '**/*.pdf' --strict --json)
 
 ...
 

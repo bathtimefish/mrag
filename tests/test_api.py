@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from mrag import __version__
 from mrag.api.app import create_app
 from mrag.cli import app as cli_app
 from mrag.config.project import load_project_config
@@ -56,6 +57,13 @@ def api_client(tmp_path: Path, sample_txt: Path, monkeypatch):
 # ---------------------------------------------------------------------------
 # POST /api/v1/retrieve (and /search alias)
 # ---------------------------------------------------------------------------
+
+def test_openapi_reports_package_version(api_client):
+    response = api_client.client.get("/openapi.json")
+
+    assert response.status_code == 200
+    assert response.json()["info"]["version"] == __version__
+
 
 def test_retrieve_keyword(api_client):
     resp = api_client.client.post(

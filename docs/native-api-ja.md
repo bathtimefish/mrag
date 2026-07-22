@@ -99,6 +99,11 @@ Content-Type: application/json
 - **`results[].score`** — 検索戦略本来のスコア（リランキング有効時は CrossEncoder のスコアに置き換わります。**Dify API のような `[0, 1]` 正規化は適用されません**）
 - **`results[].metadata.retrieval_score`** — リランキング有効時のみ。リランキング前のスコア（→ [reranking-ja.md](./reranking-ja.md)）
 
+activeなdocument exclusionは、結果を返す前にすべてのstrategyへ適用されます。exclusionは
+source documentを保持するため、検索結果から全chunkが除外されても同じdocumentは
+`GET /api/v1/documents`に引き続き現れます。詳細は
+[ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
+
 
 ## `GET /api/v1/documents` — ドキュメント一覧 / 詳細
 
