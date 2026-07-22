@@ -181,6 +181,21 @@ CREATE TABLE IF NOT EXISTS document_indexes (
 );
 
 -- ================================================================
+-- document_exclusions
+-- Persistent retrieval policy. NULL profile_name means every current and
+-- future profile. document_id intentionally has no FK: OSS force re-add uses
+-- row replacement while retaining the stable document ID and policy.
+-- ================================================================
+CREATE TABLE IF NOT EXISTS document_exclusions (
+  id           TEXT PRIMARY KEY,
+  document_id  TEXT NOT NULL,
+  profile_name TEXT,
+  reason       TEXT CHECK(reason IS NULL OR length(reason) <= 1000),
+  created_at   TEXT NOT NULL,
+  revoked_at   TEXT
+);
+
+-- ================================================================
 -- fts_chunks (FTS5 virtual table for keyword search)
 -- Populated by: mrag index
 -- Default tokenizer: trigram (no extra dependencies)
@@ -214,5 +229,15 @@ CREATE INDEX IF NOT EXISTS idx_chunk_variants_qdrant    ON chunk_variants(qdrant
 
 CREATE INDEX IF NOT EXISTS idx_document_indexes_lookup  ON document_indexes(document_id, profile_name);
 CREATE INDEX IF NOT EXISTS idx_document_indexes_status  ON document_indexes(knowledge_id, status);
+CREATE INDEX IF NOT EXISTS idx_document_exclusions_document
+  ON document_exclusions(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_exclusions_active_profile
+  ON document_exclusions(profile_name, document_id) WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_exclusions_active_global
+  ON document_exclusions(document_id)
+  WHERE profile_name IS NULL AND revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_exclusions_active_profile
+  ON document_exclusions(document_id, profile_name)
+  WHERE profile_name IS NOT NULL AND revoked_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_embedding_cache_key      ON embedding_cache(cache_key);

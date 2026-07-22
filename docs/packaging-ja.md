@@ -79,7 +79,7 @@ onefile は毎回展開コストがかかるため、何度も呼び出す CLI �
 
 ```bash
 # onefile の場合
-./dist/mrag --version          # → 0.22.0
+./dist/mrag --version          # → 0.23.0
 ./dist/mrag --help
 
 # onedir の場合

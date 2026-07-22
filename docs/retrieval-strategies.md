@@ -194,3 +194,12 @@ mrag search "your query" --no-rerank
 ```
 
 This lets you experiment with a different strategy on the spot — no profile edit, no re-indexing required.
+
+
+## Document-level exclusions
+
+Active `mrag exclusions` policies apply independently of retrieval strategy.
+Keyword, vector, hybrid, and parent-child search all suppress the excluded
+document across CLI, HTTP API, and MCP callers. Index and reindex also skip it,
+so changing strategy cannot bypass or reverse the policy. See [document
+retrieval exclusions](./document-exclusions.md) for cleanup and restoration.

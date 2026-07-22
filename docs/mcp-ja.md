@@ -125,7 +125,12 @@ MVP では read-only tools のみ公開します。
 | `inspect_chunk` | 1 chunk の本文/context を確認 |
 | `inspect_sections` | heading / parent-child 構造を確認 |
 
-`add`、`index`、`reindex`、`remove`、profile 編集などの write/management tools は公開しません。
+`search` toolはactiveなdocument exclusionを適用します。sourceは保持されるため、除外documentも
+`list_documents`には引き続き現れます。exclusion管理は意図的にCLI限定です。詳細は
+[ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
+
+`add`、`index`、`reindex`、`remove`、`exclusions`、profile編集などのwrite/management toolsは
+公開しません。
 
 ## Resources
 
@@ -159,4 +164,3 @@ auth:
 ```
 
 既定 host は `127.0.0.1` です。`0.0.0.0` に bind し、bearer token が未設定の場合は警告を出します。
-

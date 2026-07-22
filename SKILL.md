@@ -7,14 +7,16 @@ description: >
   (PDF / Markdown / text) with hybrid keyword+vector retrieval, contextual
   augmentation, parent-child retrieval, reranking, or Dify external knowledge
   API integration. Common user intents include: building a local RAG knowledge
-  base from a folder of PDFs or Markdown, querying or tuning retrieval quality
-  on an existing knowledge base, inspecting how documents were chunked and
-  augmented, aggregating multiple knowledge bases into a registry for Agentic
-  RAG workflows, and serving the knowledge base over the HTTP API.
+  base from individual files or recursively filtered directory trees, querying
+  or tuning retrieval quality on an existing knowledge base, inspecting how
+  documents were chunked and augmented, reversibly excluding or permanently
+  removing indexed documents, aggregating multiple knowledge bases into a
+  registry for Agentic RAG workflows, and serving the knowledge base over the
+  HTTP API.
 license: AGPL-3.0
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "0.21.1"
+  version: "0.23.0"
 ---
 
 # SKILL.md — mrag Skill Procedures
@@ -160,32 +162,146 @@ Missing required fields cause `mrag init` to exit 1 with a clear validation erro
 
 **Preconditions:**
 - Inside the project directory (`mrag.yaml` exists in cwd)
-- Source files are accessible (PDF, .txt, or .md)
+- Source files are accessible (`.pdf`, `.txt`, `.md`, or `.markdown`)
 
-**Steps:**
+### Add one file
 
 ```bash
-# Add one file
 mrag add /path/to/document.pdf
 
-# Add multiple files — loop (mrag add accepts one file per invocation)
-for f in /path/to/docs/*.pdf; do mrag add "$f"; done
+# Machine-readable result for an agent
+mrag add /path/to/document.pdf --json
 ```
 
-**Expected output per file:**
-```
-✓ Added: document.pdf  (id=91f28863-...)
-```
+Adding does **not** index. Run `mrag index` separately. A duplicate SHA-256 is
+reported as `skipped_duplicate` with exit code 0. Pass `--force` only when the
+same file must be re-extracted and replaced under its existing document ID.
 
-**Notes:**
-- Adding does **not** index. Run `mrag index` separately.
-- Re-adding the same file (same SHA-256 hash) is rejected unless `--force` is passed.
-- The extracted text is stored in `data/documents/<doc-id>/extracted.txt`.
+### Recursively add a directory
 
-**Verify extraction:**
+A directory is accepted only when `--recursive` is explicit. Conversely,
+`--recursive` and its directory-only options are rejected for a file source.
+
+Use a dry-run first for any unfamiliar or large tree:
+
 ```bash
-mrag show-extracted <doc-id>   # preview extracted text
+# 1. Preview deterministic candidates without modifying the project
+mrag add /path/to/documents --recursive --dry-run --json
+
+# 2. Ingest the selected tree; this still does not start indexing
+mrag add /path/to/documents --recursive --json
+
+# 3. Build the retrieval index separately, following Skill 3 logging rules
+mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 ```
+
+Filter with repeatable, source-root-relative globs. Quote globs so the shell does
+not expand them before mrag receives them:
+
+```bash
+# Include only Markdown and PDF, then hard-exclude drafts and generated output
+mrag add /path/to/documents --recursive --dry-run --json \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.pdf' \
+  --exclude 'drafts/' --exclude '**/generated-*'
+
+# After reviewing items[].source and items[].status, apply the same selection
+mrag add /path/to/documents --recursive --json \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.pdf' \
+  --exclude 'drafts/' --exclude '**/generated-*'
+```
+
+Selection order is:
+
+1. If any `--include` rules exist, require at least one match.
+2. Reject any `--exclude` match. An ignore negation cannot override this hard
+   exclusion.
+3. Apply the source root's optional `.mragignore` rules in order. Use `!pattern`
+   to re-include a path ignored by an earlier `.mragignore` rule.
+
+Patterns use normalized POSIX relative paths even on Windows. A pattern without
+`/` matches that name at any depth; a trailing `/` selects a directory tree;
+`**` crosses directory boundaries. `.mragignore` must be a regular, non-symlink,
+UTF-8 file no larger than 1 MiB.
+
+### Control traversal and conversion
+
+```bash
+# Dot-prefixed files/directories are skipped unless explicitly enabled
+mrag add /path/to/documents --recursive --hidden --dry-run --json
+
+# Symlinks are skipped by default; opt in only for a trusted source tree
+mrag add /path/to/documents --recursive --follow-symlinks --dry-run --json
+
+# Bound concurrent PDF/extractor work (default: 2; valid range: 1..64)
+mrag add /path/to/documents --recursive --converter-jobs 4 --json
+
+# Re-extract duplicate hashes while preserving their existing document IDs
+mrag add /path/to/documents --recursive --force --json
+```
+
+Keep the safe defaults unless the user requests otherwise. With
+`--follow-symlinks`, mrag detects directory cycles and ingests the same canonical
+file target at most once. It always refuses a recursive source inside the
+project's `data/` directory and skips that directory (including aliases to it)
+when scanning a broader tree, preventing self-ingestion.
+
+Candidates and report items are emitted in stable relative-path order even when
+converter jobs run concurrently.
+
+### Handle recursive results and exit codes
+
+Read the single JSON report rather than parsing human output:
+
+```json
+{
+  "schema_version": 1,
+  "command": "add",
+  "status": "partial",
+  "summary": {"added": 4, "skipped": 2, "failed": 1},
+  "items": [
+    {"source": "docs/a.md", "status": "added", "document_id": "...", "error": null},
+    {"source": "docs/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
+    {"source": "docs/bad.bin", "status": "failed", "document_id": null,
+     "error": {"code": "prepare_failed", "message": "..."}}
+  ],
+  "index_started": false,
+  "recursive": true,
+  "dry_run": false
+}
+```
+
+Interpret exit codes as follows:
+
+| Exit | Meaning | Agent action |
+|---:|---|---|
+| `0` | No failed items; additions and duplicate skips may both be present | Continue to `mrag index` when ingestion is complete |
+| `3` | Partial success under the default best-effort mode | Preserve successes, inspect failed `items`, fix or omit them, then rerun |
+| `1` | Every selected item failed, or at least one item failed with `--strict` | Inspect every failed item before indexing |
+| `2` | Invalid CLI use, such as a directory without `--recursive` | Correct the invocation |
+
+`--strict` changes the failure exit code; it does **not** roll back documents
+already added during the run. A retry is safe because successful files become
+`skipped_duplicate` unless `--force` is explicitly used.
+
+Use `--strict` in CI when any per-file failure must fail the job:
+
+```bash
+mrag add /path/to/documents --recursive --strict --json
+```
+
+### Verify extraction
+
+Use the `document_id` values returned in `items`. Recursive addition creates one
+independent mrag document per source file.
+
+```bash
+mrag show-extracted <doc-id>
+mrag inspect document <doc-id> --json
+```
+
+Extracted artifacts are stored under `data/documents/<doc-id>/` as
+`extracted.txt`, `extracted.md`, and extraction metadata alongside the retained
+original.
 
 ---
 
@@ -512,39 +628,159 @@ Interactive API docs: `http://127.0.0.1:8000/docs`
 
 ---
 
-## Skill 7 — Remove a document
+## Skill 7 — Exclude, restore, or remove a document
 
 **Preconditions:**
 - Inside the project directory
 - The document ID must exist in the database
 
-**Steps:**
+### Choose the correct operation
+
+| Requirement | Operation | Source artifacts | Retrieval artifacts |
+|---|---|---|---|
+| Stop using a document as knowledge but retain it for audit or later restoration | `mrag exclusions add` | Retained | Physically cleaned when `--force` succeeds |
+| Make an excluded document eligible for search again | `mrag exclusions restore`, then `mrag index` | Retained | Rebuilt only by the explicit index step |
+| Delete the document itself from mrag | `mrag remove` | Deleted by `--force` | Deleted |
+
+Prefer `exclusions` when the intent is “stop using this document as
+knowledge.” Prefer `remove` only when the document record, original file, and
+extracted artifacts must also be deleted.
+
+### Find the stable document ID
+
+Use a document ID, not a chunk ID or filename. A document can have many chunks,
+and filenames are not the policy identity.
 
 ```bash
-# Step 1: dry-run — shows what would be deleted, nothing is changed
-mrag remove <doc-id>
+# From a known search result
+mrag search "<unique query>" --json \
+  | jq '.results[] | {document_id, filename}'
 
-# Step 2: actual deletion (removes from SQLite, FTS5, and Qdrant)
-mrag remove --force <doc-id>
-```
+# From SQLite
+sqlite3 mrag.db "SELECT id, filename, status FROM documents ORDER BY filename;"
 
-**Find a document ID:**
-```bash
-# From CLI (after indexing)
-mrag profiles list
-
-# From SQLite directly
-sqlite3 mrag.db "SELECT id, filename FROM documents;"
-
-# From API
+# From the HTTP API when mrag serve is running
 curl -s http://127.0.0.1:8000/api/v1/documents
 ```
 
-**Verify deletion:**
+### Exclude while retaining the document
+
 ```bash
-mrag search "<term from that document>" --strategy keyword
-# Should return no results from the deleted document
+# 1. Preview the affected chunks, FTS rows, and Qdrant points (default: dry-run)
+mrag exclusions add --document-id <doc-id>
+
+# 2. Apply to every current and future profile (recommended default)
+mrag exclusions add --document-id <doc-id> \
+  --reason "obsolete knowledge" --force
+
+# Apply only when one profile must exclude the document
+mrag exclusions add --document-id <doc-id> \
+  --profile <profile-name> --reason "profile-specific reason" --force
+
+# Machine-readable forms for agents
+mrag exclusions add --document-id <doc-id> --json
+mrag exclusions add --document-id <doc-id> --reason "obsolete" --force --json
+
+# Audit active policies; --all also shows restored policies
+mrag exclusions list
+mrag exclusions list --all --json
 ```
+
+Treat `exclusions add --force` as two coordinated actions:
+
+1. Activate a persistent, document-level retrieval policy first. Index/reindex
+   skips the document before chunking, augmentation, or embedding; CLI, HTTP,
+   and MCP retrieval all filter it fail-closed.
+2. Immediately clean the document's derived index artifacts: FTS rows,
+   chunks, variants, per-profile index state, and Qdrant points. Keep the
+   document record, original file, extracted text, and exclusion audit record.
+
+Therefore, exclusion is not merely a logical delete. The policy provides the
+durable safety barrier, while `--force` also performs application-level physical
+cleanup of the derived indexes. It is not secure erasure of filesystem media,
+logs, caches, or backups.
+
+Use an all-profile exclusion unless the user explicitly requests different
+knowledge visibility by profile. Do not stack overlapping all-profile and
+profile-specific policies. Run `mrag exclusions list`, restore the narrower
+policies if necessary, and then create the desired scope.
+
+**Handle degraded cleanup safely:**
+
+- Exit code `0` with JSON status `applied` means the policy and application-level
+  cleanup completed.
+- Exit code `3` with JSON status `degraded` means the policy is active and the
+  document remains blocked from every retrieval path, but Qdrant cleanup is
+  incomplete. FTS has been cleaned; chunk metadata needed to identify and retry
+  Qdrant deletion is intentionally retained.
+- Do not revoke the exclusion after exit code `3`. Restore Qdrant availability,
+  then repeat the same `mrag exclusions add ... --force` command. Reapplying an
+  active exclusion reconciles the pending cleanup safely.
+
+### Restore an excluded document
+
+Use the exclusion ID returned by `add` or `list`; it is distinct from the
+document ID.
+
+```bash
+# 1. Preview restoration (default: dry-run)
+mrag exclusions restore <exclusion-id>
+
+# 2. Revoke the policy only after residual cleanup succeeds
+mrag exclusions restore <exclusion-id> --force
+
+# 3. Explicitly rebuild the retained document; follow Skill 3 logging rules
+mrag index --document-id <doc-id> 2>&1 \
+  | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+
+# For a restored profile-specific exclusion, rebuild that profile only
+mrag index --document-id <doc-id> --profile <profile-name> 2>&1 \
+  | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
+```
+
+Restoration never invokes the embedding provider implicitly. Until the explicit
+`mrag index` succeeds, the document is eligible but not searchable. If residual
+Qdrant cleanup fails, restoration exits non-zero and keeps the exclusion active;
+fix Qdrant and repeat `restore --force`.
+
+### Permanently remove the mrag document
+
+```bash
+# Preview first (default: dry-run)
+mrag remove <doc-id>
+
+# Delete the document record, source/extraction artifacts, derived indexes,
+# and any exclusion history owned by that document
+mrag remove --force <doc-id>
+```
+
+`remove --force` is irreversible at the mrag application level. It does not
+guarantee secure erasure from storage media, external backups, copied logs, or
+operator-managed caches; handle those separately when required.
+
+### Verify the result
+
+Check by document ID rather than assuming that a shared search term should
+disappear completely from the knowledge base.
+
+```bash
+# Confirm the exclusion policy is active
+mrag exclusions list --json \
+  | jq --arg id "<doc-id>" '.exclusions[] | select(.document_id == $id)'
+
+# Confirm no result from this document escapes keyword retrieval
+mrag search "<term from the document>" --strategy keyword --json \
+  | jq --arg id "<doc-id>" '[.results[] | select(.document_id == $id)] | length'
+
+# Repeat with the configured vector/hybrid path when available
+mrag search "<term from the document>" --strategy hybrid --json \
+  | jq --arg id "<doc-id>" '[.results[] | select(.document_id == $id)] | length'
+```
+
+The two search-count checks must print `0`; the policy check must return the
+active exclusion record. After `remove --force`, additionally confirm that the
+document ID no longer appears in `GET /api/v1/documents` or the `documents`
+table.
 
 ---
 
@@ -1226,6 +1462,9 @@ Need to search without Qdrant/Ollama?                       →  --strategy keyw
 Need best Japanese retrieval?                               →  ensure fts_tokenizer: vaporetto in mrag.yaml
 AI agent parsing mrag search output?                        →  always pass --json (stdout: single JSON object, stderr: warnings)
 AI agent creating a new KB project?                         →  use Skill 1.5 with --kb-info-json for fully populated kb_information.yaml
+Need to add a directory tree?                               →  dry-run `mrag add <dir> --recursive --dry-run --json`, review items, then rerun without `--dry-run`; index separately
+Need only part of a directory tree?                         →  repeat quoted `--include` / `--exclude` relative-path globs or add root `.mragignore` rules; see Skill 2
+Recursive add exited 3 / partial?                           →  successful files remain added; inspect failed JSON items, fix and rerun (duplicates skip safely)
 Want to know what a KB is for?                              →  mrag kb-info show (or read kb_information.yaml directly)
 Want to see how a document was chunked?                     →  mrag inspect document <doc-id> --json (per-profile chunk + augmentation summary)
 Want to list every chunk's metadata for an agent?           →  mrag inspect chunks <doc-id> --profile <p> --json (default: all chunks)
@@ -1244,6 +1483,11 @@ Zero results from keyword search?                           →  check mrag inde
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
 Reranker hides keyword in preview — looks like a miss?      →  mrag search "<word>" --strategy keyword --no-rerank [--json]  (BM25-only fact check; --json .content has full body)
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
+Need to hide one document but retain its source?            →  dry-run `mrag exclusions add --document-id <id>`, then repeat with `--reason "..." --force`
+Need derived index data physically cleaned but source kept? →  the same `exclusions add --force` command cleans FTS/chunks/variants/Qdrant while retaining source
+`exclusions add --force` exited 3 / degraded?               →  policy is active and retrieval is blocked; restore Qdrant, then repeat the exact command to reconcile cleanup
+Need to make an excluded document searchable again?        →  `mrag exclusions restore <exclusion-id> --force`, then explicitly `mrag index --document-id <doc-id>`
+Need to delete the source document itself?                  →  dry-run `mrag remove <id>`, then `mrag remove --force <id>`; this is not backup/media secure erase
 Need to update one document?                                →  mrag remove --force <id>; mrag add <file>; mrag index 2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log
 Need to rebuild everything?                                 →  mrag reindex 2>&1 | tee mrag-reindex-$(date +%Y%m%d-%H%M%S).log
 AI agent running mrag index/reindex?                        →  ALWAYS pipe through `2>&1 | tee mrag-index-$(date +%Y%m%d-%H%M%S).log` (required for AI agents — see Skill 3)

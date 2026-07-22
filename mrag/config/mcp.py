@@ -95,7 +95,7 @@ class McpConfig(BaseModel):
         ):
             raise ValueError("retrieval.top_k_default must be <= retrieval.top_k_max")
         if self.features.management_tools:
-            raise ValueError("features.management_tools is not supported in v0.22.0")
+            raise ValueError("features.management_tools is not supported")
         return self
 
 

@@ -20,6 +20,7 @@ from mrag.core.indexing.embedding_fallback import embed_with_fallback
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
+from mrag.db.exclusions import active_document_ids
 from mrag.db.qdrant import collection_name, delete_points, ensure_collection, make_client, upsert_points
 
 if TYPE_CHECKING:
@@ -66,10 +67,12 @@ class IndexResult:
     indexed: int = 0
     skipped: int = 0           # diff-skipped: already up-to-date
     skipped_by_list: int = 0   # explicitly skipped via --skip-list-json
+    excluded: int = 0          # persistent document exclusion policy
     errors: list[tuple[str, str]] = field(default_factory=list)  # (document_id, message)
     raw_fallback_chunks: int = 0
     embedding_fallback_chunks: int = 0   # v0.21.0: chunks with no vector (Qdrant skip)
     failed_docs: list[FailedDocEntry] = field(default_factory=list)
+    excluded_document_ids: list[str] = field(default_factory=list)
 
 
 def _read_extraction_meta(project_dir: Path, doc: dict) -> dict:
@@ -96,7 +99,13 @@ def write_index_log(
     except Exception:
         mrag_version = "unknown"
 
-    total = result.indexed + result.skipped + result.skipped_by_list + len(result.errors)
+    total = (
+        result.indexed
+        + result.skipped
+        + result.skipped_by_list
+        + result.excluded
+        + len(result.errors)
+    )
     data = {
         "generated_at": _now_iso(),
         "command": command,
@@ -106,6 +115,8 @@ def write_index_log(
         "indexed_count": result.indexed,
         "up_to_date_count": result.skipped,
         "list_skipped_count": result.skipped_by_list,
+        "excluded_count": result.excluded,
+        "excluded_document_ids": result.excluded_document_ids,
         "failed_count": len(result.errors),
         "raw_fallback_chunks": result.raw_fallback_chunks,
         "embedding_fallback_chunks": result.embedding_fallback_chunks,
@@ -552,8 +563,15 @@ def run_index(
     _upsert_profile(db_path, profile, config.knowledge_id, profile_hash)
 
     documents = _get_documents(db_path, document_ids)
+    excluded_ids = active_document_ids(db_path, profile_name)
+    excluded_documents = [doc for doc in documents if doc["id"] in excluded_ids]
+    documents = [doc for doc in documents if doc["id"] not in excluded_ids]
+    exclusion_result = IndexResult(
+        excluded=len(excluded_documents),
+        excluded_document_ids=sorted(doc["id"] for doc in excluded_documents),
+    )
     if not documents:
-        return IndexResult()
+        return exclusion_result
 
     if force:
         decisions = [(doc, True, "force") for doc in documents]
@@ -579,7 +597,12 @@ def run_index(
                 filtered.append((doc, reason))
         docs_to_index = filtered
 
-    result = IndexResult(skipped=skipped, skipped_by_list=skipped_by_list)
+    result = IndexResult(
+        skipped=skipped,
+        skipped_by_list=skipped_by_list,
+        excluded=exclusion_result.excluded,
+        excluded_document_ids=exclusion_result.excluded_document_ids,
+    )
 
     if not docs_to_index:
         return result

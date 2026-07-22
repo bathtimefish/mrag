@@ -351,6 +351,21 @@ GET /api/v1/documents
 
 `mrag remove <doc-id>` is a dry-run by default. Pass `--force` to actually delete.
 
+When the source and extraction artifacts must be retained but the document must
+stop contributing knowledge, use a persistent retrieval exclusion instead:
+
+```bash
+mrag exclusions add --document-id <doc-id>              # dry-run
+mrag exclusions add --document-id <doc-id> --force      # immediate, all profiles
+mrag exclusions list
+mrag exclusions restore <exclusion-id> --force
+mrag index --document-id <doc-id>                        # explicit restoration step
+```
+
+Exclusions are honored by index/reindex and every CLI/API/MCP retrieval path.
+They are not secure erasure; use `mrag remove --force` when source files must be
+deleted.
+
 ---
 
 ## Agentic RAG self-description (`kb_information.yaml`)

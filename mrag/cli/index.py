@@ -81,7 +81,8 @@ def index(
     console.print(
         f"[green]✓[/green] Indexed: {result.indexed}  "
         f"Up-to-date: {result.skipped}  "
-        f"List-skipped: {result.skipped_by_list}"
+        f"List-skipped: {result.skipped_by_list}  "
+        f"Excluded: {result.excluded}"
         f"{fb_suffix}"
     )
 

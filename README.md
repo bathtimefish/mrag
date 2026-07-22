@@ -69,16 +69,18 @@ ollama pull bge-m3
 
 ## Quick Start
 
-Four commands are all it takes to create a KB and search it:
+Four mrag commands are all it takes to create a KB from a directory and search it:
 
 ```bash
 mrag init my-kb --non-interactive
 cd my-kb
-mrag add /path/to/report.pdf
-mrag add /path/to/documents --recursive --include '**/*.md'
+mrag add /path/to/documents --recursive --include '**/*.pdf'
 mrag index
 mrag search "your query"
 ```
+
+Pass a single file instead of a directory when bulk ingestion is unnecessary.
+Adding and indexing are intentionally separate operations.
 
 For step-by-step details and the agent-integration workflow, see [docs/tutorial.md](./docs/tutorial.md).
 
@@ -96,6 +98,7 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | `mrag serve` | Start the HTTP API server |
 | `mrag mcp` | Expose the project as a read-only MCP server |
 | `mrag remove <doc-id>` | Remove a document |
+| `mrag exclusions add \| list \| restore` | Retain a document while excluding it from retrieval |
 | `mrag profiles list \| show <name>` | List or show profile details |
 | `mrag kb-info show \| validate \| schema` | Manage the knowledge-base self-description |
 | `mrag inspect document \| chunks \| chunk \| sections` | Inspect the index internals |
@@ -107,11 +110,15 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 
 Run `mrag <command> --help` for the full set of options.
 
-Recursive add is opt-in and processes files in stable relative-path order. It
-supports repeatable `--include` / `--exclude` globs, a root `.mragignore` with
-`!` negation, `--hidden`, cycle-safe `--follow-symlinks`, `--dry-run`,
-`--strict`, `--json`, and bounded PDF/extractor work via `--converter-jobs`.
-The project `data/` subtree and duplicate symlink targets are never re-ingested.
+For directory ingestion, preview with `mrag add <dir> --recursive --dry-run
+--json`, then apply the same selection without `--dry-run`. See [recursive
+directory ingestion](./docs/recursive-add.md) for filtering, symlink, duplicate,
+concurrency, and partial-success behavior.
+
+To stop a retained document from contributing knowledge, use the dry-run-first
+`mrag exclusions` workflow instead of `mrag remove`. See [document retrieval
+exclusions](./docs/document-exclusions.md) for cleanup, restoration, and failure
+semantics.
 
 
 ## Documentation
@@ -121,6 +128,7 @@ Per-feature details live under `./docs/`.
 ### Getting Started
 
 - [tutorial.md](./docs/tutorial.md) — Your first mrag session (init → add → index → search)
+- [recursive-add.md](./docs/recursive-add.md) — Safe bulk ingestion with filters and deterministic reporting
 
 ### Retrieval
 
@@ -131,6 +139,7 @@ Per-feature details live under `./docs/`.
 
 ### Operations
 
+- [document-exclusions.md](./docs/document-exclusions.md) — Reversibly exclude retained documents from retrieval
 - [inspect.md](./docs/inspect.md) — Inspecting the index
 - [kb-information.md](./docs/kb-information.md) — Knowledge-base self-description (`kb_information.yaml`)
 - [registry.md](./docs/registry.md) — Aggregating multiple KBs (`knowledge_registry.yaml`)

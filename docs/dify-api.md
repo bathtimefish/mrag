@@ -96,6 +96,10 @@ Field semantics:
 - **`title`** — Filename of the document the chunk belongs to. Falls back to the first 8 characters of `document_id` if the filename cannot be resolved
 - **`metadata`** — Internal metadata attached to the chunk (`chunk_id` / `document_id`, etc.)
 
+Active document exclusions are enforced before this response is built, for
+every retrieval strategy. See [document retrieval
+exclusions](./document-exclusions.md).
+
 
 ## Score normalization
 

@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from mrag import __version__
 from mrag.api.routers.dify import DifyError
 from mrag.api.routers.dify import router as dify_router
 from mrag.api.routers.native import router as native_router
@@ -76,7 +77,7 @@ def create_app(
     app = FastAPI(
         title="MRAG API",
         description="Micro RAG — A lightweight, local-first retrieval runtime.",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 

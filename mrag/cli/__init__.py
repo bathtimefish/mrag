@@ -32,6 +32,7 @@ from mrag.cli.registry import registry_app
 from mrag.cli.mcp import mcp_app
 from mrag.cli.doctor import doctor
 from mrag.cli.eval import eval_cmd
+from mrag.cli.exclusions import exclusions_app
 
 app = typer.Typer(
     name="mrag",
@@ -72,3 +73,4 @@ app.add_typer(kb_info_app, name="kb-info")
 app.add_typer(inspect_app, name="inspect")
 app.add_typer(registry_app, name="registry")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(exclusions_app, name="exclusions")

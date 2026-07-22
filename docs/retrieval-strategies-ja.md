@@ -194,3 +194,11 @@ mrag search "クエリ" --no-rerank
 ```
 
 これにより、プロファイルを編集して再インデックスをしなくても、別のストラテジーをその場で試せます。
+
+
+## ドキュメント単位の除外
+
+activeな`mrag exclusions` policyは検索strategyと独立して適用されます。keyword、vector、
+hybrid、parent-childのすべてがCLI、HTTP API、MCPから対象documentを除外します。
+index／reindexも対象をskipするため、strategy変更によるpolicyの迂回や解除はできません。
+cleanupと復帰は[ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。

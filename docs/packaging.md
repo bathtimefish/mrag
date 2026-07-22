@@ -79,7 +79,7 @@ Always smoke-test after building.
 
 ```bash
 # onefile
-./dist/mrag --version          # → 0.22.0
+./dist/mrag --version          # → 0.23.0
 ./dist/mrag --help
 
 # onedir

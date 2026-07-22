@@ -7,6 +7,7 @@ from rich.console import Console
 
 from mrag.config.project import load_project_config
 from mrag.db.connection import find_db, fts_db_connection, open_connection
+from mrag.db.exclusions import exclusions_schema_exists
 from mrag.db.qdrant import make_client
 
 console = Console()
@@ -87,6 +88,11 @@ def remove(
         conn.execute("DELETE FROM chunk_variants WHERE document_id = ?", (document_id,))
         conn.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
         conn.execute("DELETE FROM document_indexes WHERE document_id = ?", (document_id,))
+        if exclusions_schema_exists(conn):
+            conn.execute(
+                "DELETE FROM document_exclusions WHERE document_id = ?",
+                (document_id,),
+            )
         conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
         conn.commit()
     except Exception as e:
