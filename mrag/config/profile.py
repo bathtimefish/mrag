@@ -106,7 +106,7 @@ class EmbeddingCacheConfig(BaseModel):
 
 
 class EmbeddingFailurePolicyConfig(BaseModel):
-    mode: str = "fallback_no_vector"    # "fallback_no_vector" | "fail_document"
+    mode: Literal["fallback_no_vector", "fail_document"] = "fallback_no_vector"
 
 
 class EmbeddingConfig(BaseModel):
@@ -119,7 +119,7 @@ class EmbeddingConfig(BaseModel):
 
 
 class AugmentationFailurePolicyConfig(BaseModel):
-    mode: str = "raw_fallback"    # "raw_fallback" | "fail_document"
+    mode: Literal["raw_fallback", "fail_document"] = "raw_fallback"
 
 
 class AugmentationConfig(BaseModel):
