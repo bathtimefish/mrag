@@ -977,7 +977,7 @@ Set `augmentation.strategy: none` in the profile YAML, then run `mrag reindex`. 
 
 **What gets contextualized:**
 
-When enabled, mrag applies both **Contextual Embeddings** (vector index) and **Contextual BM25** (FTS5 keyword index) — the same `context + chunk` text is stored in both backends, matching Anthropic's full Contextual Retrieval recipe. Hybrid search therefore benefits in both retrieval branches.
+When enabled, mrag applies **Contextual Embeddings** to the vector index. The FTS5 keyword index continues to store the original chunk body, so generated context cannot change keyword matches or BM25 scores. Hybrid search benefits from contextual augmentation through its vector branch while its keyword branch remains grounded in source text.
 
 **Known constraint — document truncation (8000 chars):**
 
@@ -1001,7 +1001,7 @@ Workarounds:
 
 **Retrieval-side benefit:**
 
-Because `context_text + chunk content` is written to both the vector index and the FTS5 index, contextual augmentation is not only about generating richer chunk metadata — it materially changes what retrieval can find. Table fragments, OCR-noisy spans, and mid-section chunks that are weak on their own become retrievable by natural-language questions through the semantic label in `context_text`. To verify this on a specific KB after indexing, follow **Skill 16 Step 3**.
+Because `context_text + chunk content` is written to the vector index, contextual augmentation materially changes what semantic retrieval can find. Table fragments, OCR-noisy spans, and mid-section chunks that are weak on their own can become retrievable by natural-language questions through the semantic label in `context_text`. FTS5 continues to index only raw chunk content. To verify this on a specific KB after indexing, follow **Skill 16 Step 3**.
 
 ---
 
@@ -1250,7 +1250,7 @@ After prompt edits, run `mrag reindex` to regenerate all variants with the new p
 
 ### Step 3 — Natural-language query audit
 
-Contextual augmentation indexes `context_text + content` into both the vector store and FTS5, so a natural-language question that would fail under plain keyword retrieval may still succeed under `vector` / `hybrid`. Use this step to confirm dense retrieval is actually doing that work on your KB — not just assume it.
+Contextual augmentation indexes `context_text + content` into the vector store while FTS5 retains raw content, so a natural-language question that fails under keyword retrieval may still succeed under `vector` / `hybrid`. Use this step to confirm dense retrieval is actually doing that work on your KB — not just assume it.
 
 ```bash
 # Same natural-language question, three strategies in sequence
@@ -1268,7 +1268,7 @@ mrag search "term1 term2 term3" --strategy keyword --top-k 5 --json
 Evaluation criteria (read together with Step 2):
 
 1. Does `vector` (and therefore `hybrid`) return relevant chunks for the natural-language form? If `keyword` is 0-hit while `vector` succeeds, dense retrieval is carrying the query — expected on a healthy contextual KB.
-2. Does the keyword-rewritten query recover hits under `--strategy keyword`? That confirms FTS5 still needs tokenized input even though `context_text` is indexed on the FTS side.
+2. Does the keyword-rewritten query recover hits under `--strategy keyword`? That confirms FTS5 is operating independently on tokenized raw chunk content.
 3. For each top chunk, does `context_text` give a concrete semantic label — naming the table, section, or topic — rather than restating the body? Fragmentary `content` is acceptable if `context_text` carries the meaning; a vacuous or generic `context_text` is the failure mode to flag (see Step 2 for prompt fixes).
 
 Agent-side caveat: OCR noise and duplicate neighboring chunks are downstream synthesis concerns. When mrag returns several near-duplicate chunks from the same `document_id` with adjacent `chunk_index`, the agent should deduplicate and prefer the chunk whose `context_text` is most specific.

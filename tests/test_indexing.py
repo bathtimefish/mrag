@@ -853,6 +853,12 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
 
     conn = open_connection(db_path)
     rows = conn.execute("SELECT variant_type, context_text, content_for_embedding FROM chunk_variants").fetchall()
+    raw_chunks = {
+        chunk_id: content
+        for chunk_id, content in conn.execute(
+            "SELECT id, content FROM chunks WHERE chunk_type IN ('chunk', 'child')"
+        ).fetchall()
+    }
     conn.close()
 
     assert rows, "expected at least one chunk_variant"
@@ -862,21 +868,19 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
         assert ctx == fake_context
         assert cfe.startswith(fake_context + "\n\n")
 
-    # Contextual BM25: FTS5 must contain the contextualized text, not the raw chunk.
-    # The LLM-generated context phrase should be matchable via FTS5 MATCH.
+    # Contextual augmentation is semantic-only: FTS5 must retain the canonical
+    # raw chunk text, without the LLM-generated context used for embedding.
     from mrag.db.connection import open_fts_connection
     fts_conn = open_fts_connection(db_path, "trigram")
     fts_rows = fts_conn.execute(
-        "SELECT content FROM fts_chunks WHERE knowledge_id=?", ("kb_t",)
+        "SELECT chunk_id, content FROM fts_chunks WHERE knowledge_id=?", ("kb_t",)
     ).fetchall()
     fts_conn.close()
     assert fts_rows, "expected FTS rows for indexed chunks"
-    for (fts_content,) in fts_rows:
-        # Each FTS row's stored content should begin with the LLM context (contextualized BM25).
-        assert fts_content.startswith(fake_context), (
-            "FTS5 must store contextualized content (Anthropic Contextual BM25 pattern); "
-            f"got: {fts_content[:80]!r}"
-        )
+    assert {chunk_id for chunk_id, _ in fts_rows} == set(raw_chunks)
+    for chunk_id, fts_content in fts_rows:
+        assert fts_content == raw_chunks[chunk_id]
+        assert fake_context not in fts_content
 
 
 def test_augmentation_contextual_uses_project_prompt_file(tmp_path: Path, sample_txt: Path):

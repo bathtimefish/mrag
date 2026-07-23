@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field, model_validator
 # Bump whenever index-producing semantics change without a corresponding
 # profile field change.  Version 2 separates index identity from query-time
 # tuning and includes the effective contextual prompt and tokenizer.
-INDEX_IDENTITY_VERSION = 2
+# Version 3 restores the raw-only FTS contract for contextual profiles, forcing
+# existing indexes that may contain generated context to be rebuilt.
+INDEX_IDENTITY_VERSION = 3
 TEXT_NORMALIZATION_IDENTITY = "NFKC-v1"
 
 
