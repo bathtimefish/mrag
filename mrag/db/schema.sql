@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS chunk_variants (
 -- ================================================================
 CREATE TABLE IF NOT EXISTS embedding_cache (
   id                 TEXT PRIMARY KEY,
-  cache_key          TEXT NOT NULL UNIQUE,  -- SHA256 of (model_id + content)
+  cache_key          TEXT NOT NULL UNIQUE,  -- v2 framed SHA256(model_id, content)
   embedding_model_id TEXT NOT NULL REFERENCES embedding_models(id),
   vector_path        TEXT NOT NULL,
   created_at         TEXT NOT NULL

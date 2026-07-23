@@ -1,6 +1,7 @@
 """Tests for Phase 4: embedding provider, cache, and Qdrant client."""
 import sqlite3
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -13,7 +14,11 @@ from mrag.core.embedding.ollama import (
     _normalize,
     _validate_embed_response,
 )
-from mrag.core.embedding.cache import EmbeddingCache, _cache_key
+from mrag.core.embedding.cache import (
+    EmbeddingCache,
+    EmbeddingCacheCorruptionError,
+    _cache_key,
+)
 from mrag.db.qdrant import (
     collection_name,
     normalize_name,
@@ -317,6 +322,18 @@ class TestEmbeddingCache:
         cache, _ = self._cache(tmp_path)
         assert cache.get("nonexistent_key") is None
 
+    def test_put_rejects_non_digest_key_before_path_construction(
+        self, tmp_path: Path
+    ):
+        cache, _ = self._cache(tmp_path)
+        with pytest.raises(ValueError, match="cache key"):
+            cache.put(
+                "../../outside",
+                "ollama:nomic-embed-text:4:v1",
+                [1.0, 2.0, 3.0, 4.0],
+            )
+        assert not (tmp_path / "outside.npy").exists()
+
     def test_put_and_get(self, tmp_path: Path):
         cache, _ = self._cache(tmp_path)
         model_id = "ollama:nomic-embed-text:4:v1"
@@ -342,6 +359,9 @@ class TestEmbeddingCache:
     def test_cache_key_differs_by_model(self):
         assert _cache_key("m1", "text") != _cache_key("m2", "text")
 
+    def test_cache_key_has_unambiguous_component_boundaries(self):
+        assert _cache_key("ab", "c") != _cache_key("a", "bc")
+
     def test_npy_file_created(self, tmp_path: Path):
         cache, _ = self._cache(tmp_path)
         model_id = "ollama:nomic-embed-text:4:v1"
@@ -363,6 +383,165 @@ class TestEmbeddingCache:
         conn.close()
         assert row is not None
 
+    def test_unregistered_vector_file_is_not_a_cache_hit(self, tmp_path: Path):
+        cache, _ = self._cache(tmp_path)
+        key = cache.key_for("ollama:nomic-embed-text:4:v1", "orphan")
+        npy_path = tmp_path / "cache" / "embeddings" / f"{key}.npy"
+        import numpy as np
+
+        np.save(npy_path, np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+
+        assert cache.get(key) is None
+
+    @pytest.mark.parametrize(
+        ("array", "message"),
+        [
+            ([1.0, 2.0, 3.0], "dimension"),
+            ([1.0, 2.0, 3.0, float("nan")], "non-finite"),
+        ],
+    )
+    def test_get_rejects_corrupt_vector_values(
+        self, tmp_path: Path, array: list[float], message: str
+    ):
+        import numpy as np
+
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "corrupt")
+        cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+        np.save(
+            tmp_path / "cache" / "embeddings" / f"{key}.npy",
+            np.array(array, dtype=np.float32),
+        )
+
+        with pytest.raises(EmbeddingCacheCorruptionError, match=message):
+            cache.get(key)
+
+    def test_get_rejects_wrong_vector_dtype(self, tmp_path: Path):
+        import numpy as np
+
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "wrong-dtype")
+        cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+        np.save(
+            tmp_path / "cache" / "embeddings" / f"{key}.npy",
+            np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64),
+        )
+
+        with pytest.raises(EmbeddingCacheCorruptionError, match="data type"):
+            cache.get(key)
+
+    def test_get_rejects_missing_registered_vector_file(self, tmp_path: Path):
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "missing")
+        cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+        (tmp_path / "cache" / "embeddings" / f"{key}.npy").unlink()
+
+        with pytest.raises(EmbeddingCacheCorruptionError, match="missing"):
+            cache.get(key)
+
+    def test_get_rejects_truncated_registered_vector_file(self, tmp_path: Path):
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "truncated")
+        cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+        (tmp_path / "cache" / "embeddings" / f"{key}.npy").write_bytes(b"")
+
+        with pytest.raises(EmbeddingCacheCorruptionError, match="unreadable"):
+            cache.get(key)
+
+    def test_get_rejects_tampered_metadata_path(self, tmp_path: Path):
+        cache, db_path = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "tampered-path")
+        cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE embedding_cache SET vector_path = ? WHERE cache_key = ?",
+            ("../../outside.npy", key),
+        )
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(EmbeddingCacheCorruptionError, match="path"):
+            cache.get(key)
+
+    @pytest.mark.parametrize(
+        "vector",
+        [
+            [],
+            [1.0, 2.0, 3.0],
+            [1.0, 2.0, 3.0, float("inf")],
+            [1.0, 2.0, 3.0, True],
+        ],
+    )
+    def test_put_rejects_invalid_vectors_without_publishing(
+        self, tmp_path: Path, vector: list[float]
+    ):
+        cache, db_path = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "invalid")
+
+        with pytest.raises(ValueError):
+            cache.put(key, model_id, vector)
+
+        assert not (tmp_path / "cache" / "embeddings" / f"{key}.npy").exists()
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute(
+            "SELECT count(*) FROM embedding_cache WHERE cache_key = ?", (key,)
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
+
+    def test_failed_atomic_replace_leaves_no_row_or_temporary_file(
+        self, tmp_path: Path
+    ):
+        cache, db_path = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "replace-failure")
+
+        with patch(
+            "mrag.core.embedding.cache.os.replace",
+            side_effect=OSError("simulated replace failure"),
+        ):
+            with pytest.raises(OSError, match="simulated replace failure"):
+                cache.put(key, model_id, [1.0, 2.0, 3.0, 4.0])
+
+        cache_dir = tmp_path / "cache" / "embeddings"
+        assert not (cache_dir / f"{key}.npy").exists()
+        assert list(cache_dir.glob(".*.tmp")) == []
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute(
+            "SELECT count(*) FROM embedding_cache WHERE cache_key = ?", (key,)
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
+
+    def test_concurrent_same_key_publish_is_idempotent(self, tmp_path: Path):
+        cache, db_path = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        key = cache.key_for(model_id, "concurrent")
+        vector = [0.1, 0.2, 0.3, 0.4]
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [
+                executor.submit(cache.put, key, model_id, vector)
+                for _ in range(16)
+            ]
+            for future in futures:
+                future.result()
+
+        assert cache.get(key) == pytest.approx(vector)
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute(
+            "SELECT count(*) FROM embedding_cache WHERE cache_key = ?", (key,)
+        ).fetchone()[0]
+        conn.close()
+        assert count == 1
+        assert list((tmp_path / "cache" / "embeddings").glob(".*.tmp")) == []
+
     def test_get_or_embed_uses_cache_on_hit(self, tmp_path: Path):
         cache, _ = self._cache(tmp_path)
         model_id = "ollama:nomic-embed-text:4:v1"
@@ -379,6 +558,34 @@ class TestEmbeddingCache:
         assert called == []  # embed_fn must NOT be called on cache hit
         for a, b in zip(result[0], vector):
             assert abs(a - b) < 1e-5
+
+    def test_get_or_embed_reuses_one_lookup_connection_for_batch_hits(
+        self, tmp_path: Path
+    ):
+        from mrag.db.connection import db_connection
+
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        texts = ["first", "second", "third"]
+        for index, text in enumerate(texts):
+            cache.put(
+                cache.key_for(model_id, text),
+                model_id,
+                [float(index)] * 4,
+            )
+
+        with patch(
+            "mrag.core.embedding.cache.db_connection",
+            wraps=db_connection,
+        ) as connections:
+            result = cache.get_or_embed(
+                texts,
+                model_id,
+                lambda _: pytest.fail("cache hits must not call the provider"),
+            )
+
+        assert connections.call_count == 1
+        assert result == [[0.0] * 4, [1.0] * 4, [2.0] * 4]
 
     def test_get_or_embed_calls_embed_on_miss(self, tmp_path: Path):
         cache, _ = self._cache(tmp_path)
@@ -409,6 +616,32 @@ class TestEmbeddingCache:
         result = cache.get_or_embed(["cached", "fresh"], model_id, embed_fn)
         assert called == ["fresh"]
         assert len(result) == 2
+
+    def test_failure_aware_cache_preserves_original_indexes_and_caches_successes(
+        self, tmp_path: Path
+    ):
+        cache, _ = self._cache(tmp_path)
+        model_id = "ollama:nomic-embed-text:4:v1"
+        cached_key = cache.key_for(model_id, "cached")
+        cache.put(cached_key, model_id, [1.0] * 4)
+
+        called = []
+
+        def embed_fn(texts):
+            called.extend(texts)
+            return [None, [2.0] * 4], {0: "provider failure"}
+
+        vectors, failures = cache.get_or_embed_with_failures(
+            ["cached", "failed", "fresh"],
+            model_id,
+            embed_fn,
+        )
+
+        assert called == ["failed", "fresh"]
+        assert vectors == [[1.0] * 4, None, [2.0] * 4]
+        assert failures == {1: "provider failure"}
+        assert cache.get(cache.key_for(model_id, "failed")) is None
+        assert cache.get(cache.key_for(model_id, "fresh")) == [2.0] * 4
 
 
 # ---------------------------------------------------------------------------
