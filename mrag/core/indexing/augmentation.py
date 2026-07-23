@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
+from mrag.core.indexing.context_prompt_template import (
+    DEFAULT_CONTEXT_PROMPT_TEMPLATE,
+    render_context_prompt,
+)
 from mrag.core.ollama_client import ollama_post
 
 if TYPE_CHECKING:
@@ -31,9 +34,17 @@ def generate_context(
     Falls back to DEFAULT_CONTEXT_PROMPT_TEMPLATE when None.
     on_retry(attempt, max_attempts, exc) is called before each retry sleep.
     """
-    template = prompt_template or DEFAULT_CONTEXT_PROMPT_TEMPLATE
+    template = (
+        DEFAULT_CONTEXT_PROMPT_TEMPLATE
+        if prompt_template is None
+        else prompt_template
+    )
     document_excerpt = full_text[:_MAX_DOC_CHARS]
-    prompt = template.format(document=document_excerpt, chunk=chunk_content)
+    prompt = render_context_prompt(
+        template,
+        document=document_excerpt,
+        chunk=chunk_content,
+    )
 
     def _validate(data: dict) -> None:
         if not data.get("response", "").strip():

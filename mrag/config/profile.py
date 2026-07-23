@@ -198,12 +198,14 @@ class ProfileConfig(BaseModel):
         tokenizer = effective_tokenizer or self.keyword.tokenizer
         augmentation: dict = {"strategy": self.augmentation.strategy}
         if self.augmentation.strategy == "contextual":
-            if context_prompt is None:
-                from mrag.core.indexing.context_prompt_template import (
-                    DEFAULT_CONTEXT_PROMPT_TEMPLATE,
-                )
+            from mrag.core.indexing.context_prompt_template import (
+                DEFAULT_CONTEXT_PROMPT_TEMPLATE,
+                validate_context_prompt_template,
+            )
 
+            if context_prompt is None:
                 context_prompt = DEFAULT_CONTEXT_PROMPT_TEMPLATE
+            validate_context_prompt_template(context_prompt)
             augmentation.update(
                 {
                     "provider": self.augmentation.provider,

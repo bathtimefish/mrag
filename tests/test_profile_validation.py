@@ -180,8 +180,10 @@ class TestIndexIdentity:
             name="contextual",
             augmentation={"strategy": "contextual"},
         )
-        assert contextual.compute_hash(context_prompt="prompt-a") != contextual.compute_hash(
-            context_prompt="prompt-b"
+        assert contextual.compute_hash(
+            context_prompt="prompt-a {document} {chunk}"
+        ) != contextual.compute_hash(
+            context_prompt="prompt-b {document} {chunk}"
         )
 
     def test_unused_augmentation_runtime_values_are_excluded(self):
