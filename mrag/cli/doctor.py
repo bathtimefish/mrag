@@ -70,8 +70,15 @@ def _check_fts5_trigram() -> tuple[bool, str]:
 
 
 def _check_vaporetto() -> tuple[bool, str]:
-    from mrag.db.tokenizer import find_vaporetto_lib, probe_vaporetto
-    lib = find_vaporetto_lib()
+    from mrag.db.tokenizer import (
+        VaporettoLibraryAmbiguityError,
+        find_vaporetto_lib,
+        probe_vaporetto,
+    )
+    try:
+        lib = find_vaporetto_lib()
+    except VaporettoLibraryAmbiguityError as exc:
+        return False, str(exc)
     if lib is None:
         return False, "library not found (optional — place libsqlite_vaporetto in ~/.mrag/extensions/)"
     if not probe_vaporetto(lib):

@@ -1,4 +1,5 @@
 """mrag init command tests."""
+import importlib
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from typer.testing import CliRunner
 from mrag.cli import app
 from mrag.config.project import load_project_config
 from mrag.config.profile import load_profile
+from mrag.db.tokenizer import VaporettoLibraryAmbiguityError
 
 runner = CliRunner()
 
@@ -44,6 +46,29 @@ def test_init_fails_if_already_initialized(tmp_path: Path, monkeypatch: pytest.M
     result = runner.invoke(app, ["init", "--name", "my-kb", "--non-interactive"])
     assert result.exit_code == 1
     assert "already exists" in result.output
+
+
+def test_init_fails_before_project_creation_when_vaporetto_is_ambiguous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_module = importlib.import_module("mrag.cli.init")
+
+    def ambiguous() -> tuple[str, Path | None]:
+        raise VaporettoLibraryAmbiguityError("ambiguous fixture")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(init_module, "detect_best_tokenizer", ambiguous)
+
+    result = runner.invoke(
+        app,
+        ["init", "--name", "my-kb", "--non-interactive"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "ambiguous fixture" in result.output
+    assert not (tmp_path / "my-kb").exists()
 
 
 def test_init_force_reinitializes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

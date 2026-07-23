@@ -24,6 +24,21 @@ def test_vaporetto_connection_fails_before_opening_db_when_library_is_missing(
     assert not db_path.exists()
 
 
+def test_vaporetto_connection_wraps_ambiguous_library_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def ambiguous() -> Path:
+        raise connection.VaporettoLibraryAmbiguityError("ambiguous fixture")
+
+    monkeypatch.setattr(connection, "find_vaporetto_lib", ambiguous)
+
+    with pytest.raises(connection.VaporettoDependencyError, match="ambiguous fixture"):
+        connection.open_fts_connection(tmp_path / "mrag.db", "vaporetto")
+
+    assert not (tmp_path / "mrag.db").exists()
+
+
 def test_vaporetto_connection_reports_missing_apsw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
