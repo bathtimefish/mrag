@@ -1,5 +1,7 @@
+import math
 import re
 from pathlib import Path
+from typing import Any
 
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.ollama_client import ollama_post
@@ -40,11 +42,15 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         if not texts:
             return []
         vectors: list[list[float]] = []
+        expected_dimension = self._dimension
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
-            vectors.extend(self._embed_batch(batch))
-        if self._dimension is None and vectors:
-            self._dimension = len(vectors[0])
+            batch_vectors = self._embed_batch(batch, expected_dimension)
+            if expected_dimension is None:
+                expected_dimension = len(batch_vectors[0])
+            vectors.extend(batch_vectors)
+        if self._dimension is None:
+            self._dimension = expected_dimension
         return vectors
 
     def get_dimension(self) -> int:
@@ -91,10 +97,17 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
     # Internal
     # ------------------------------------------------------------------
 
-    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+    def _embed_batch(
+        self,
+        texts: list[str],
+        expected_dimension: int | None,
+    ) -> list[list[float]]:
         def _validate(data: dict) -> None:
-            if not data.get("embeddings"):
-                raise RuntimeError(f"Unexpected Ollama embed response: {data}")
+            _validate_embed_response(
+                data,
+                expected_count=len(texts),
+                expected_dimension=expected_dimension,
+            )
 
         data = ollama_post(
             self.endpoint,
@@ -107,3 +120,57 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
             validate=_validate,
         )
         return data["embeddings"]
+
+
+def _validate_embed_response(
+    data: Any,
+    *,
+    expected_count: int,
+    expected_dimension: int | None,
+) -> None:
+    """Reject malformed vectors before they reach cache, SQLite, or Qdrant."""
+    if not isinstance(data, dict):
+        raise RuntimeError("Unexpected Ollama embed response: expected an object")
+
+    embeddings = data.get("embeddings")
+    if not isinstance(embeddings, list):
+        raise RuntimeError(
+            "Unexpected Ollama embed response: 'embeddings' must be a list"
+        )
+    if len(embeddings) != expected_count:
+        raise RuntimeError(
+            "Unexpected Ollama embed response: embedding count "
+            f"{len(embeddings)} does not match input count {expected_count}"
+        )
+
+    batch_dimension: int | None = None
+    for index, vector in enumerate(embeddings):
+        if not isinstance(vector, list) or not vector:
+            raise RuntimeError(
+                "Unexpected Ollama embed response: "
+                f"embedding {index} must be a non-empty list"
+            )
+        for component in vector:
+            if (
+                isinstance(component, bool)
+                or not isinstance(component, (int, float))
+                or not math.isfinite(component)
+            ):
+                raise RuntimeError(
+                    "Unexpected Ollama embed response: "
+                    f"embedding {index} contains a non-finite or non-numeric component"
+                )
+
+        dimension = len(vector)
+        if batch_dimension is None:
+            batch_dimension = dimension
+        elif dimension != batch_dimension:
+            raise RuntimeError(
+                "Unexpected Ollama embed response: inconsistent dimensions "
+                f"{batch_dimension} and {dimension}"
+            )
+        if expected_dimension is not None and dimension != expected_dimension:
+            raise RuntimeError(
+                "Unexpected Ollama embed response: dimension "
+                f"{dimension} does not match expected dimension {expected_dimension}"
+            )

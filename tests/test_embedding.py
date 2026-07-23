@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mrag.core.embedding.base import BaseEmbeddingProvider
-from mrag.core.embedding.ollama import OllamaEmbeddingProvider, _normalize
+from mrag.core.embedding.ollama import (
+    OllamaEmbeddingProvider,
+    _normalize,
+    _validate_embed_response,
+)
 from mrag.core.embedding.cache import EmbeddingCache, _cache_key
 from mrag.db.qdrant import (
     collection_name,
@@ -119,6 +123,103 @@ class TestOllamaEmbeddingProvider:
 
         assert call_count == 3  # ceil(5/2) = 3
         assert len(result) == 5
+
+    @pytest.mark.parametrize(
+        ("data", "expected_count", "message"),
+        [
+            (None, 1, "expected an object"),
+            ({}, 1, "'embeddings' must be a list"),
+            (
+                {"embeddings": []},
+                1,
+                "embedding count 0 does not match input count 1",
+            ),
+            ({"embeddings": [[1.0], [2.0]]}, 1, "embedding count 2"),
+            ({"embeddings": [[]]}, 1, "must be a non-empty list"),
+            ({"embeddings": ["not-a-vector"]}, 1, "must be a non-empty list"),
+            ({"embeddings": [[True]]}, 1, "non-finite or non-numeric"),
+            ({"embeddings": [["1.0"]]}, 1, "non-finite or non-numeric"),
+            ({"embeddings": [[float("nan")]]}, 1, "non-finite or non-numeric"),
+            ({"embeddings": [[float("inf")]]}, 1, "non-finite or non-numeric"),
+            (
+                {"embeddings": [[1.0], [1.0, 2.0]]},
+                2,
+                "inconsistent dimensions",
+            ),
+        ],
+    )
+    def test_response_validation_rejects_unsafe_vectors(
+        self, data, expected_count, message
+    ):
+        with pytest.raises(RuntimeError, match=message):
+            _validate_embed_response(
+                data,
+                expected_count=expected_count,
+                expected_dimension=None,
+            )
+
+    def test_response_validation_rejects_known_dimension_mismatch(self):
+        with pytest.raises(RuntimeError, match="does not match expected dimension 3"):
+            _validate_embed_response(
+                {"embeddings": [[1.0, 2.0]]},
+                expected_count=1,
+                expected_dimension=3,
+            )
+
+    def test_invalid_response_is_retried_before_success(self):
+        prov = OllamaEmbeddingProvider(
+            model="nomic-embed-text",
+            max_attempts=2,
+            initial_delay=0.0,
+        )
+        invalid = MagicMock()
+        invalid.raise_for_status = MagicMock()
+        invalid.json.return_value = {"embeddings": []}
+        valid = MagicMock()
+        valid.raise_for_status = MagicMock()
+        valid.json.return_value = {"embeddings": [[1.0, 2.0]]}
+
+        with patch("httpx.post", side_effect=[invalid, valid]) as post:
+            assert prov.embed(["text"]) == [[1.0, 2.0]]
+
+        assert post.call_count == 2
+        assert prov.get_dimension() == 2
+
+    def test_dimension_mismatch_across_batches_is_rejected_atomically(self):
+        prov = OllamaEmbeddingProvider(
+            model="nomic-embed-text",
+            batch_size=1,
+            max_attempts=1,
+        )
+        first = MagicMock()
+        first.raise_for_status = MagicMock()
+        first.json.return_value = {"embeddings": [[1.0, 2.0]]}
+        second = MagicMock()
+        second.raise_for_status = MagicMock()
+        second.json.return_value = {"embeddings": [[1.0, 2.0, 3.0]]}
+
+        with patch("httpx.post", side_effect=[first, second]):
+            with pytest.raises(RuntimeError, match="expected dimension 2"):
+                prov.embed(["first", "second"])
+
+        with pytest.raises(RuntimeError, match="Dimension unknown"):
+            prov.get_dimension()
+
+    def test_dimension_mismatch_with_previous_call_is_rejected(self):
+        prov = OllamaEmbeddingProvider(model="nomic-embed-text", max_attempts=1)
+        first = MagicMock()
+        first.raise_for_status = MagicMock()
+        first.json.return_value = {"embeddings": [[1.0, 2.0]]}
+        second = MagicMock()
+        second.raise_for_status = MagicMock()
+        second.json.return_value = {"embeddings": [[1.0, 2.0, 3.0]]}
+
+        with patch("httpx.post", side_effect=[first, second]):
+            assert prov.embed(["first"]) == [[1.0, 2.0]]
+            with pytest.raises(RuntimeError, match="expected dimension 2"):
+                prov.embed(["second"])
+
+        assert prov.get_dimension() == 2
 
     def test_connect_error_raises_connection_error(self):
         import httpx as _httpx
