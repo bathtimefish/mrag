@@ -82,10 +82,12 @@ class ApswConnection:
         self._conn = apsw.Connection(str(db_path))
         self._conn.setbusytimeout(5000)
 
-        # Load extension
+        # Keep native extension loading enabled only for this trusted load.
         self._conn.enableloadextension(True)
-        self._conn.loadextension(str(lib_path), entrypoint)
-        self._conn.enableloadextension(False)
+        try:
+            self._conn.loadextension(str(lib_path), entrypoint)
+        finally:
+            self._conn.enableloadextension(False)
 
         # WAL + FK pragmas (mirrors open_connection())
         self._conn.execute("PRAGMA journal_mode=WAL")

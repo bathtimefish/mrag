@@ -10,6 +10,10 @@ from mrag.db.tokenizer import (
 )
 
 
+class VaporettoDependencyError(RuntimeError):
+    """Raised when a project requires Vaporetto but its runtime is unavailable."""
+
+
 def open_connection(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -47,14 +51,31 @@ def open_fts_connection(db_path: Path, tokenizer: str) -> Union[sqlite3.Connecti
     """
     Open a DB connection suitable for FTS5 operations.
     When tokenizer='vaporetto', uses an apsw-backed connection that loads
-    the vaporetto extension. Falls back to plain sqlite3 for 'trigram'.
+    the vaporetto extension. A missing Vaporetto runtime is an explicit error
+    because an existing FTS5 table cannot safely change tokenizer. Trigram
+    projects use the standard sqlite3 connection.
     """
     if tokenizer == TOKENIZER_VAPORETTO:
         lib = find_vaporetto_lib()
-        if lib:
-            from mrag.db.apsw_compat import ApswConnection
+        if lib is None:
+            raise VaporettoDependencyError(
+                "vaporetto is configured for this project, but the "
+                "sqlite-vaporetto library was not found. Restore it under "
+                "~/.mrag/extensions/ or set MRAG_VAPORETTO_LIB, then run "
+                "'mrag doctor'. The existing FTS index cannot fall back to "
+                "trigram."
+            )
+        from mrag.db.apsw_compat import ApswConnection
+        try:
             return ApswConnection(db_path, lib, _VAPORETTO_ENTRYPOINT)
-        # lib not found — fall back silently to trigram
+        except ModuleNotFoundError as exc:
+            if exc.name != "apsw":
+                raise
+            raise VaporettoDependencyError(
+                "vaporetto is configured for this project, but APSW is not "
+                "installed. Install the 'vaporetto' optional dependency and "
+                "run 'mrag doctor'."
+            ) from exc
     return open_connection(db_path)
 
 
