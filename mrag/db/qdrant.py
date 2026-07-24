@@ -1,3 +1,4 @@
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -15,11 +16,37 @@ def normalize_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
+def _identity_fingerprint(*parts: str) -> str:
+    """Deterministic 8-hex-char suffix distinguishing raw identities that
+    ``normalize_name`` can collapse onto the same slug (e.g. "kb-1", "kb 1",
+    and "kb_1" all normalize to "kb_1", as does "kb!!1" or "kb.1"). Joins
+    parts with the unit-separator control character (0x1F, never valid in
+    these identifiers) before hashing so distinct part boundaries can't
+    themselves collide, e.g. ("a", "bc") vs ("ab", "c").
+    """
+    joined = "\x1f".join(parts)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
+
+
 def collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str:
+    """Derives a stable, collision-resistant Qdrant collection name.
+
+    ``normalize_name`` alone is lossy: distinct knowledge-base IDs or profile
+    names can normalize to the same slug (see ``_identity_fingerprint``), and
+    a name collision would silently mix unrelated vector data into one
+    collection. The trailing fingerprint, derived from the raw (pre-
+    normalization) inputs, makes that practically impossible while keeping
+    the human-readable prefix for debugging.
+
+    Changing this format is a breaking change for existing Qdrant Server
+    deployments: previously created collections will no longer match and
+    will be orphaned rather than reused. Run `mrag reindex` after upgrading.
+    """
     kb = normalize_name(kb_id)
     profile = normalize_name(profile_name)
     model = normalize_name(model_normalized)
-    return f"mrag_{kb}_{profile}_{model}"
+    fingerprint = _identity_fingerprint(kb_id, profile_name, model_normalized)
+    return f"mrag_{kb}_{profile}_{model}_{fingerprint}"
 
 
 def make_client(
@@ -46,12 +73,43 @@ def ensure_collection(
     client: QdrantClient,
     col_name: str,
     dimension: int,
+    distance: Distance = Distance.COSINE,
 ) -> None:
+    """Creates the collection if missing; otherwise verifies its existing
+    vector schema matches what this profile/model expects.
+
+    A pre-existing collection under this name is not automatically safe to
+    reuse: it may have been built for a different embedding model or
+    distance metric (for example after a `col_name` collision, or a
+    manually reused name). Silently reusing it would mix incompatible
+    vectors into the same collection and corrupt search results, so a
+    mismatch raises ValueError instead.
+    """
     existing = {c.name for c in client.get_collections().collections}
     if col_name not in existing:
         client.create_collection(
             collection_name=col_name,
-            vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=dimension, distance=distance),
+        )
+        return
+
+    info = client.get_collection(col_name)
+    vectors_config = info.config.params.vectors
+    if not isinstance(vectors_config, VectorParams):
+        raise ValueError(
+            f"Qdrant collection '{col_name}' already exists with an incompatible "
+            "vector configuration (expected a single unnamed vector; found named "
+            "vectors instead). It was likely created by different tooling. Remove "
+            "it intentionally, or use a different knowledge base/profile."
+        )
+    if vectors_config.size != dimension or vectors_config.distance != distance:
+        raise ValueError(
+            f"Qdrant collection '{col_name}' already exists with a different "
+            f"vector schema (size={vectors_config.size}, distance={vectors_config.distance}) "
+            f"than requested (size={dimension}, distance={distance}). This usually means "
+            "a different embedding model or distance metric is now configured for this "
+            "knowledge base/profile. Remove the collection intentionally before "
+            "reindexing, or use a different knowledge base/profile."
         )
 
 

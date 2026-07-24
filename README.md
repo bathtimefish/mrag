@@ -8,6 +8,10 @@ mrag is a CLI for building and operating small-scale RAG knowledge bases. It pro
 
 ---
 
+> **Breaking change in 0.24.0 (Qdrant Server backend only):** The Qdrant collection naming scheme changed to prevent different knowledge bases/profiles from silently colliding into the same collection (the old scheme could normalize distinct IDs, e.g. `"kb-1"` and `"kb 1"`, to an identical collection name). This only affects `qdrant.mode: server`; the default `local` mode is unaffected. If you use `qdrant.mode: server`, previously created collections will no longer be found after upgrading — run `mrag reindex` (or `mrag index`) for each profile once after upgrading to rebuild them under the new name. Until you do, searches on that profile will return empty results rather than mixed or wrong ones; no data is deleted, the old collection is simply orphaned in Qdrant and can be removed manually once you've confirmed the new one is populated.
+
+---
+
 ## Requirements
 
 | Component | Notes |

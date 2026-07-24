@@ -27,6 +27,7 @@ from mrag.db.qdrant import (
     search,
     delete_points,
 )
+from qdrant_client.models import Distance, VectorParams
 from mrag.db.migrate import apply_schema
 
 
@@ -657,12 +658,20 @@ class TestQdrantHelpers:
         assert normalize_name("nomic-embed-text") == "nomic_embed_text"
 
     def test_collection_name_format(self):
+        # A trailing fingerprint is appended to make the name collision-safe
+        # (see tests/test_qdrant.py); the readable prefix is still exact.
         name = collection_name("my_kb", "default", "nomic_embed_text")
-        assert name == "mrag_my_kb_default_nomic_embed_text"
+        assert name.startswith("mrag_my_kb_default_nomic_embed_text_")
+        fingerprint = name.removeprefix("mrag_my_kb_default_nomic_embed_text_")
+        assert len(fingerprint) == 8
 
     def test_collection_name_normalizes_inputs(self):
+        # Case/punctuation differences still normalize to the same readable
+        # prefix, but the raw inputs differ, so the two must not collide
+        # into the same collection name (see tests/test_qdrant.py).
         name = collection_name("My-KB", "Default", "nomic-embed-text")
-        assert name == "mrag_my_kb_default_nomic_embed_text"
+        assert name.startswith("mrag_my_kb_default_nomic_embed_text_")
+        assert name != collection_name("my_kb", "default", "nomic_embed_text")
 
     def test_ensure_collection_creates_when_absent(self):
         client = MagicMock()
@@ -675,6 +684,9 @@ class TestQdrantHelpers:
         existing.name = "mrag_test"
         client = MagicMock()
         client.get_collections.return_value.collections = [existing]
+        client.get_collection.return_value.config.params.vectors = VectorParams(
+            size=768, distance=Distance.COSINE
+        )
         ensure_collection(client, "mrag_test", dimension=768)
         client.create_collection.assert_not_called()
 
