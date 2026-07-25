@@ -432,6 +432,28 @@ class TestEmbeddingFailurePolicyConfig:
         )
         assert config.failure_policy.mode == "fail_document"
 
+    def test_unknown_mode_is_rejected_by_model_and_yaml(self, tmp_path):
+        import yaml as yaml_lib
+        from pydantic import ValidationError
+
+        from mrag.config.profile import EmbeddingFailurePolicyConfig, load_profile
+
+        with pytest.raises(ValidationError):
+            EmbeddingFailurePolicyConfig.model_validate({"mode": "typo"})
+
+        profile_dir = tmp_path / "profiles"
+        profile_dir.mkdir()
+        (profile_dir / "invalid.yaml").write_text(
+            yaml_lib.dump(
+                {
+                    "name": "invalid",
+                    "embedding": {"failure_policy": {"mode": "typo"}},
+                }
+            )
+        )
+        with pytest.raises(ValidationError):
+            load_profile("invalid", project_dir=tmp_path)
+
     def test_failure_policy_excluded_from_hash(self):
         """Changing embedding.failure_policy.mode must not change profile_hash."""
         from mrag.config.profile import (

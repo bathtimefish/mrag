@@ -17,7 +17,10 @@ from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.indexing.diff import plan_indexing
 from mrag.core.indexing.embedding_fallback import embed_with_fallback
-from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
+from mrag.core.indexing.context_prompt_template import (
+    DEFAULT_CONTEXT_PROMPT_TEMPLATE,
+    validate_context_prompt_template,
+)
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.exclusions import active_document_ids
@@ -44,9 +47,13 @@ def _now_ts() -> str:
 def _load_context_prompt(project_dir: Path) -> str:
     """Read the effective prompt once so one index run uses one identity."""
     prompt_path = project_dir / "profiles" / "context_prompt.txt"
-    if prompt_path.exists():
-        return prompt_path.read_text(encoding="utf-8")
-    return DEFAULT_CONTEXT_PROMPT_TEMPLATE
+    prompt = (
+        prompt_path.read_text(encoding="utf-8")
+        if prompt_path.exists()
+        else DEFAULT_CONTEXT_PROMPT_TEMPLATE
+    )
+    validate_context_prompt_template(prompt)
+    return prompt
 
 
 @dataclass

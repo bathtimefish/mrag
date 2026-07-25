@@ -66,7 +66,8 @@ Here is the chunk we want to situate within the whole document:
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else. Always respond in the same language as the document and chunk. Prefer specific technical terms, parameter names, identifiers, and concrete values over general category descriptions. Do not begin your response with self-referential phrases like "This chunk" or "This section".
 ```
 
-- `{document}` と `{chunk}` の 2 つの placeholder は必須です（削除すると LLM 呼び出し時にエラーになります）
+- `{document}` と `{chunk}` の 2 つの placeholder は必須です。空テンプレート、必須 placeholder の欠落、未知の placeholder、変換指定、書式指定、不正な波括弧は、インデックス作成や provider 呼び出しの開始前に拒否されます。
+- プロンプト内で波括弧そのものを使う場合は、`{{` と `}}` のように二重に記述します。
 - ドキュメント本文は冒頭 8000 文字までが `{document}` に展開されます
 - 編集後は次回 `mrag index` 実行時から新プロンプトが使われます
 

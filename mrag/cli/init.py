@@ -18,7 +18,11 @@ from mrag.config.kb_info import (
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db.connection import db_connection
 from mrag.db.migrate import apply_schema
-from mrag.db.tokenizer import detect_best_tokenizer, TOKENIZER_VAPORETTO
+from mrag.db.tokenizer import (
+    TOKENIZER_VAPORETTO,
+    VaporettoLibraryAmbiguityError,
+    detect_best_tokenizer,
+)
 
 console = Console()
 
@@ -244,7 +248,11 @@ def init(
     # -----------------------------------------------------------------------
     # Phase 3: Detect tokenizer
     # -----------------------------------------------------------------------
-    fts_tokenizer, lib_path = detect_best_tokenizer()
+    try:
+        fts_tokenizer, lib_path = detect_best_tokenizer()
+    except VaporettoLibraryAmbiguityError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
     if fts_tokenizer == TOKENIZER_VAPORETTO:
         console.print(f"[green]✓[/green] vaporetto tokenizer detected ({lib_path.name})")
     else:

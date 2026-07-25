@@ -6,6 +6,7 @@ from typing import Generator, Union
 from mrag.db.tokenizer import (
     TOKENIZER_VAPORETTO,
     _VAPORETTO_ENTRYPOINT,
+    VaporettoLibraryAmbiguityError,
     find_vaporetto_lib,
 )
 
@@ -56,7 +57,10 @@ def open_fts_connection(db_path: Path, tokenizer: str) -> Union[sqlite3.Connecti
     projects use the standard sqlite3 connection.
     """
     if tokenizer == TOKENIZER_VAPORETTO:
-        lib = find_vaporetto_lib()
+        try:
+            lib = find_vaporetto_lib()
+        except VaporettoLibraryAmbiguityError as exc:
+            raise VaporettoDependencyError(str(exc)) from exc
         if lib is None:
             raise VaporettoDependencyError(
                 "vaporetto is configured for this project, but the "

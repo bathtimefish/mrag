@@ -30,8 +30,34 @@ _DEFAULT_SEARCH_DIRS = [
 ]
 
 
+class VaporettoLibraryAmbiguityError(RuntimeError):
+    """Raised when automatic discovery cannot choose one library safely."""
+
+
+def _find_candidates(base: Path) -> list[Path]:
+    candidates = [
+        base / name
+        for name in _VAPORETTO_LIB_NAMES
+        if (base / name).is_file()
+    ]
+    for sub in sorted(base.iterdir(), key=lambda path: path.name):
+        if not sub.is_dir():
+            continue
+        candidates.extend(
+            sub / name
+            for name in _VAPORETTO_LIB_NAMES
+            if (sub / name).is_file()
+        )
+    return sorted(set(candidates), key=str)
+
+
 def find_vaporetto_lib() -> Path | None:
-    """Search well-known locations for the vaporetto shared library."""
+    """Search well-known locations for exactly one Vaporetto shared library.
+
+    An explicit ``MRAG_VAPORETTO_LIB`` remains authoritative. Automatic
+    discovery preserves standard-directory precedence, but refuses to select
+    one artifact when the same directory contains multiple candidates.
+    """
     env = os.environ.get("MRAG_VAPORETTO_LIB")
     if env:
         p = Path(env)
@@ -39,17 +65,18 @@ def find_vaporetto_lib() -> Path | None:
             return p
 
     for base in _DEFAULT_SEARCH_DIRS:
-        if not base.exists():
+        if not base.is_dir():
             continue
-        for name in _VAPORETTO_LIB_NAMES:
-            if (base / name).exists():
-                return base / name
-        # One level of versioned subdirectories
-        for sub in base.iterdir():
-            if sub.is_dir():
-                for name in _VAPORETTO_LIB_NAMES:
-                    if (sub / name).exists():
-                        return sub / name
+        candidates = _find_candidates(base)
+        if len(candidates) == 1:
+            return candidates[0]
+        if candidates:
+            rendered = ", ".join(str(candidate) for candidate in candidates)
+            raise VaporettoLibraryAmbiguityError(
+                "multiple sqlite-vaporetto libraries were found under "
+                f"{base}: {rendered}. Set MRAG_VAPORETTO_LIB to the intended "
+                "library."
+            )
     return None
 
 
