@@ -127,6 +127,11 @@ class AugmentationConfig(BaseModel):
     provider: str = "ollama"
     model: str = "gemma4:e2b"
     endpoint: str = "http://localhost:11434"
+    # Reasoning models spend most of their generation budget on tokens that are
+    # stripped from the response, so contextual augmentation pays for them and
+    # throws them away. Off by default; has no effect on models that do not
+    # report the "thinking" capability.
+    think: bool = False
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
     failure_policy: AugmentationFailurePolicyConfig = Field(default_factory=AugmentationFailurePolicyConfig)
 
@@ -211,6 +216,11 @@ class ProfileConfig(BaseModel):
                     "provider": self.augmentation.provider,
                     "model": self.augmentation.model,
                     "endpoint": self.augmentation.endpoint,
+                    # Thinking changes the generated context, so it changes the
+                    # index. Leaving it out would let a profile edit take effect
+                    # for new documents while existing ones kept context
+                    # generated under the other setting.
+                    "think": self.augmentation.think,
                     "context_prompt_hash": hashlib.sha256(
                         context_prompt.encode("utf-8")
                     ).hexdigest(),

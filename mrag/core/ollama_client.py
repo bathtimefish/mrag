@@ -20,6 +20,43 @@ import httpx
 
 _RETRYABLE_HTTP_CODES = {500, 502, 503, 504}
 
+# Model capabilities never change while a process runs, and augmentation asks
+# once per chunk, so the answer is cached per (endpoint, model) rather than
+# re-probed hundreds of times.
+_CAPABILITY_CACHE: dict[tuple[str, str], frozenset[str]] = {}
+
+
+def model_capabilities(endpoint: str, model: str, timeout: float = 10.0) -> frozenset[str]:
+    """Return the capabilities Ollama reports for a model, or empty on failure.
+
+    Used to decide whether a request may carry parameters that only some models
+    accept — notably `think`, which Ollama rejects for models without the
+    "thinking" capability. Failure returns an empty set so callers fall back to
+    the plain request rather than breaking on an older Ollama that does not
+    report capabilities at all.
+    """
+    key = (endpoint.rstrip("/"), model)
+    cached = _CAPABILITY_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        response = httpx.post(
+            f"{key[0]}/api/show", json={"model": model}, timeout=timeout
+        )
+        response.raise_for_status()
+        capabilities = frozenset(response.json().get("capabilities") or [])
+    except (httpx.HTTPError, ValueError):
+        capabilities = frozenset()
+
+    _CAPABILITY_CACHE[key] = capabilities
+    return capabilities
+
+
+def reset_capability_cache() -> None:
+    """Clear the memoized capability lookups (tests and long-lived servers)."""
+    _CAPABILITY_CACHE.clear()
+
 
 def probe_connection(endpoint: str, timeout: float = 10.0) -> None:
     """Verify the Ollama endpoint is reachable. Raises ConnectionError if not.

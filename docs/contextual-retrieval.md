@@ -29,6 +29,7 @@ augmentation:
   provider: ollama
   model: gemma4:e2b              # generation LLM — separate from the embedding model
   endpoint: http://localhost:11434
+  think: false                   # reasoning models only — false (default) | true
   retry:                         # optional — defaults shown
     max_attempts: 3
     initial_delay_seconds: 2.0
@@ -43,10 +44,11 @@ Field meanings:
 - **`strategy`** — `none` disables contextual augmentation (fast). `contextual` enables it.
 - **`model`** — the LLM used for context generation. Distinct from the search-side `embedding.model`.
 - **`endpoint`** — URL of the LLM API endpoint used for context generation (default: `http://localhost:11434`).
+- **`think`** — whether a reasoning model may use its thinking budget. Off by default, because those tokens are stripped from the response and only slow generation down: on `gemma4:e2b` a call spent 390 generated tokens to return a 54-character note, and `think: false` cut the call from 6.5 s to 3.4 s while returning a *longer* note. Has no effect on models that do not report the `thinking` capability — mrag probes `/api/show` once per model and omits the parameter, because Ollama rejects it for models that cannot think.
 - **`retry`** — retry settings for transient failures during context generation (timeouts, etc.).
 - **`failure_policy.mode`** — how chunks that still fail after retries are handled (see below).
 
-> Changing `augmentation.strategy` modifies the profile hash, which triggers **a full rebuild of that profile's index** on the next `mrag index` run. Changes to `retry` and `failure_policy` are excluded from the hash and do not require re-indexing.
+> Changing `augmentation.strategy`, `model`, `endpoint`, `think`, or the context prompt modifies the profile hash, which triggers **a full rebuild of that profile's index** on the next `mrag index` run — each of them changes the generated context, so the existing index no longer matches the configuration. Changes to `retry` and `failure_policy` are excluded from the hash and do not require re-indexing.
 
 
 ## Context prompt (`context_prompt.txt`)
