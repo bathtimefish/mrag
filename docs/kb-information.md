@@ -108,7 +108,7 @@ What each subcommand does:
 
 ### Slug rule for `knowledge_base.id`
 
-The value must match the regular expression `^[a-z0-9_]+$`. A violation causes exit 1 with a suggestion:
+The value must match the regular expression `^[a-z0-9_]+$`. The rule is applied to every source of the id — `--kb-id`, the interactive prompt, and `--kb-info-json` — before any project file is written, so `mrag.yaml` and `kb_information.yaml` can never disagree about whether an id is valid. A violation causes exit 1 with a suggestion (in interactive mode the prompt is repeated instead, offering the suggestion as the new default):
 
 | Input | Result |
 |---|---|

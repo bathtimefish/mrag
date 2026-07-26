@@ -208,11 +208,11 @@ Changing any `chunking` field (including `preserve_*`) invalidates the index ide
 | `hybrid` | Keyword + vector fused via `retrieval.fusion: rrf` (default) or `weighted` | Qdrant + Ollama |
 | `parent_child` | Fetches child chunks, resolves to parent chunks, deduplicates | Qdrant + Ollama; requires `chunking.strategy: parent_child` |
 
-The default strategy is set in `profiles/default.yaml` under `retrieval.strategy`.
+The default strategy is set in `profiles/default.yaml` under `retrieval.strategy`. The number of results is set alongside it under `retrieval.top_k`, and applies whenever the caller does not pass an explicit count (`--top-k` for the CLI, `top_k` for API and MCP requests).
 
 ## Reranking
 
-When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sentence-transformers) after retrieval. The reranker fetches `rerank.top_n` candidates, re-scores them, and the caller trims to the requested final count (`--top-k` for CLI or `top_k` for API requests).
+When `rerank.enabled: true` in a profile, mrag runs a CrossEncoder reranker (sentence-transformers) after retrieval. The reranker fetches `rerank.top_n` candidates, re-scores them, and the caller trims to the requested final count (`--top-k` for CLI or `top_k` for API requests, falling back to the profile's `retrieval.top_k`).
 
 Reranking is **retrieval-time only** — it does not affect the stored index. Changing `rerank` settings in a profile YAML takes effect on the next search without re-indexing.
 

@@ -33,6 +33,29 @@ def _slugify_kb_id(raw: str) -> str:
     return s.strip("_")
 
 
+def suggest_kb_id(raw: str) -> str:
+    """Return a slug-safe kb id derived from `raw`, never empty."""
+    return _slugify_kb_id(raw) or "kb_unnamed"
+
+
+def validate_kb_id(value: str) -> str:
+    """Validate a kb id against the spec §12.1 slug rule; raise ValueError if invalid.
+
+    This is the single definition of the rule. `mrag init` calls it before the id
+    reaches either mrag.yaml or kb_information.yaml, so one id can never be
+    accepted by one file and rejected by the other.
+    """
+    if not value:
+        raise ValueError("knowledge_base.id must not be empty")
+    if not _KB_ID_PATTERN.match(value):
+        raise ValueError(
+            f"knowledge_base.id '{value}' contains invalid characters. "
+            f"Use lowercase alphanumeric + underscore. "
+            f"Suggestion: '{suggest_kb_id(value)}'"
+        )
+    return value
+
+
 class KbInfoKnowledgeBase(BaseModel):
     id: str
     name: str
@@ -41,15 +64,7 @@ class KbInfoKnowledgeBase(BaseModel):
     @field_validator("id")
     @classmethod
     def _validate_id(cls, v: str) -> str:
-        if not v:
-            raise ValueError("knowledge_base.id must not be empty")
-        if not _KB_ID_PATTERN.match(v):
-            suggestion = _slugify_kb_id(v) or "kb_unnamed"
-            raise ValueError(
-                f"knowledge_base.id '{v}' contains invalid characters. "
-                f"Use lowercase alphanumeric + underscore. Suggestion: '{suggestion}'"
-            )
-        return v
+        return validate_kb_id(v)
 
     @field_validator("name")
     @classmethod
@@ -180,4 +195,6 @@ __all__ = [
     "kb_info_json_schema",
     "kb_info_path",
     "load_kb_info",
+    "suggest_kb_id",
+    "validate_kb_id",
 ]

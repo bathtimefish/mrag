@@ -65,7 +65,7 @@ Field semantics:
 - **`query`** — The search query string (required). A missing field returns 422.
 - **`profile`** — Profile name. Defaults to `default_profile` in `mrag.yaml`. Specifying a non-existent profile returns 404.
 - **`strategy`** — Override the retrieval strategy (`hybrid` / `vector` / `keyword` / `parent_child`). Defaults to the profile's `retrieval.strategy`. If you specify `parent_child`, the index on that profile must have been built with parent-child chunking (child chunks must exist, or the call will not behave as expected).
-- **`top_k`** — Number of records to return (between `1` and `100`, default `5`).
+- **`top_k`** — Number of records to return (between `1` and `100`). Omit it to use the resolved profile's `retrieval.top_k`.
 
 ### Response
 

@@ -130,6 +130,49 @@ def test_retrieve_unknown_profile(api_client):
     assert resp.status_code == 404
 
 
+def test_retrieve_without_top_k_defers_to_profile(api_client, monkeypatch):
+    """An omitted top_k must reach run_retrieval as None, not as a request-model default."""
+    import mrag.api.routers.native as native_router
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(results=[], profile_name="default", strategy="keyword", reranked=False)
+
+    monkeypatch.setattr(native_router, "run_retrieval", fake_run_retrieval)
+
+    resp = api_client.client.post("/api/v1/retrieve", json={"query": "Hello"})
+    assert resp.status_code == 200
+    assert captured["top_k"] is None
+
+
+def test_retrieve_explicit_top_k_is_passed_through(api_client, monkeypatch):
+    import mrag.api.routers.native as native_router
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(results=[], profile_name="default", strategy="keyword", reranked=False)
+
+    monkeypatch.setattr(native_router, "run_retrieval", fake_run_retrieval)
+
+    resp = api_client.client.post("/api/v1/retrieve", json={"query": "Hello", "top_k": 3})
+    assert resp.status_code == 200
+    assert captured["top_k"] == 3
+
+
+def test_retrieve_top_k_bounds_still_enforced(api_client):
+    """Making top_k optional must not drop its 1..100 validation."""
+    assert api_client.client.post(
+        "/api/v1/retrieve", json={"query": "Hello", "top_k": 0}
+    ).status_code == 422
+    assert api_client.client.post(
+        "/api/v1/retrieve", json={"query": "Hello", "top_k": 101}
+    ).status_code == 422
+
+
 def test_retrieve_alternate_profile_does_not_reuse_startup_provider(
     api_client,
     monkeypatch,

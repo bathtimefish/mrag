@@ -14,6 +14,8 @@ from mrag.config.kb_info import (
     build_minimal_kb_info,
     dump_kb_info,
     kb_info_json_schema,
+    suggest_kb_id,
+    validate_kb_id,
 )
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db.connection import db_connection
@@ -110,6 +112,17 @@ def _default_kb_id_from_name(name: str) -> str:
 def _default_kb_display_name(name: str) -> str:
     """Derive a human-readable knowledge-base display name from project name."""
     return name.replace("-", " ").replace("_", " ").title() + " Knowledge Base"
+
+
+def _prompt_kb_id(default_kb_id: str) -> str:
+    """Prompt for a knowledge base ID, re-asking until it is slug-safe."""
+    while True:
+        candidate = typer.prompt("Knowledge base ID", default=default_kb_id)
+        try:
+            return validate_kb_id(candidate)
+        except ValueError as error:
+            console.print(f"[red]Error:[/red] {error}")
+            default_kb_id = suggest_kb_id(candidate)
 
 
 def _load_kb_info_json(path: Path) -> KbInformationInput:
@@ -214,7 +227,18 @@ def init(
         elif non_interactive:
             kb_id = default_kb_id
         else:
-            kb_id = typer.prompt("Knowledge base ID", default=default_kb_id)
+            kb_id = _prompt_kb_id(default_kb_id)
+
+    # Validate here, while nothing has been written yet. kb_id is interpolated
+    # into mrag.yaml (Phase 4) without validation and enforced by
+    # KbInfoKnowledgeBase in kb_information.yaml (Phase 2); checking once at the
+    # source keeps a single rule and turns a --kb-id typo into a readable error
+    # instead of a pydantic traceback. The interactive path already validated.
+    try:
+        kb_id = validate_kb_id(kb_id)
+    except ValueError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1)
 
     # kb_name precedence:
     #   1. kb_info_input.knowledge_base.name

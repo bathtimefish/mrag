@@ -65,7 +65,7 @@ Content-Type: application/json
 - **`query`** — 検索クエリ文字列（必須）。フィールド欠落で 422
 - **`profile`** — プロファイル名。省略時は `mrag.yaml` の `default_profile`。存在しないプロファイルを指定すると 404
 - **`strategy`** — 検索戦略の上書き（`hybrid` / `vector` / `keyword` / `parent_child`）。省略時はプロファイルの `retrieval.strategy` に従います。`parent_child` を指定する場合はインデックス側もそのプロファイルで作られている必要があります（子チャンクが存在しないと正しく動作しません）
-- **`top_k`** — 最終的に返す件数（`1` 以上 `100` 以下、デフォルト `5`）
+- **`top_k`** — 最終的に返す件数（`1` 以上 `100` 以下）。省略時は解決されたプロファイルの `retrieval.top_k` に従います
 
 ### レスポンス
 

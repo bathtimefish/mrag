@@ -71,7 +71,9 @@ def _build_json_payload(
 def search(
     query: str = typer.Argument(..., help="Search query"),
     profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Profile name"),
-    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results"),
+    top_k: Optional[int] = typer.Option(
+        None, "--top-k", "-k", help="Number of results (default: profile retrieval.top_k)"
+    ),
     strategy: Optional[str] = typer.Option(
         None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
     ),
