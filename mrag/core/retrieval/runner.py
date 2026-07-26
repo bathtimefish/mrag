@@ -67,7 +67,7 @@ def run_retrieval(
     config: ProjectConfig,
     profile_name: str | None = None,
     strategy: str | None = None,
-    top_k: int = 5,
+    top_k: int | None = None,
     no_rerank: bool = False,
     embedding_provider: BaseEmbeddingProvider | None = None,
     qdrant_client=None,
@@ -79,9 +79,14 @@ def run_retrieval(
 
     This function centralizes the strategy dispatch that used to be duplicated
     across CLI and API layers.
+
+    `top_k` is the final number of results. Leave it None to use the profile's
+    `retrieval.top_k`; callers must not substitute a default of their own, or the
+    profile value could never take effect.
     """
     resolved_profile_name = profile_name or config.default_profile
     profile = load_profile(resolved_profile_name, project_dir)
+    effective_top_k = profile.retrieval.top_k if top_k is None else top_k
     db_path = find_db(project_dir)
     resolved_strategy = strategy or profile.retrieval.strategy
     tokenizer = validate_effective_tokenizer(profile, config.fts_tokenizer)
@@ -93,7 +98,7 @@ def run_retrieval(
         active_reranker = get_reranker(profile.rerank)
 
     use_rerank = active_reranker is not None and not no_rerank
-    retrieval_top_k = profile.rerank.top_n if use_rerank else top_k
+    retrieval_top_k = profile.rerank.top_n if use_rerank else effective_top_k
 
     if use_rerank and resolved_strategy == "parent_child" and warn is not None:
         warn(
@@ -175,7 +180,7 @@ def run_retrieval(
 
     reranked = False
     if use_rerank and results:
-        results = active_reranker.rerank(query, results)[:top_k]
+        results = active_reranker.rerank(query, results)[:effective_top_k]
         reranked = True
 
     return RetrievalRun(
@@ -183,7 +188,7 @@ def run_retrieval(
         profile_name=resolved_profile_name,
         profile=profile,
         strategy=resolved_strategy,
-        requested_top_k=top_k,
+        requested_top_k=effective_top_k,
         retrieval_top_k=retrieval_top_k,
         reranked=reranked,
         results=results,

@@ -16,6 +16,8 @@ from mrag.config.kb_info import (
     kb_info_json_schema,
     kb_info_path,
     load_kb_info,
+    suggest_kb_id,
+    validate_kb_id,
 )
 
 
@@ -65,6 +67,48 @@ class TestKnowledgeBaseValidation:
     def test_description_with_unicode(self):
         kb = KbInfoKnowledgeBase(id="kb_x", name="x", description="日本語の説明")
         assert kb.description == "日本語の説明"
+
+
+# ---------------------------------------------------------------------------
+# validate_kb_id / suggest_kb_id — the shared rule
+#
+# `mrag init` calls these before writing mrag.yaml, and KbInfoKnowledgeBase
+# calls validate_kb_id from its field validator. Both entry points must agree,
+# or an id could be accepted by one file and rejected by the other.
+# ---------------------------------------------------------------------------
+
+class TestValidateKbId:
+    def test_valid_id_returns_unchanged(self):
+        assert validate_kb_id("kb_device_v2") == "kb_device_v2"
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_kb_id("")
+
+    def test_hyphen_raises_with_suggestion(self):
+        with pytest.raises(ValueError, match="kb_device"):
+            validate_kb_id("kb-device")
+
+    def test_uppercase_raises(self):
+        with pytest.raises(ValueError, match="invalid characters"):
+            validate_kb_id("KbDevice")
+
+    def test_agrees_with_the_model_validator(self):
+        """Whatever validate_kb_id accepts, KbInfoKnowledgeBase must accept too."""
+        for candidate in ["kb_x", "kb_device_v2", "a", "0", "kb_", "_"]:
+            assert validate_kb_id(candidate) == candidate
+            assert KbInfoKnowledgeBase(id=candidate, name="x").id == candidate
+
+    def test_rejections_agree_with_the_model_validator(self):
+        for candidate in ["", "kb-device", "KbDevice", "kb device", "kb.device", "kb/../x"]:
+            with pytest.raises(ValueError):
+                validate_kb_id(candidate)
+            with pytest.raises(ValidationError):
+                KbInfoKnowledgeBase(id=candidate, name="x")
+
+    def test_suggestion_is_always_usable(self):
+        for raw in ["KB-Device!", "my kb", "___", "", "日本語"]:
+            assert validate_kb_id(suggest_kb_id(raw)) == suggest_kb_id(raw)
 
 
 # ---------------------------------------------------------------------------

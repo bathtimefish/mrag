@@ -243,6 +243,89 @@ class TestPrintKbInfoSchema:
 
 
 # ---------------------------------------------------------------------------
+# --kb-id validation
+#
+# kb_id used to be validated only inside kb_information.yaml's schema, so an
+# invalid --kb-id surfaced as a raw pydantic traceback from Phase 2 instead of
+# the CLI's own error style. It is now checked at the source, before either
+# mrag.yaml or kb_information.yaml is written.
+# ---------------------------------------------------------------------------
+
+class TestKbIdValidation:
+    def test_invalid_kb_id_exits_one_without_traceback(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, [
+            "init", "--name", "my-kb", "--kb-id", "my-kb", "--non-interactive",
+        ])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Traceback" not in result.output
+        assert "ValidationError" not in result.output
+        assert "Error:" in result.output
+
+    def test_invalid_kb_id_reports_a_slug_suggestion(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, [
+            "init", "--name", "my-kb", "--kb-id", "My-KB!", "--non-interactive",
+        ])
+        assert result.exit_code == 1
+        assert "my_kb" in result.output
+
+    def test_invalid_kb_id_leaves_no_project_files(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        runner.invoke(app, [
+            "init", "--name", "my-kb", "--kb-id", "my-kb", "--non-interactive",
+        ])
+        assert not (tmp_path / "my-kb").exists()
+
+    def test_empty_kb_id_is_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, [
+            "init", "--name", "my-kb", "--kb-id", "", "--non-interactive",
+        ])
+        assert result.exit_code == 1
+        assert "must not be empty" in result.output
+
+    def test_valid_kb_id_still_succeeds(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, [
+            "init", "--name", "my-kb", "--kb-id", "kb_custom", "--non-interactive",
+        ], catch_exceptions=False)
+        assert result.exit_code == 0
+        data = _load_kb_info_yaml(tmp_path / "my-kb")
+        assert data["knowledge_base"]["id"] == "kb_custom"
+        mrag_yaml = yaml.safe_load((tmp_path / "my-kb" / "mrag.yaml").read_text(encoding="utf-8"))
+        assert mrag_yaml["knowledge_base"]["id"] == "kb_custom"
+
+    def test_derived_default_kb_id_is_always_valid(self, tmp_path, monkeypatch):
+        """The name-derived fallback must satisfy the same rule it is checked against."""
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, [
+            "init", "--name", "My Mixed-Case KB", "--non-interactive",
+        ], catch_exceptions=False)
+        assert result.exit_code == 0
+
+    def test_interactive_reprompts_until_valid(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        # prompts: Knowledge base ID (invalid, then valid), then description.
+        result = runner.invoke(
+            app, ["init", "--name", "my-kb"], input="my-kb\nkb_second_try\n\n"
+        )
+        assert result.exit_code == 0, result.output
+        assert "Error:" in result.output
+        data = _load_kb_info_yaml(tmp_path / "my-kb")
+        assert data["knowledge_base"]["id"] == "kb_second_try"
+
+    def test_interactive_reprompt_offers_the_slug_as_new_default(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        # Accepting the re-prompt default (empty line) must take the suggestion.
+        result = runner.invoke(app, ["init", "--name", "my-kb"], input="my-kb\n\n\n")
+        assert result.exit_code == 0, result.output
+        data = _load_kb_info_yaml(tmp_path / "my-kb")
+        assert data["knowledge_base"]["id"] == "my_kb"
+
+
+# ---------------------------------------------------------------------------
 # Existing mrag init behavior preserved
 # ---------------------------------------------------------------------------
 

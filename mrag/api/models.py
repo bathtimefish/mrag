@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 class RetrieveRequest(BaseModel):
     query: str
     profile: str | None = None
-    top_k: int = Field(default=5, ge=1, le=100)
+    # Omit to use the resolved profile's retrieval.top_k.
+    top_k: int | None = Field(default=None, ge=1, le=100)
     strategy: str | None = None  # hybrid | vector | keyword
 
 

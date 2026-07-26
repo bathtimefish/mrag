@@ -195,6 +195,8 @@ mrag search "your query" --no-rerank
 
 This lets you experiment with a different strategy on the spot — no profile edit, no re-indexing required.
 
+Omitting `--top-k` uses the profile's `retrieval.top_k`, so a profile change takes effect without repeating the option on every search.
+
 
 ## Document-level exclusions
 

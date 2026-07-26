@@ -1,6 +1,7 @@
 """Tests for Phase 6: vector, keyword, fusion, hybrid retrieval, mrag search command."""
 import sqlite3
 import uuid
+from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -295,6 +296,99 @@ def test_vector_search_unknown_chunk_id_filtered(indexed_project):
         col_name="mrag_test_col",
     )
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# top_k resolution
+#
+# The profile's retrieval.top_k is the final result count. Entry points pass
+# None when the caller did not ask for a specific count — a fixed default in a
+# CLI parser or request model would always win over the profile, pinning every
+# search to that number no matter what the profile says.
+# ---------------------------------------------------------------------------
+
+def _set_profile_top_k(project_dir: Path, top_k: int) -> None:
+    import yaml
+
+    path = project_dir / "profiles" / "default.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["retrieval"]["top_k"] = top_k
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def test_run_retrieval_unset_top_k_uses_profile(indexed_project):
+    from mrag.core.retrieval.runner import run_retrieval
+
+    _set_profile_top_k(indexed_project.tmp_path, 11)
+    run = run_retrieval(
+        query="hello",
+        project_dir=indexed_project.tmp_path,
+        config=indexed_project.config,
+        strategy="keyword",
+    )
+    assert run.requested_top_k == 11
+    assert run.retrieval_top_k == 11
+
+
+def test_run_retrieval_explicit_top_k_overrides_profile(indexed_project):
+    from mrag.core.retrieval.runner import run_retrieval
+
+    _set_profile_top_k(indexed_project.tmp_path, 11)
+    run = run_retrieval(
+        query="hello",
+        project_dir=indexed_project.tmp_path,
+        config=indexed_project.config,
+        strategy="keyword",
+        top_k=3,
+    )
+    assert run.requested_top_k == 3
+    assert run.retrieval_top_k == 3
+
+
+def test_search_cli_without_top_k_defers_to_profile(indexed_project, monkeypatch):
+    """`mrag search` must not substitute a parser default for the profile value."""
+    # `mrag.cli` re-exports the `search` function, shadowing the submodule name.
+    search_module = import_module("mrag.cli.search")
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(strategy="keyword", results=[], reranked=False)
+
+    monkeypatch.setattr(search_module, "run_retrieval", fake_run_retrieval)
+    result = runner.invoke(app, ["search", "hello"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert captured["top_k"] is None
+
+
+def test_search_cli_explicit_top_k_is_passed_through(indexed_project, monkeypatch):
+    # `mrag.cli` re-exports the `search` function, shadowing the submodule name.
+    search_module = import_module("mrag.cli.search")
+
+    captured = {}
+
+    def fake_run_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(strategy="keyword", results=[], reranked=False)
+
+    monkeypatch.setattr(search_module, "run_retrieval", fake_run_retrieval)
+    result = runner.invoke(app, ["search", "hello", "--top-k", "3"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert captured["top_k"] == 3
+
+
+def test_search_cli_returns_profile_top_k_results(indexed_project):
+    """End to end: the profile count reaches the result set, not a fixed 5."""
+    import json as json_module
+
+    _set_profile_top_k(indexed_project.tmp_path, 2)
+    result = runner.invoke(
+        app, ["search", "hello", "--strategy", "keyword", "--json"], catch_exceptions=False
+    )
+    assert result.exit_code == 0, result.output
+    payload = json_module.loads(result.stdout)
+    assert payload["result_count"] <= 2
 
 
 # ---------------------------------------------------------------------------
