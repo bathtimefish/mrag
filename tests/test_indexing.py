@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -76,6 +77,88 @@ def _fake_qdrant_client() -> MagicMock:
     client = MagicMock()
     client.get_collections.return_value.collections = []
     return client
+
+
+class StatefulQdrant:
+    """In-memory stand-in that actually stores the points written to it.
+
+    `_fake_qdrant_client` is a MagicMock, which accepts any call and remembers
+    nothing about whether a delete reached a collection — that is precisely why
+    the pre-0.27.0 orphan leak stayed green under test. Anything asserting on
+    what the collection *holds* needs this instead.
+    """
+
+    def __init__(self) -> None:
+        self._points: dict[str, dict[str, Any]] = {}
+        self._configs: dict[str, Any] = {}
+
+    # -- QdrantClient surface used by mrag.db.qdrant -------------------------
+
+    def get_collections(self) -> Any:
+        return SimpleNamespace(
+            collections=[SimpleNamespace(name=name) for name in self._points]
+        )
+
+    def create_collection(self, collection_name: str, vectors_config: Any) -> None:
+        self._points.setdefault(collection_name, {})
+        self._configs[collection_name] = vectors_config
+
+    def get_collection(self, collection_name: str) -> Any:
+        config = SimpleNamespace(params=SimpleNamespace(vectors=self._configs[collection_name]))
+        return SimpleNamespace(config=config)
+
+    def upsert(self, collection_name: str, points: list[Any]) -> None:
+        store = self._points.setdefault(collection_name, {})
+        for point in points:
+            store[str(point.id)] = point.payload
+
+    def delete(self, collection_name: str, points_selector: Any) -> None:
+        store = self._points.setdefault(collection_name, {})
+        for point_id in points_selector.points:
+            store.pop(str(point_id), None)
+
+    def scroll(
+        self,
+        collection_name: str,
+        limit: int,
+        offset: Any = None,
+        with_payload: bool = False,
+        with_vectors: bool = False,
+    ) -> tuple[list[Any], Any]:
+        ids = sorted(self._points.get(collection_name, {}))
+        start = 0 if offset is None else ids.index(offset)
+        page = ids[start : start + limit]
+        next_offset = ids[start + limit] if start + limit < len(ids) else None
+        return [SimpleNamespace(id=point_id) for point_id in page], next_offset
+
+    # -- test helpers -------------------------------------------------------
+
+    @property
+    def collection(self) -> str:
+        assert len(self._points) == 1, f"expected exactly one collection, got {list(self._points)}"
+        return next(iter(self._points))
+
+    def point_ids(self, collection_name: str | None = None) -> set[str]:
+        if collection_name is None:
+            return {pid for store in self._points.values() for pid in store}
+        return set(self._points.get(collection_name, {}))
+
+    def inject_orphan(self, collection_name: str) -> str:
+        """Add a point no chunk row names, as a pre-0.27.0 reindex would leave."""
+        point_id = str(uuid.uuid4())
+        self._points.setdefault(collection_name, {})[point_id] = {}
+        return point_id
+
+
+def _live_point_ids(db_path: Path, profile_name: str = "default") -> set[str]:
+    conn = open_connection(db_path)
+    rows = conn.execute(
+        "SELECT qdrant_point_id FROM chunk_variants "
+        "WHERE profile_name=? AND qdrant_point_id IS NOT NULL",
+        (profile_name,),
+    ).fetchall()
+    conn.close()
+    return {r[0] for r in rows}
 
 
 def _init_project(parent_dir: Path, name: str = "test-kb") -> Path:
@@ -650,7 +733,8 @@ def test_reindex_command_recreates_chunks(tmp_path: Path, sample_txt: Path):
         qdrant = _fake_qdrant_client()
 
         with patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider", return_value=provider), \
-             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant):
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+             patch("mrag.cli.reindex.make_client", return_value=qdrant):
             runner.invoke(app, ["index"], catch_exceptions=False)
 
             db = find_db(project_dir)
@@ -667,6 +751,137 @@ def test_reindex_command_recreates_chunks(tmp_path: Path, sample_txt: Path):
     new_chunk_ids = {r[0] for r in conn.execute("SELECT id FROM chunks").fetchall()}
     conn.close()
     assert old_chunk_ids.isdisjoint(new_chunk_ids)
+
+
+def _reindex_project(mp, tmp_path: Path, sample_txt: Path, qdrant: StatefulQdrant):
+    """Init + add + index once, and hand back the pieces a reindex test needs.
+
+    Leaves the process inside the project directory, which is where the CLI
+    commands under test expect to run.
+    """
+    from unittest.mock import patch
+
+    mp.chdir(tmp_path)
+    project_dir = _init_project(tmp_path)
+    mp.chdir(project_dir)
+    _add_document(project_dir, sample_txt)
+    provider = FakeEmbeddingProvider()
+    with patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider", return_value=provider), \
+         patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+         patch("mrag.cli.reindex.make_client", return_value=qdrant):
+        result = runner.invoke(app, ["index"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    return project_dir, find_db(project_dir), provider
+
+
+def test_reindex_deletes_the_vector_points_it_replaces(tmp_path: Path, sample_txt: Path):
+    """Regression: reindex used to rewrite chunk rows while leaking every point.
+
+    Chunk IDs and point IDs are fresh UUIDs on every run, so a reindex that does
+    not delete the previous points leaves the collection holding both sets. The
+    orphans then occupy top_k slots in vector search and are dropped without a
+    warning, so recall degrades once per reindex with nothing to show for it.
+    """
+    from unittest.mock import patch
+
+    qdrant = StatefulQdrant()
+    with pytest.MonkeyPatch.context() as mp:
+        project_dir, db, provider = _reindex_project(mp, tmp_path, sample_txt, qdrant)
+
+        before = qdrant.point_ids()
+        assert before == _live_point_ids(db)
+
+        with patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider", return_value=provider), \
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+             patch("mrag.cli.reindex.make_client", return_value=qdrant):
+            result = runner.invoke(app, ["reindex"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    after = qdrant.point_ids()
+    assert after == _live_point_ids(db), "collection and chunk rows disagree"
+    assert after.isdisjoint(before), "reindex should have written a fresh point set"
+
+
+def test_reindex_reclaims_points_orphaned_by_earlier_runs(tmp_path: Path, sample_txt: Path):
+    from unittest.mock import patch
+
+    qdrant = StatefulQdrant()
+    with pytest.MonkeyPatch.context() as mp:
+        project_dir, db, provider = _reindex_project(mp, tmp_path, sample_txt, qdrant)
+
+        orphan = qdrant.inject_orphan(qdrant.collection)
+        assert orphan in qdrant.point_ids()
+
+        with patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider", return_value=provider), \
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+             patch("mrag.cli.reindex.make_client", return_value=qdrant):
+            result = runner.invoke(app, ["reindex"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    assert "Reclaimed 1 orphaned vector point" in result.output
+    assert orphan not in qdrant.point_ids()
+    assert qdrant.point_ids() == _live_point_ids(db)
+
+
+def test_reindex_failure_leaves_the_existing_index_searchable(tmp_path: Path, sample_txt: Path):
+    """SPEC-INDEX-008's shape: a provider outage must not cost the index.
+
+    Reindex used to empty the profile before rebuilding, so an unreachable
+    Ollama left the profile with no chunks, no FTS rows and no vectors at all.
+    """
+    from unittest.mock import patch
+
+    qdrant = StatefulQdrant()
+    with pytest.MonkeyPatch.context() as mp:
+        project_dir, db, _ = _reindex_project(mp, tmp_path, sample_txt, qdrant)
+
+        conn = open_connection(db)
+        chunks_before = {r[0] for r in conn.execute("SELECT id FROM chunks").fetchall()}
+        fts_before = conn.execute("SELECT COUNT(*) FROM fts_chunks").fetchone()[0]
+        conn.close()
+        points_before = qdrant.point_ids()
+        assert chunks_before and fts_before and points_before
+
+        dead = MagicMock()
+        dead.embed.side_effect = ConnectionError("Ollama is unreachable")
+
+        with patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider", return_value=dead), \
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+             patch("mrag.cli.reindex.make_client", return_value=qdrant):
+            result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 1
+    assert "left in place" in result.output
+
+    conn = open_connection(db)
+    chunks_after = {r[0] for r in conn.execute("SELECT id FROM chunks").fetchall()}
+    fts_after = conn.execute("SELECT COUNT(*) FROM fts_chunks").fetchone()[0]
+    conn.close()
+    assert chunks_after == chunks_before
+    assert fts_after == fts_before
+    assert qdrant.point_ids() == points_before
+
+
+def test_reconcile_profile_vectors_keeps_referenced_points(tmp_path: Path, sample_txt: Path):
+    from mrag.core.indexing.pipeline import reconcile_profile_vectors
+
+    qdrant = StatefulQdrant()
+    with pytest.MonkeyPatch.context() as mp:
+        project_dir, db, _ = _reindex_project(mp, tmp_path, sample_txt, qdrant)
+
+        live = _live_point_ids(db)
+        orphans = {qdrant.inject_orphan(qdrant.collection) for _ in range(3)}
+
+        reclaimed = reconcile_profile_vectors(
+            db_path=db, profile_name="default", qdrant_client=qdrant
+        )
+
+    assert reclaimed == 3
+    assert qdrant.point_ids() == live
+    assert not orphans & qdrant.point_ids()
+
+    # Idempotent: a second pass has nothing left to reclaim.
+    assert reconcile_profile_vectors(db_path=db, profile_name="default", qdrant_client=qdrant) == 0
 
 
 # ---------------------------------------------------------------------------
