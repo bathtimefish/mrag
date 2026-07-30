@@ -11,7 +11,7 @@ from mrag.core.indexing.context_prompt_template import (
     DEFAULT_CONTEXT_PROMPT_TEMPLATE,
     render_context_prompt,
 )
-from mrag.core.ollama_client import ollama_post
+from mrag.core.ollama_client import model_capabilities, ollama_post
 
 if TYPE_CHECKING:
     from mrag.config.profile import AugmentationConfig
@@ -50,10 +50,16 @@ def generate_context(
         if not data.get("response", "").strip():
             raise RuntimeError(f"Empty context response from Ollama: {data}")
 
+    payload = {"model": config.model, "prompt": prompt, "stream": False}
+    # `think` is only accepted by models that report the capability; sending it
+    # to any other model is an error, so it is omitted rather than assumed.
+    if "thinking" in model_capabilities(config.endpoint, config.model):
+        payload["think"] = config.think
+
     data = ollama_post(
         config.endpoint,
         "/api/generate",
-        {"model": config.model, "prompt": prompt, "stream": False},
+        payload,
         max_attempts=config.retry.max_attempts,
         initial_delay=config.retry.initial_delay_seconds,
         backoff_multiplier=config.retry.backoff_multiplier,

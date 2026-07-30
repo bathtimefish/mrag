@@ -176,3 +176,38 @@ def delete_points(
         collection_name=col_name,
         points_selector=PointIdsList(points=point_ids),
     )
+
+
+def list_point_ids(
+    client: QdrantClient,
+    col_name: str,
+    batch_size: int = 1000,
+) -> set[str]:
+    """Return every point ID currently stored in a collection.
+
+    Point IDs are random UUIDs rather than content-derived, so a point whose
+    chunk row has been deleted cannot be located from SQLite at all — the only
+    way to find it is to enumerate what the collection actually holds and
+    subtract the live mapping. `reconcile_profile_vectors` uses this to reclaim
+    points orphaned by earlier runs.
+
+    A missing collection yields an empty set rather than raising: nothing is
+    stored, so nothing can be orphaned.
+    """
+    existing = {c.name for c in client.get_collections().collections}
+    if col_name not in existing:
+        return set()
+
+    ids: set[str] = set()
+    offset: Any = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=col_name,
+            limit=batch_size,
+            offset=offset,
+            with_payload=False,
+            with_vectors=False,
+        )
+        ids.update(str(point.id) for point in points)
+        if offset is None:
+            return ids

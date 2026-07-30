@@ -24,7 +24,14 @@ from mrag.core.indexing.context_prompt_template import (
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.exclusions import active_document_ids
-from mrag.db.qdrant import collection_name, delete_points, ensure_collection, make_client, upsert_points
+from mrag.db.qdrant import (
+    collection_name,
+    delete_points,
+    ensure_collection,
+    list_point_ids,
+    make_client,
+    upsert_points,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -787,13 +794,78 @@ def run_index(
     return result
 
 
+def reconcile_profile_vectors(
+    db_path: Path,
+    profile_name: str,
+    qdrant_client,
+) -> int:
+    """Delete vector points that no longer have a `chunk_variants` row.
+
+    Reconciles each collection this profile writes to against SQLite and returns
+    how many points were reclaimed. Two kinds of point end up unreferenced: ones
+    left behind by a `mrag reindex` older than 0.27.0 (which deleted chunk rows
+    without ever deleting their points), and ones from a document whose rows were
+    removed by a path that could not reach Qdrant.
+
+    Reconciling against the live mapping — rather than deleting a snapshot taken
+    before a rebuild — is what makes this safe to run after a partially failed
+    run: a document that failed keeps its previous rows, so its points are still
+    referenced and are left alone.
+    """
+    conn = open_connection(db_path)
+    try:
+        collections = [
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT qdrant_collection FROM chunk_variants "
+                "WHERE profile_name=? AND qdrant_collection IS NOT NULL",
+                (profile_name,),
+            ).fetchall()
+        ]
+        # Keyed by collection rather than filtered by profile: `collection_name`
+        # already scopes a collection to one profile, and asking the table which
+        # points belong to the collection cannot delete a neighbour's point even
+        # if that ever stopped being true.
+        live_ids = {
+            col: {
+                row[0]
+                for row in conn.execute(
+                    "SELECT qdrant_point_id FROM chunk_variants "
+                    "WHERE qdrant_collection=? AND qdrant_point_id IS NOT NULL",
+                    (col,),
+                ).fetchall()
+            }
+            for col in collections
+        }
+    finally:
+        conn.close()
+
+    reclaimed = 0
+    for col, live in live_ids.items():
+        orphans = sorted(list_point_ids(qdrant_client, col) - live)
+        if orphans:
+            delete_points(qdrant_client, col, orphans)
+            reclaimed += len(orphans)
+    return reclaimed
+
+
 def cleanup_profile_index(
     project_dir: Path,
     config: ProjectConfig,
     profile_name: str,
     qdrant_client=None,
 ) -> None:
-    """Delete all index data for a profile (used by mrag reindex)."""
+    """Delete all index data for a profile.
+
+    Destructive and not part of the `mrag reindex` path any more: reindex forces
+    a per-document rebuild instead, so that a failure cannot leave a profile
+    with no index (see `mrag/cli/reindex.py`).
+
+    Builds a Qdrant client when the caller does not supply one. Skipping the
+    vector deletion because no client was passed would delete the chunk rows
+    that name the points and leave the points themselves permanently
+    unreachable — which is exactly the leak this function used to cause.
+    """
     profile = load_profile(profile_name, project_dir)
     validate_effective_tokenizer(profile, config.fts_tokenizer)
     db_path = find_db(project_dir)
@@ -809,11 +881,17 @@ def cleanup_profile_index(
     finally:
         conn.close()
 
-    if point_ids and qdrant_client is not None:
+    if point_ids:
+        client = qdrant_client or make_client(
+            mode=config.qdrant.mode,
+            host=config.qdrant.host,
+            port=config.qdrant.port,
+            path=project_dir / "qdrant",
+        )
         for col in col_names:
             col_ids = [r[0] for r in rows if r[1] == col and r[0]]
             if col_ids:
-                delete_points(qdrant_client, col, col_ids)
+                delete_points(client, col, col_ids)
 
     with fts_db_connection(db_path, config.fts_tokenizer) as fts_conn:
         fts_db.delete_by_profile(fts_conn, config.knowledge_id, profile_name)
