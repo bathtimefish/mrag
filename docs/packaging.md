@@ -4,7 +4,7 @@ This document explains how to **package mrag into a single executable** with PyI
 
 This is an **optional** distribution method. The standard way to use mrag remains `uv pip install -e .` (or `pip install`); this procedure does not replace it. Packaging exists for cases where you want to ship or run mrag without setting up a Python environment. Nothing here modifies mrag's runtime source — it simply **freezes the already-installed package into one binary**.
 
-> Note: mrag uses PyMuPDF (AGPL) for PDF extraction, so the resulting binary is governed by AGPL-3.0. Mind the license terms if you redistribute the binary.
+> Note: since 1.0.0 mrag has no copyleft dependency, so the resulting binary is distributable under the MIT License. Binaries built from 0.27.0 or earlier bundled PyMuPDF and were governed by AGPL-3.0.
 
 
 ## Prerequisites
@@ -35,7 +35,7 @@ When the build finishes, the artifact is produced depending on the chosen mode:
 - onefile (default): `dist/mrag` — a single executable
 - onedir (`--onedir`): `dist/mrag/` — a folder; launch the inner `dist/mrag/mrag`
 
-Internally the script auto-collects dependencies that PyInstaller's static analysis tends to miss (PyMuPDF / qdrant-client / uvicorn / FastAPI / pydantic / apsw) and always adds the two flags mrag requires:
+Internally the script auto-collects dependencies that PyInstaller's static analysis tends to miss (qdrant-client / uvicorn / FastAPI / pydantic / apsw) and always adds the two flags mrag requires:
 
 - `--copy-metadata mrag` — bundles version metadata (`importlib.metadata`). Without it the binary crashes immediately on startup.
 - `--collect-data mrag` — collects packaged data such as `schema.sql`. Without it `mrag init` fails.
@@ -100,7 +100,7 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 - **The vaporetto tokenizer is not included in the binary**: the Japanese morphological tokenizer's shared library is an external plugin loaded at runtime from `~/.mrag/extensions`, independent of packaging. This is intentional — it stays swappable even after freezing. To use vaporetto, place the extension on the target machine as usual (`apsw` must also be present; the script includes it automatically when available).
 - **External services still required**: mrag uses Ollama for embeddings and Qdrant for vector search. These are not embedded in the binary and are still needed at runtime (packaging freezes mrag itself, not its service dependencies).
 - **Version sync**: keep `version` in `pyproject.toml` and `_FALLBACK_VERSION` in `mrag/__init__.py` in agreement. The binary's reported version is based on this value.
-- **AGPL-3.0**: mrag is AGPL-3.0 due to PyMuPDF. Mind license compliance when redistributing the binary.
+- **MIT**: mrag has no copyleft dependency, so the binary can be redistributed under the MIT License. If you bundle the sqlite-vaporetto model, include its BSD-3-Clause notice.
 
 
 ## Building on Windows
@@ -108,7 +108,7 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 `build.sh` assumes a Unix shell. On Windows, run the equivalent from PowerShell (note the `--add-data` separator becomes `;`).
 
 ```powershell
-$collect = @('fitz','pymupdf','qdrant_client','uvicorn','fastapi','pydantic','apsw') |
+$collect = @('qdrant_client','uvicorn','fastapi','pydantic','apsw') |
     ForEach-Object { '--collect-all', $_ }
 pyinstaller --onefile --name mrag --clean --noconfirm `
   --copy-metadata mrag --collect-submodules mrag --collect-data mrag `
@@ -124,5 +124,5 @@ For a full build, drop the `--exclude-module` flags and add the reranker package
 
 - **`PackageNotFoundError: mrag` on startup** → `--copy-metadata mrag` is missing. The script adds it automatically.
 - **`mrag init` cannot find schema.sql** → `--collect-data mrag` is missing. Same as above.
-- **`ModuleNotFoundError` (fitz / uvicorn protocols / etc.)** → the package was not collected. Add it to `add_collect_if_present` in the script and rebuild.
+- **`ModuleNotFoundError` (uvicorn protocols / etc.)** → the package was not collected. Add it to `add_collect_if_present` in the script and rebuild.
 - **Binary is huge / slow to start** → confirm the reranker is excluded (use LEAN), and choose `--onedir` for repeated use.

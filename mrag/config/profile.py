@@ -150,18 +150,8 @@ class RerankConfig(BaseModel):
     top_n: int = 30
 
 
-class ProfileExtractionPdfConfig(BaseModel):
-    provider: str = "pymupdf"
-    output_format: str = "text"
-
-
-class ProfileExtractionConfig(BaseModel):
-    pdf: ProfileExtractionPdfConfig = Field(default_factory=ProfileExtractionPdfConfig)
-
-
 class ProfileConfig(BaseModel):
     name: str
-    extraction: ProfileExtractionConfig = Field(default_factory=ProfileExtractionConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)

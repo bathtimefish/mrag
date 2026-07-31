@@ -1,13 +1,11 @@
 import json
 import os
-import threading
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from mrag.cli import app
-from mrag.cli.add import _bounded_map
 from mrag.core.ingestion.directory import scan_directory
 from mrag.db.connection import find_db, open_connection
 
@@ -161,49 +159,47 @@ def test_recursive_project_root_never_reingests_data(tmp_path: Path):
         assert _document_count(project) == 1
 
 
-def test_recursive_pdf_extraction_uses_converter_pool(tmp_path: Path):
-    fitz = pytest.importorskip("fitz")
+def test_recursive_rejects_conversion_required_sources_without_blocking_plain_text(tmp_path: Path):
+    """A tree mixing PDF with Markdown ingests the Markdown and reports the PDF."""
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.chdir(tmp_path)
         project = _init_project(tmp_path)
         source = project / "source"
         source.mkdir()
-        for index in range(2):
-            document = fitz.open()
-            page = document.new_page()
-            page.insert_text((72, 72), f"PDF document {index}")
-            document.save(source / f"document-{index}.pdf")
-            document.close()
+        (source / "notes.md").write_text("# notes", encoding="utf-8")
+        (source / "manual.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
+        monkeypatch.chdir(project)
+
+        result = runner.invoke(app, ["add", "source", "--recursive", "--json"], catch_exceptions=False)
+
+        assert result.exit_code == 3, result.output
+        report = json.loads(result.stdout)
+        assert report["summary"] == {"added": 1, "skipped": 0, "failed": 1}
+        items = {item["source"]: item for item in report["items"]}
+        assert items["notes.md"]["status"] == "added"
+        assert items["manual.pdf"]["status"] == "failed"
+        assert "requires external conversion to Markdown" in items["manual.pdf"]["error"]["message"]
+        assert _document_count(project) == 1
+
+
+def test_recursive_dry_run_reports_conversion_required_sources(tmp_path: Path):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.chdir(tmp_path)
+        project = _init_project(tmp_path)
+        source = project / "source"
+        source.mkdir()
+        (source / "manual.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
         monkeypatch.chdir(project)
 
         result = runner.invoke(
             app,
-            ["add", "source", "--recursive", "--converter-jobs", "2", "--json"],
+            ["add", "source", "--recursive", "--dry-run", "--json"],
             catch_exceptions=False,
         )
 
-        assert result.exit_code == 0, result.output
+        assert result.exit_code == 1, result.output
         report = json.loads(result.stdout)
-        assert report["summary"] == {"added": 2, "skipped": 0, "failed": 0}
-        assert _document_count(project) == 2
-
-
-def test_converter_scheduler_bounds_work_and_preserves_result_order():
-    barrier = threading.Barrier(2)
-    lock = threading.Lock()
-    active = 0
-    maximum = 0
-
-    def operation(value: int) -> int:
-        nonlocal active, maximum
-        with lock:
-            active += 1
-            maximum = max(maximum, active)
-        if value < 2:
-            barrier.wait()
-        with lock:
-            active -= 1
-        return value * 2
-
-    assert _bounded_map([0, 1, 2, 3], 2, operation) == [0, 2, 4, 6]
-    assert maximum == 2
+        item = report["items"][0]
+        assert item["status"] == "failed"
+        assert item["error"]["code"] == "unsupported_source"
+        assert "requires external conversion to Markdown" in item["error"]["message"]

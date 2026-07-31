@@ -79,7 +79,7 @@ Field semantics:
     {
       "chunk_id": "...",
       "document_id": "...",
-      "filename": "manual.pdf",
+      "filename": "manual.md",
       "score": 0.823412,
       "content": "Body of the matched chunk",
       "metadata": {
@@ -120,7 +120,7 @@ Response:
 [
   {
     "id": "abcdef0123456789",
-    "filename": "manual.pdf",
+    "filename": "manual.md",
     "file_hash": "sha256:...",
     "status": "extracted",
     "created_at": "2026-05-22T10:00:00"
@@ -145,7 +145,7 @@ The response is a list entry with **`extracted_text_path`** and **`chunk_count`*
 ```json
 {
   "id": "abcdef0123456789",
-  "filename": "manual.pdf",
+  "filename": "manual.md",
   "file_hash": "sha256:...",
   "status": "extracted",
   "created_at": "2026-05-22T10:00:00",

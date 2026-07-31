@@ -4,9 +4,16 @@ Use `mrag add <DIRECTORY> --recursive` to register a directory tree as
 independent mrag documents. Recursive add performs extraction and catalog
 registration only; it never starts `mrag index` implicitly.
 
-Supported source files are PDF, plain text, Markdown (`.md`), and
+Supported source files are plain text (`.txt`), Markdown (`.md`) and
 `.markdown`. Use include rules when a source tree also contains unrelated file
 types.
+
+mrag does not convert documents. Formats that need a conversion engine — `.pdf`,
+`.html`, `.htm`, `.docx`, `.pptx`, `.xlsx` — are reported as `failed` items with
+`requires external conversion to Markdown`. Convert them first (docling for PDF,
+MarkItDown for Office formats) and add the resulting Markdown. A single
+unconvertible file does not stop the run: the remaining sources are still
+ingested and the command exits 3.
 
 ## Safe workflow
 
@@ -16,12 +23,12 @@ to mrag unchanged.
 ```bash
 # Preview without changing mrag.db or data/documents/.
 mrag add /path/to/documents --recursive --dry-run --json \
-  --include '**/*.pdf' --include '**/*.md' --include '**/*.markdown' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/'
 
 # Apply the reviewed selection.
 mrag add /path/to/documents --recursive --json \
-  --include '**/*.pdf' --include '**/*.md' --include '**/*.markdown' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/'
 
 # Index is a separate, explicit stage.
@@ -78,19 +85,12 @@ The ignore file itself is never ingested.
   ingesting its own retained artifacts.
 - Non-regular files are ignored.
 
-## Duplicates, replacement, and concurrency
+## Duplicates and replacement
 
 Content identity uses SHA-256. An already registered file is reported as
 `skipped_duplicate` and is not an error. Pass `--force` only when duplicate
 content must be extracted again; mrag preserves the existing document ID while
 replacing its retained extraction record.
-
-PDF and other converter-backed preparation is bounded by `--converter-jobs`
-(default `2`, range `1..64`):
-
-```bash
-mrag add /path/to/documents --recursive --converter-jobs 4 --json
-```
 
 Prepared documents are persisted through a serialized write boundary, and the
 final report remains in stable relative-path order.
@@ -107,10 +107,11 @@ candidate or scan issue:
   "status": "partial",
   "summary": {"added": 4, "skipped": 2, "failed": 1},
   "items": [
-    {"source": "manuals/a.pdf", "status": "added", "document_id": "...", "error": null},
-    {"source": "manuals/b.pdf", "status": "skipped_duplicate", "document_id": "...", "error": null},
-    {"source": "notes/data.bin", "status": "failed", "document_id": null,
-     "error": {"code": "prepare_failed", "message": "..."}}
+    {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
+    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
+    {"source": "manuals/c.pdf", "status": "failed", "document_id": null,
+     "error": {"code": "prepare_failed",
+               "message": "Unsupported file type: .pdf (requires external conversion to Markdown)"}}
   ],
   "index_started": false,
   "recursive": true,

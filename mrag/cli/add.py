@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional, TypeVar
+from typing import Any, Iterable, Optional
 
 import typer
 from rich.console import Console
 
 from mrag.config.project import ProjectConfig, load_project_config
-from mrag.core.ingestion.directory import DirectoryCandidate, scan_directory
+from mrag.core.ingestion.directory import scan_directory
 from mrag.core.ingestion.document import (
     DuplicateDocumentError,
     PreparedDocument,
@@ -23,18 +22,10 @@ from mrag.db.connection import find_db
 from mrag.extractors import detect_source_type, get_extractor
 
 console = Console()
-_T = TypeVar("_T")
-_R = TypeVar("_R")
 
 
 def add(
-    path: Path = typer.Argument(..., help="File or directory to add (pdf, txt, md)"),
-    extractor: Optional[str] = typer.Option(
-        None,
-        "--extractor",
-        "-e",
-        help="Extractor override (pymupdf). Default: mrag.yaml default_extraction.",
-    ),
+    path: Path = typer.Argument(..., help="File or directory to add (txt, md)"),
     force: bool = typer.Option(False, "--force", help="Re-add if already registered."),
     recursive: bool = typer.Option(False, "--recursive", help="Recursively add a directory."),
     include: Optional[list[str]] = typer.Option(None, "--include", help="Repeatable relative-path glob."),
@@ -43,7 +34,6 @@ def add(
     follow_symlinks: bool = typer.Option(False, "--follow-symlinks", help="Follow links with cycle protection."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without modifying the project."),
     strict: bool = typer.Option(False, "--strict", help="Fail when any recursive item fails."),
-    converter_jobs: int = typer.Option(2, "--converter-jobs", min=1, max=64, help="Maximum concurrent extractors."),
     json_output: bool = typer.Option(False, "--json", help="Emit one machine-readable JSON object."),
 ) -> None:
     """Add one document or recursively ingest a directory without indexing."""
@@ -69,14 +59,12 @@ def add(
             path,
             project_dir,
             config,
-            extractor,
             force,
             include or [],
             exclude or [],
             hidden,
             follow_symlinks,
             dry_run,
-            converter_jobs,
         )
         _render_report(report, json_output, dry_run)
         if report["summary"]["failed"]:
@@ -84,14 +72,13 @@ def add(
             raise typer.Exit(1 if strict or successful == 0 else 3)
         return
 
-    _add_single(path, project_dir, config, extractor, force, json_output)
+    _add_single(path, project_dir, config, force, json_output)
 
 
 def _add_single(
     path: Path,
     project_dir: Path,
     config: ProjectConfig,
-    extractor: str | None,
     force: bool,
     json_output: bool,
 ) -> None:
@@ -100,7 +87,6 @@ def _add_single(
             file_path=path.resolve(),
             project_dir=project_dir,
             config=config,
-            extractor_override=extractor,
             force=force,
         )
     except DuplicateDocumentError as error:
@@ -118,14 +104,12 @@ def _add_directory(
     source_root: Path,
     project_dir: Path,
     config: ProjectConfig,
-    extractor: str | None,
     force: bool,
     include: list[str],
     exclude: list[str],
     hidden: bool,
     follow_symlinks: bool,
     dry_run: bool,
-    converter_jobs: int,
 ) -> dict[str, Any]:
     try:
         scan = scan_directory(
@@ -146,11 +130,7 @@ def _add_directory(
     if dry_run:
         for candidate in scan.candidates:
             try:
-                source_type = detect_source_type(candidate.source_path)
-                provider = extractor or (
-                    config.default_extraction.pdf.provider if source_type == "pdf" else None
-                )
-                get_extractor(source_type, provider)
+                get_extractor(detect_source_type(candidate.source_path))
                 items[candidate.relative_path] = _item(candidate.relative_path, "planned")
             except ValueError as error:
                 items[candidate.relative_path] = _failed(candidate.relative_path, "unsupported_source", str(error))
@@ -159,10 +139,8 @@ def _add_directory(
     db_path = find_db(project_dir)
     prepared: dict[str, PreparedDocument] = {}
     existing_ids: dict[str, str | None] = {}
-    converters: list[tuple[DirectoryCandidate, str]] = []
     for candidate in scan.candidates:
         try:
-            source_type = detect_source_type(candidate.source_path)
             file_hash = hash_document(candidate.source_path)
             existing_id = find_duplicate(file_hash, db_path)
             if existing_id and not force:
@@ -174,28 +152,12 @@ def _add_directory(
                 )
                 continue
             existing_ids[candidate.relative_path] = existing_id
-            if source_type in ("txt", "md"):
-                prepared[candidate.relative_path] = prepare_document(
-                    candidate.source_path,
-                    config,
-                    extractor,
-                    file_hash=file_hash,
-                )
-            else:
-                converters.append((candidate, file_hash))
+            prepared[candidate.relative_path] = prepare_document(
+                candidate.source_path,
+                file_hash=file_hash,
+            )
         except (OSError, ValueError) as error:
             items[candidate.relative_path] = _failed(candidate.relative_path, "prepare_failed", str(error))
-
-    converter_results = _bounded_map(
-        converters,
-        converter_jobs,
-        lambda work: prepare_document(work[0].source_path, config, extractor, file_hash=work[1]),
-    )
-    for (candidate, _), result in zip(converters, converter_results, strict=True):
-        if isinstance(result, Exception):
-            items[candidate.relative_path] = _failed(candidate.relative_path, "conversion_failed", str(result))
-        else:
-            prepared[candidate.relative_path] = result
 
     for candidate in scan.candidates:
         if candidate.relative_path in items:
@@ -229,33 +191,6 @@ def _add_directory(
         except (OSError, ValueError) as error:
             items[candidate.relative_path] = _failed(candidate.relative_path, "persist_failed", str(error))
     return _report(_ordered_items(items), True, False)
-
-
-def _bounded_map(inputs: list[_T], limit: int, operation: Callable[[_T], _R]) -> list[_R | Exception]:
-    """Run at most ``limit`` operations/futures and preserve input result order."""
-    if not inputs:
-        return []
-    iterator = iter(enumerate(inputs))
-    results: list[_R | Exception | None] = [None] * len(inputs)
-    with ThreadPoolExecutor(max_workers=min(limit, len(inputs))) as executor:
-        pending: dict[Future[_R], int] = {}
-        for _ in range(min(limit, len(inputs))):
-            index, value = next(iterator)
-            pending[executor.submit(operation, value)] = index
-        while pending:
-            completed, _ = wait(pending, return_when=FIRST_COMPLETED)
-            for future in completed:
-                index = pending.pop(future)
-                try:
-                    results[index] = future.result()
-                except Exception as error:
-                    results[index] = error
-                try:
-                    next_index, value = next(iterator)
-                except StopIteration:
-                    continue
-                pending[executor.submit(operation, value)] = next_index
-    return [result for result in results if result is not None]
 
 
 def _item(

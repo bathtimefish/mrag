@@ -40,22 +40,12 @@ default_profile: default
 
 fts_tokenizer: {fts_tokenizer}
 
-default_extraction:
-  pdf:
-    provider: pymupdf
-    output_format: markdown
-
 qdrant:
   mode: local
 """
 
 _DEFAULT_PROFILE_YAML_TEMPLATE = """\
 name: default
-
-extraction:
-  pdf:
-    provider: pymupdf
-    output_format: markdown
 
 chunking:
   strategy: recursive

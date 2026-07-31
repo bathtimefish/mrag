@@ -32,7 +32,7 @@ mrag inspect document <doc-id> --profile default
 
 Main fields in the output:
 
-- Filename, source type (pdf / md / txt), extraction provider (pymupdf, etc.)
+- Filename, source type (md / txt), extraction provider (`plain`; pre-1.0 documents may show `pymupdf`)
 - **Chunk count per profile** (`parent_child` profiles also show parent and child counts separately)
 - **Augmentation status**: `succeeded` / `raw_fallback` counts
 - **Embedding status** (v0.21.0+): `embedded` / `fallback_no_vector` counts
@@ -71,7 +71,7 @@ The `variant` object contains these fields:
 - **`embedding_status`** — `fallback_no_vector` / `null` (v0.21.0+. Chunks with `fallback_no_vector` are excluded from vector search.)
 - **`has_qdrant_point`** — `true` / `false` (v0.21.0+. `false` for fallback chunks.)
 
-> Paging rule of thumb: for large PDFs with hundreds of chunks, prefer `--limit 50` so the terminal doesn't flood. For small- and mid-sized documents, you can omit the limit and dump everything.
+> Paging rule of thumb: for large documents with hundreds of chunks, prefer `--limit 50` so the terminal doesn't flood. For small- and mid-sized documents, you can omit the limit and dump everything.
 
 > Profile resolution: when `--profile` is omitted, mrag auto-selects the profile if the document has been indexed under **exactly one** profile. If it's been indexed under multiple profiles, the command exits 1 with the candidate list — pass `--profile <name>` to disambiguate.
 

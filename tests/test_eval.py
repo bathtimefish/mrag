@@ -186,6 +186,7 @@ class TestEvalMultiProfile:
         import yaml
         second_profile = {
             "name": "second",
+            # Retired key from a pre-1.0 profile; ProfileConfig must ignore it.
             "extraction": {"pdf": {"provider": "pymupdf", "output_format": "text"}},
             "chunking": {"strategy": "recursive", "source_format": "text",
                          "chunk_size": 400, "overlap": 60},

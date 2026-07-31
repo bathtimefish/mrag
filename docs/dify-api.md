@@ -79,7 +79,7 @@ Field semantics:
     {
       "content": "Body of the matched chunk",
       "score": 0.823412,
-      "title": "manual.pdf",
+      "title": "manual.md",
       "metadata": {
         "chunk_id": "...",
         "document_id": "..."

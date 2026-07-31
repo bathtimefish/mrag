@@ -4,7 +4,7 @@ description: >
   Step-by-step procedures for operating mrag — a lightweight, local-first RAG
   knowledge base CLI. Use this skill when the user wants to build, search,
   inspect, evaluate, or serve a small-scale RAG pipeline from local documents
-  (PDF / Markdown / text) with hybrid keyword+vector retrieval, contextual
+  (Markdown / text) with hybrid keyword+vector retrieval, contextual
   augmentation, parent-child retrieval, reranking, or Dify external knowledge
   API integration. Common user intents include: building a local RAG knowledge
   base from individual files or recursively filtered directory trees, querying
@@ -13,10 +13,10 @@ description: >
   removing indexed documents, aggregating multiple knowledge bases into a
   registry for Agentic RAG workflows, and serving the knowledge base over the
   HTTP API.
-license: AGPL-3.0
+license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "0.23.0"
+  version: "1.0.0"
 ---
 
 # SKILL.md — mrag Skill Procedures
@@ -162,15 +162,45 @@ Missing required fields cause `mrag init` to exit 1 with a clear validation erro
 
 **Preconditions:**
 - Inside the project directory (`mrag.yaml` exists in cwd)
-- Source files are accessible (`.pdf`, `.txt`, `.md`, or `.markdown`)
+- Source files are accessible (`.txt`, `.md`, or `.markdown`)
+
+### Convert other formats first
+
+mrag reads Markdown and plain text only. `.pdf`, `.html`, `.htm`, `.docx`,
+`.pptx` and `.xlsx` are rejected with:
+
+```
+Unsupported file type: .pdf (requires external conversion to Markdown)
+```
+
+This is not a failure to work around — mrag delegates document conversion to a
+dedicated engine. Convert first, then add the Markdown:
+
+```bash
+# PDF — use docling
+docling --to md --output ./converted report.pdf
+mrag add ./converted/report.md
+
+# DOCX / PPTX / XLSX — use MarkItDown
+markitdown spec.docx > ./converted/spec.md
+mrag add ./converted/spec.md
+```
+
+**Do not route PDF through MarkItDown.** Its PDF path calls
+`pdfminer.high_level.extract_text()` once and returns unstructured text —
+headings and tables are lost, which measurably degrades chunking and retrieval.
+It handles DOCX/PPTX/XLSX well, where structure is preserved.
+
+In a recursive add, an unconvertible file is a `failed` item that does not stop
+the run; the remaining sources are ingested and the command exits 3.
 
 ### Add one file
 
 ```bash
-mrag add /path/to/document.pdf
+mrag add /path/to/document.md
 
 # Machine-readable result for an agent
-mrag add /path/to/document.pdf --json
+mrag add /path/to/document.md --json
 ```
 
 Adding does **not** index. Run `mrag index` separately. A duplicate SHA-256 is
@@ -199,14 +229,14 @@ Filter with repeatable, source-root-relative globs. Quote globs so the shell doe
 not expand them before mrag receives them:
 
 ```bash
-# Include only Markdown and PDF, then hard-exclude drafts and generated output
+# Include only Markdown and text, then hard-exclude drafts and generated output
 mrag add /path/to/documents --recursive --dry-run --json \
-  --include '**/*.md' --include '**/*.markdown' --include '**/*.pdf' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/' --exclude '**/generated-*'
 
 # After reviewing items[].source and items[].status, apply the same selection
 mrag add /path/to/documents --recursive --json \
-  --include '**/*.md' --include '**/*.markdown' --include '**/*.pdf' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/' --exclude '**/generated-*'
 ```
 
@@ -232,8 +262,6 @@ mrag add /path/to/documents --recursive --hidden --dry-run --json
 # Symlinks are skipped by default; opt in only for a trusted source tree
 mrag add /path/to/documents --recursive --follow-symlinks --dry-run --json
 
-# Bound concurrent PDF/extractor work (default: 2; valid range: 1..64)
-mrag add /path/to/documents --recursive --converter-jobs 4 --json
 
 # Re-extract duplicate hashes while preserving their existing document IDs
 mrag add /path/to/documents --recursive --force --json
@@ -358,7 +386,7 @@ Failed documents remain in `error` status and are automatically retried on the n
 
 **Skipping persistently failing documents:**
 
-If a document consistently fails (e.g. oversized PDF producing too many chunks), use the run log as a skip list to proceed with the rest of the corpus while the problematic document is investigated separately:
+If a document consistently fails (e.g. an oversized document producing too many chunks), use the run log as a skip list to proceed with the rest of the corpus while the problematic document is investigated separately:
 
 ```bash
 # Run 1: index everything, note the log path
@@ -462,7 +490,7 @@ mrag search "<query>" --strategy vector --top-k 10 --json | jq '.results[].chunk
       "rank": 1,
       "chunk_id": "...",
       "document_id": "...",
-      "filename": "manual.pdf",
+      "filename": "manual.md",
       "score": 0.8421,
       "content": "full chunk content here",
       "metadata": {
@@ -473,7 +501,7 @@ mrag search "<query>" --strategy vector --top-k 10 --json | jq '.results[].chunk
     }
   ],
   "score_stats": {"min": 0.42, "max": 0.84, "mean": 0.67, "stdev": 0.13},
-  "document_distribution": {"manual.pdf": 3}
+  "document_distribution": {"manual.md": 3}
 }
 ```
 
@@ -493,17 +521,17 @@ Note — natural-language queries on contextual KBs: for profiles with `augmenta
 
 **Expected output:**
 ```
-[1] score=6.39  doc=manual.pdf  chunk=eb0495d2...
+[1] score=6.39  doc=manual.md  chunk=eb0495d2...
     …access control policy defines the permitted operations…
 
-[2] score=5.81  doc=manual-b.pdf  chunk=3fa12c11...
+[2] score=5.81  doc=manual-b.md  chunk=3fa12c11...
     …
 
 Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
 
 Document distribution:
-  manual.pdf    ████████████████████ 3
-  manual-b.pdf  ████                 1
+  manual.md     ████████████████████ 3
+  manual-b.md   ████                 1
 ```
 
 When the profile uses `strategy: block_aware`, each result that has heading metadata shows an additional `section:` line:
@@ -565,7 +593,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/retrieve \
     {
       "chunk_id": "eb0495d2-...",
       "document_id": "91f28863-...",
-      "filename": "manual.pdf",
+      "filename": "manual.md",
       "score": 6.39,
       "content": "…access control policy defines the permitted operations…",
       "metadata": {}
@@ -820,10 +848,10 @@ mrag export-extracted <doc-id> --output /path/to/output.txt
 
 **Dry-run extraction from a file (no storage):**
 ```bash
-mrag extract /path/to/document.pdf
+mrag extract /path/to/document.md
 ```
 
-This is useful to verify that a PDF is readable and produces meaningful text before committing it to the knowledge base.
+This is useful to verify that a source is readable and produces meaningful text before committing it to the knowledge base.
 
 ---
 
@@ -1172,7 +1200,7 @@ mrag inspect chunks <doc-id> --profile default --limit 50 --offset 0 --json
 mrag inspect chunks <doc-id> --profile default --limit 50 --offset 50 --json
 ```
 
-**Paging norm:** for documents with hundreds of chunks (e.g. large PDFs ≥200 pages), prefer `--limit 50` + `--offset N` over emitting thousands of metadata rows in one go. Default-all is for ergonomics on small/medium docs; explicitly page when the run will flood the terminal.
+**Paging norm:** for documents with hundreds of chunks (e.g. large converted manuals), prefer `--limit 50` + `--offset N` over emitting thousands of metadata rows in one go. Default-all is for ergonomics on small/medium docs; explicitly page when the run will flood the terminal.
 
 **Multi-profile documents:** if the document is indexed under more than one profile and `--profile` is omitted, the command exits 1 with a candidate list. Always pass `--profile` when you know multiple profiles index the document.
 

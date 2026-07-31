@@ -43,7 +43,7 @@ mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve /
 ```
 
 1. **`mrag init --name <name> [--non-interactive]`** — Creates `<name>/` subdirectory in cwd. Run from the *parent* directory. AI agents and scripted callers should use `--non-interactive` to skip prompts and accept defaults for any unspecified fields.
-2. **`mrag add <file>`** — Extracts text and stores metadata. No indexing yet.
+2. **`mrag add <file>`** — Stores the source and its extracted text. Markdown and plain text only. No indexing yet.
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents. Always writes a JSON run log to `logs/` (timestamped). Use `--skip-list-json <log>` to skip documents that failed in a previous run.
 4. **`mrag search <query>`**, **`mrag serve`**, or **`mrag mcp`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
 
@@ -66,9 +66,25 @@ cd /workspace/my-kb
 mrag init --name my-kb --non-interactive   # creates /workspace/my-kb/my-kb — double nesting
 ```
 
+### `mrag add` accepts Markdown and plain text only
+
+Supported extensions are `.md`, `.markdown` and `.txt`. mrag does not convert documents. `.pdf`, `.html`, `.htm`, `.docx`, `.pptx` and `.xlsx` are rejected with `Unsupported file type: <ext> (requires external conversion to Markdown)`.
+
+Convert those with a document conversion engine first, then add the Markdown it produces:
+
+```bash
+# PDF → Markdown with docling, then ingest the result
+docling --to md --output ./converted report.pdf
+mrag add ./converted/report.md
+```
+
+Prefer **docling for PDF**. MarkItDown's PDF path returns unstructured text — headings and tables are lost — which degrades chunking and retrieval; it is a good choice for DOCX/PPTX/XLSX, which it converts with structure intact.
+
+In a recursive add, an unconvertible file is reported as a `failed` item and does not stop the run; the remaining Markdown is still ingested and the command exits 3.
+
 ### `mrag index` must run before any search
 
-`mrag add` only extracts text. Searching before `mrag index` returns zero results.
+`mrag add` only stores extracted text. Searching before `mrag index` returns zero results.
 
 ### Qdrant mode determines whether an external server is needed
 
@@ -128,7 +144,7 @@ mrag search "人員削減 効果 50%"        # AND across three tokens; '%' is s
 
 - Every whitespace-separated token is wrapped as an FTS5 string literal, so FTS5 operators (`*`, `%`, `:`, `^`, `~`, `!`, `-`, `/`, `\`, `(`, `)`) are treated as ordinary characters and cannot cause syntax errors. ASCII `"` in queries is stripped — user-level phrase syntax (`"exact phrase"`) is not supported.
 - Natural-language questions (e.g. `"この論文中で人員削減効果が示されたのは何%ですか"`) collapse into a single phrase token and typically return no results; rewrite them as keyword tokens.
-- Input text is **NFKC-normalized** at both index time and query time. PDF files that use Kangxi radicals (e.g. ⼒ U+2F12) are automatically normalized to standard CJK (力 U+529B).
+- Input text is **NFKC-normalized** at both index time and query time. Documents that use Kangxi radicals (e.g. ⼒ U+2F12) — common in Markdown converted from PDF — are automatically normalized to standard CJK (力 U+529B).
 
 ### `trigram` (universal fallback)
 
@@ -144,7 +160,7 @@ The `chunking.strategy` field in a profile controls how documents are split. Fou
 
 | Strategy | Best for | Notes |
 |----------|----------|-------|
-| `recursive` | Plain text, PDF | Default; splits by paragraph → line → character |
+| `recursive` | Plain text | Default; splits by paragraph → line → character |
 | `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
 | `block_aware` | Markdown with tables / code | Parses into typed blocks; tables and code blocks are never split; attaches heading-path to every chunk |
 | `parent_child` | Precise search + rich context | Indexes small child chunks; returns large parent chunks; deduplicates automatically. Must pair with `retrieval.strategy: parent_child`. |
@@ -609,7 +625,7 @@ MCP is read-only in the current implementation. It exposes search/list/inspect t
 | Contextual indexing fails on large documents | Many sequential LLM calls increase exposure to transient Ollama errors | Retry is automatic (3 attempts); increase `augmentation.retry.max_attempts` for very large documents; `failure_policy.mode: raw_fallback` (default) prevents document-level failure |
 | Log shows many `↻ retry` lines | Ollama under load or model stalling | Retry is working; if all retries fail, `raw_fallback` stores raw variant instead of failing the document |
 | Log shows `⤵ fallback` lines | Chunks that exceeded retry budget fell back to raw variant | Expected with noisy/table-heavy documents; check `chunk_variants.metadata_json` for `augmentation_status: fallback_raw` |
-| Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in PDF | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
+| Japanese query returns no results | Tokenizer mismatch or Kangxi radicals in the source | NFKC normalization is automatic; verify `fts_tokenizer: vaporetto` |
 | `401 Unauthorized` from API | `MRAG_API_KEY` set but key not sent | Add `Authorization: Bearer <key>` header |
 | `mrag eval` hybrid scores all identical | RRF score range is always compressed (σ ≈ 0.001) | Use `--strategy vector` to see discriminative cosine scores |
 | Reranker `ImportError` | `sentence-transformers` not installed | `uv pip install -e ".[reranker]"` |
@@ -618,4 +634,4 @@ MCP is read-only in the current implementation. It exposes search/list/inspect t
 | Tables or code blocks split across chunks | `preserve_tables`/`preserve_code_blocks` not enabled, or `source_format` is not `markdown` | Set `source_format: markdown` + `preserve_tables: true` + `preserve_code_blocks: true`; run `mrag reindex` |
 | `parent_child` profile validation error | `chunking.strategy` and `retrieval.strategy` must both be `parent_child` | Update the profile so both fields are `parent_child` |
 | `parent_child` returning fewer results than `top_k` | `dense_top_k` / `keyword_top_k` too low; deduplication reduces candidates | Increase both to at least `top_k × 3` (e.g. `top_k: 8` → `dense_top_k: 60`) |
-| Specific documents always fail during `mrag index` | Oversized PDF, too many chunks, or extraction issue | Pass the run log as a skip list: `mrag index --skip-list-json logs/<ts>-index.json`; investigate the failing document separately |
+| Specific documents always fail during `mrag index` | Oversized document, too many chunks, or extraction issue | Pass the run log as a skip list: `mrag index --skip-list-json logs/<ts>-index.json`; investigate the failing document separately |

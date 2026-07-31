@@ -51,7 +51,6 @@ class PreparedDocument:
     file_path: Path
     file_hash: str
     source_type: str
-    provider: str | None
     extraction: ExtractionResult
 
 
@@ -61,21 +60,15 @@ def hash_document(file_path: Path) -> str:
 
 def prepare_document(
     file_path: Path,
-    config: ProjectConfig,
-    extractor_override: str | None = None,
     file_hash: str | None = None,
 ) -> PreparedDocument:
     """Read and extract one source without changing project state."""
     source_type = detect_source_type(file_path)
-    provider = extractor_override or (
-        config.default_extraction.pdf.provider if source_type == "pdf" else None
-    )
-    extractor = get_extractor(source_type, provider)
+    extractor = get_extractor(source_type)
     return PreparedDocument(
         file_path=file_path,
         file_hash=file_hash or hash_document(file_path),
         source_type=source_type,
-        provider=provider,
         extraction=extractor.extract(file_path),
     )
 
@@ -84,7 +77,6 @@ def add_document(
     file_path: Path,
     project_dir: Path,
     config: ProjectConfig,
-    extractor_override: str | None = None,
     force: bool = False,
 ) -> tuple[str, list[str]]:
     """
@@ -99,12 +91,7 @@ def add_document(
     existing_id = find_duplicate(file_hash, db_path)
     if existing_id and not force:
         raise DuplicateDocumentError(existing_id)
-    prepared = prepare_document(
-        file_path,
-        config,
-        extractor_override,
-        file_hash=file_hash,
-    )
+    prepared = prepare_document(file_path, file_hash=file_hash)
     return persist_prepared_document(
         prepared,
         project_dir,
@@ -127,8 +114,10 @@ def persist_prepared_document(
     file_path = prepared.file_path
     file_hash = prepared.file_hash
     source_type = prepared.source_type
-    provider = prepared.provider
     result = prepared.extraction
+    # Plain sources carry their own format, so one value serves both the metadata
+    # sidecar and the catalog row.
+    output_format = "markdown" if source_type == "md" else "text"
     registered_id = find_duplicate(file_hash, db_path)
     if registered_id and not force:
         raise DuplicateDocumentError(registered_id)
@@ -158,10 +147,8 @@ def persist_prepared_document(
     meta_path.write_text(
         json.dumps(
             {
-                "provider": provider or "plain",
-                "output_format": "text" if source_type in ("txt",) else
-                                 ("markdown" if source_type == "md" else
-                                  config.default_extraction.pdf.output_format),
+                "provider": "plain",
+                "output_format": output_format,
                 "source_type": source_type,
                 **result.metadata,
                 "warnings": result.warnings,
@@ -193,8 +180,8 @@ def persist_prepared_document(
                 rel(original_dest),
                 file_hash,
                 source_type,
-                provider,
-                "markdown" if source_type == "md" else "text",
+                "plain",
+                output_format,
                 rel(md_path),
                 rel(txt_path),
                 rel(meta_path),
