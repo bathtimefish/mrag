@@ -4,7 +4,7 @@
 
 これは**任意の配布手段**です。mrag の標準的な使い方は従来どおり `uv pip install -e .`（あるいは `pip install`）であり、本手順はそれを置き換えるものではありません。パッケージ化は「Python 環境を用意せずに mrag を配りたい / 動かしたい」場合の選択肢として用意されています。本手順は mrag の実行時ソースを一切改変せず、**インストール済みのパッケージをそのまま1つのバイナリに固める**だけです。
 
-> 補足：mrag は PDF 抽出に PyMuPDF（AGPL）を使うため、配布物も AGPL-3.0 の条件下に置かれます。バイナリを再配布する場合はライセンス表記に注意してください。
+> 補足：1.0.0 以降 mrag にコピーレフト依存はないため、生成されるバイナリは MIT License で配布できます。0.27.0 以前でビルドしたバイナリは PyMuPDF を同梱しており AGPL-3.0 の条件下にあります。
 
 
 ## 前提
@@ -35,7 +35,7 @@ packaging/build.sh --help
 - onefile（既定）：`dist/mrag` … 単一の実行ファイル
 - onedir（`--onedir`）：`dist/mrag/` … フォルダ。中の `dist/mrag/mrag` を起動する
 
-スクリプトは内部で、PyInstaller が静的解析で取りこぼしやすい依存（PyMuPDF / qdrant-client / uvicorn / FastAPI / pydantic / apsw）を自動収集し、mrag の動作に必須な次の2点を必ず付与します。
+スクリプトは内部で、PyInstaller が静的解析で取りこぼしやすい依存（qdrant-client / uvicorn / FastAPI / pydantic / apsw）を自動収集し、mrag の動作に必須な次の2点を必ず付与します。
 
 - `--copy-metadata mrag` … バージョン情報（`importlib.metadata`）の同梱。これが無いと起動時に即クラッシュします
 - `--collect-data mrag` … `schema.sql` などのパッケージ同梱データの収集。これが無いと `mrag init` が失敗します
@@ -100,7 +100,7 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 - **vaporetto トークナイザはバイナリに含まれません**：日本語形態素トークナイザの共有ライブラリは実行時に `~/.mrag/extensions` からロードされる外部プラグインであり、パッケージ化とは独立しています。これは意図的な設計で、バイナリに固めても差し替え可能なまま保たれます。vaporetto を使う場合は、配布先にも従来どおり拡張を配置してください（`apsw` も同梱されている必要があり、スクリプトは存在すれば自動で含めます）。
 - **外部サービス依存は残ります**：mrag は埋め込み生成に Ollama、ベクトル検索に Qdrant を使います。これらはバイナリには含まれず、実行時に別途必要です（パッケージ化は mrag 本体を固めるだけで、依存サービスを内包するものではありません）。
 - **バージョン同期**：`pyproject.toml` の `version` と `mrag/__init__.py` の `_FALLBACK_VERSION` は一致させてください。バイナリのバージョン表示はこの値に基づきます。
-- **AGPL-3.0**：PyMuPDF に起因して mrag は AGPL-3.0 です。バイナリ再配布時はライセンス順守に注意してください。
+- **MIT**：mrag にコピーレフト依存はないため、バイナリは MIT License で再配布できます。sqlite-vaporetto のモデルを同梱する場合は BSD-3-Clause 表示を含めてください。
 
 
 ## Windows でのビルド
@@ -108,7 +108,7 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 `build.sh` は Unix シェル前提です。Windows では PowerShell から同等のコマンドを実行します（`--add-data` の区切り文字が `;` になる点に注意）。
 
 ```powershell
-$collect = @('fitz','pymupdf','qdrant_client','uvicorn','fastapi','pydantic','apsw') |
+$collect = @('qdrant_client','uvicorn','fastapi','pydantic','apsw') |
     ForEach-Object { '--collect-all', $_ }
 pyinstaller --onefile --name mrag --clean --noconfirm `
   --copy-metadata mrag --collect-submodules mrag --collect-data mrag `
@@ -124,5 +124,5 @@ pyinstaller --onefile --name mrag --clean --noconfirm `
 
 - **起動時に `PackageNotFoundError: mrag`** → `--copy-metadata mrag` が抜けています。スクリプト経由なら自動付与されます。
 - **`mrag init` で schema.sql が見つからない** → `--collect-data mrag` が抜けています。同上。
-- **`ModuleNotFoundError`（fitz / uvicorn のプロトコル等）** → 対象パッケージが収集されていません。スクリプトの `add_collect_if_present` に当該パッケージを追加してビルドし直してください。
+- **`ModuleNotFoundError`（uvicorn のプロトコル等）** → 対象パッケージが収集されていません。スクリプトの `add_collect_if_present` に当該パッケージを追加してビルドし直してください。
 - **バイナリが巨大／起動が遅い** → reranker を含めていないか確認し（LEAN を使う）、繰り返し利用なら `--onedir` を選んでください。

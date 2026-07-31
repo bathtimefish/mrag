@@ -38,10 +38,19 @@ cd my-first-kb
 
 ### Step 2. ドキュメントを投入する
 
-`mrag add`でPDF、text、Markdownの単一fileを登録します。
+`mrag add`でMarkdownまたはplain textの単一fileを登録します。
 
 ```bash
-mrag add ./sample.pdf
+mrag add ./sample.md
+```
+
+mragはドキュメント変換を行いません。sourceがPDFやOffice形式の場合は、先に変換engineで
+Markdownへ変換してから追加してください。PDFはdocling、DOCX/PPTX/XLSXはMarkItDownを
+推奨します。
+
+```bash
+docling --to md --output ./documents report.pdf
+mrag add ./documents/report.md
 ```
 
 directoryを投入する場合は`--recursive`を明示します。書き込む前に決定的な選択結果を
@@ -49,19 +58,19 @@ previewしてください。
 
 ```bash
 mrag add ./documents --recursive --dry-run --json \
-  --include '**/*.pdf' --include '**/*.md'
+  --include '**/*.md' --include '**/*.txt'
 
 mrag add ./documents --recursive --json \
-  --include '**/*.pdf' --include '**/*.md'
+  --include '**/*.md' --include '**/*.txt'
 ```
 
 再帰追加はrepeatableな`--include`／`--exclude` glob、root `.mragignore`、hidden pathと
-symlinkの制御、converter並列数の上限、部分失敗の明示的reportをサポートします。完全な仕様は
+symlinkの制御、部分失敗の明示的reportをサポートします。完全な仕様は
 [ディレクトリの再帰追加](./recursive-add-ja.md)を参照してください。
 
 このコマンドは次の処理をまとめて行います：
 
-1. PDF からテキストを抽出（PyMuPDF を使用）
+1. sourceのテキストを読み込む
 2. 抽出結果を `data/documents/` に保存
 3. 中身のハッシュをとってドキュメント ID を割り当て、`mrag.db` に登録
 
@@ -89,7 +98,7 @@ mrag index
 Log: logs/20260519101000-index.json
 ```
 
-「Indexed: 12」は、今回新規にインデックスされたチャンク数（PDF のページ構成によって増減）を意味します。
+「Indexed: 12」は、今回新規にインデックスされたチャンク数（ドキュメントの長さによって増減）を意味します。
 
 `logs/` に毎回 JSON ログが保存されます。`--output-log`でログの出力先を変更できます。
 一度`index`を実行したプロジェクトに新しいドキュメントを`add`して再び`index`を実行した場合は、すでにインデックス済みのドキュメントはスキップされ、新規追加分だけが処理されます。 
@@ -110,16 +119,16 @@ mrag search "キーワード"
 出力はこのような形になります：
 
 ```
-[1] score=6.39  doc=sample.pdf  chunk=eb0495d2...
+[1] score=6.39  doc=sample.md  chunk=eb0495d2...
     …本文の冒頭抜粋がここに表示されます…
 
-[2] score=5.81  doc=sample.pdf  chunk=3fa12c11...
+[2] score=5.81  doc=sample.md  chunk=3fa12c11...
     …次のチャンクの抜粋…
 
 Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
 
 Document distribution:
-  sample.pdf  ████████████████████ 3
+  sample.md   ████████████████████ 3
 ```
 
 各行の意味：
@@ -201,7 +210,7 @@ Claude CodeなどのAIエージェントに[AGENTS.md](../AGENTS.md),[SKILL.md](
 #### ナレッジベースを作成する
 
 ```
-> あたらしく ./my-kb というmragプロジェクトを作成して ./documents/ に収録されているすべてのPDFをもとにデフォルトのRAGナレッジベースを作成してください。
+> あたらしく ./my-kb というmragプロジェクトを作成して ./documents/ に収録されているすべてのMarkdownをもとにデフォルトのRAGナレッジベースを作成してください。
 
 ...
 
@@ -213,13 +222,13 @@ Claude CodeなどのAIエージェントに[AGENTS.md](../AGENTS.md),[SKILL.md](
 
 ⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
       /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
-      --include '**/*.pdf' --dry-run --json)
+      --include '**/*.md' --dry-run --json)
 
 ...
 
 ⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
       /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
-      --include '**/*.pdf' --strict --json)
+      --include '**/*.md' --strict --json)
 
 ...
 

@@ -65,8 +65,6 @@ if errorlevel 1 (
 echo ==^> Resolving bundled packages
 set COLLECT_ARGS=
 
-"%PY%" -c "import fitz" >nul 2>&1 && set "COLLECT_ARGS=!COLLECT_ARGS! --collect-all fitz" || echo   [skip] fitz
-"%PY%" -c "import pymupdf" >nul 2>&1 && set "COLLECT_ARGS=!COLLECT_ARGS! --collect-all pymupdf" || echo   [skip] pymupdf
 "%PY%" -c "import qdrant_client" >nul 2>&1 && set "COLLECT_ARGS=!COLLECT_ARGS! --collect-all qdrant_client" || echo   [skip] qdrant_client
 "%PY%" -c "import uvicorn" >nul 2>&1 && set "COLLECT_ARGS=!COLLECT_ARGS! --collect-all uvicorn" || echo   [skip] uvicorn
 "%PY%" -c "import fastapi" >nul 2>&1 && set "COLLECT_ARGS=!COLLECT_ARGS! --collect-all fastapi" || echo   [skip] fastapi

@@ -59,6 +59,8 @@ def seed_document(
     conn: sqlite3.Connection,
     doc_id: str,
     *,
+    # Deliberately a pre-1.0 row: mrag no longer ingests PDF, but catalogs built
+    # before PyMuPDF was removed still hold these values and must stay readable.
     filename: str = "doc.pdf",
     source_type: str = "pdf",
     extraction_provider: str | None = "pymupdf",

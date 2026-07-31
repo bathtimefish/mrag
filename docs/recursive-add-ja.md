@@ -4,8 +4,14 @@
 `mrag add <DIRECTORY> --recursive`を使用します。再帰追加が行うのは抽出とcatalog登録までで、
 `mrag index`を暗黙には開始しません。
 
-対応するsource fileはPDF、plain text、Markdown（`.md`）、`.markdown`です。
+対応するsource fileはplain text（`.txt`）、Markdown（`.md`）、`.markdown`です。
 関係のない形式も含むtreeではinclude ruleを指定してください。
+
+mragはドキュメント変換を行いません。変換engineが必要な形式 — `.pdf`、`.html`、
+`.htm`、`.docx`、`.pptx`、`.xlsx` — は`requires external conversion to Markdown`
+として`failed` itemにreportされます。先に変換し（PDFはdocling、Office形式は
+MarkItDown）、生成されたMarkdownを追加してください。変換できないfileが1件あっても
+実行は止まりません。残りのsourceは取り込まれ、exit codeは3になります。
 
 ## 安全な実行フロー
 
@@ -14,12 +20,12 @@
 ```bash
 # mrag.dbとdata/documents/を変更せずに対象を確認
 mrag add /path/to/documents --recursive --dry-run --json \
-  --include '**/*.pdf' --include '**/*.md' --include '**/*.markdown' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/'
 
 # 確認した同じ条件を適用
 mrag add /path/to/documents --recursive --json \
-  --include '**/*.pdf' --include '**/*.md' --include '**/*.markdown' \
+  --include '**/*.md' --include '**/*.markdown' --include '**/*.txt' \
   --exclude 'drafts/'
 
 # indexは別の明示的なstage
@@ -70,18 +76,11 @@ ignore file自体は取り込まれません。
   指定も拒否し、mrag自身の保持成果物を再取り込みすることを防ぎます。
 - regular file以外は無視します。
 
-## duplicate、置換、並列変換
+## duplicateと置換
 
 content identityにはSHA-256を使用します。登録済みfileは`skipped_duplicate`としてreportされ、
 errorにはなりません。同一contentを再抽出する必要がある場合だけ`--force`を指定してください。
 mragは既存document IDを維持して抽出recordを置換します。
-
-PDFなどconverterを使用する準備処理の並列数は`--converter-jobs`で制限します
-（default `2`、範囲`1..64`）。
-
-```bash
-mrag add /path/to/documents --recursive --converter-jobs 4 --json
-```
 
 準備後のdocumentは直列化されたwrite boundaryを通して永続化し、最終reportは相対pathの
 安定順を維持します。
@@ -98,10 +97,11 @@ mrag add /path/to/documents --recursive --converter-jobs 4 --json
   "status": "partial",
   "summary": {"added": 4, "skipped": 2, "failed": 1},
   "items": [
-    {"source": "manuals/a.pdf", "status": "added", "document_id": "...", "error": null},
-    {"source": "manuals/b.pdf", "status": "skipped_duplicate", "document_id": "...", "error": null},
-    {"source": "notes/data.bin", "status": "failed", "document_id": null,
-     "error": {"code": "prepare_failed", "message": "..."}}
+    {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
+    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
+    {"source": "manuals/c.pdf", "status": "failed", "document_id": null,
+     "error": {"code": "prepare_failed",
+               "message": "Unsupported file type: .pdf (requires external conversion to Markdown)"}}
   ],
   "index_started": false,
   "recursive": true,

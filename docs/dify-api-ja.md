@@ -79,7 +79,7 @@ Content-Type: application/json
     {
       "content": "ヒットしたチャンクの本文",
       "score": 0.823412,
-      "title": "manual.pdf",
+      "title": "manual.md",
       "metadata": {
         "chunk_id": "...",
         "document_id": "..."

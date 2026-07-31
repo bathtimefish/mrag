@@ -97,8 +97,6 @@ add_collect_if_present() {
 
 echo "==> Resolving bundled packages"
 # Core data/binary-bearing deps that PyInstaller's static analysis can miss.
-add_collect_if_present fitz          # PyMuPDF (PDF extraction; ships MuPDF binary)
-add_collect_if_present pymupdf       # modern import alias of fitz
 add_collect_if_present qdrant_client # vector store client (grpc/httpx)
 add_collect_if_present uvicorn       # uvicorn[standard]: protocols, ws, httptools
 add_collect_if_present fastapi
@@ -181,7 +179,7 @@ fi
 # ---------------------------------------------------------------------------
 # Windows (PowerShell) equivalent — run inside an activated venv:
 #
-#   $collect = @('fitz','pymupdf','qdrant_client','uvicorn','fastapi','pydantic','apsw') |
+#   $collect = @('qdrant_client','uvicorn','fastapi','pydantic','apsw') |
 #       ForEach-Object { '--collect-all', $_ }
 #   pyinstaller --onefile --name mrag --clean --noconfirm `
 #     --copy-metadata mrag --collect-submodules mrag --collect-data mrag `

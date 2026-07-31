@@ -38,10 +38,19 @@ You now have an empty knowledge base.
 
 ### Step 2. Ingest documents
 
-Use `mrag add` to register one PDF, text, or Markdown file.
+Use `mrag add` to register one Markdown or plain-text file.
 
 ```bash
-mrag add ./sample.pdf
+mrag add ./sample.md
+```
+
+mrag does not convert documents. If your sources are PDF or Office files,
+convert them to Markdown first with a conversion engine — docling for PDF,
+MarkItDown for DOCX/PPTX/XLSX — and add the output:
+
+```bash
+docling --to md --output ./documents report.pdf
+mrag add ./documents/report.md
 ```
 
 To ingest a directory, opt in with `--recursive`. Preview the deterministic
@@ -49,20 +58,20 @@ selection before writing it:
 
 ```bash
 mrag add ./documents --recursive --dry-run --json \
-  --include '**/*.pdf' --include '**/*.md'
+  --include '**/*.md' --include '**/*.txt'
 
 mrag add ./documents --recursive --json \
-  --include '**/*.pdf' --include '**/*.md'
+  --include '**/*.md' --include '**/*.txt'
 ```
 
 Recursive add supports repeatable `--include` / `--exclude` globs, a root
-`.mragignore`, hidden-path and symlink controls, bounded converter concurrency,
-and explicit partial-failure reporting. See [recursive directory
-ingestion](./recursive-add.md) for the complete contract.
+`.mragignore`, hidden-path and symlink controls, and explicit partial-failure
+reporting. See [recursive directory ingestion](./recursive-add.md) for the
+complete contract.
 
 The command performs the following in one go:
 
-1. Extracts text from the PDF (using PyMuPDF)
+1. Reads the source text
 2. Saves the extracted content under `data/documents/`
 3. Computes a content hash to assign a document ID and registers the entry in `mrag.db`
 
@@ -90,7 +99,7 @@ A summary is shown on completion:
 Log: logs/20260519101000-index.json
 ```
 
-`Indexed: 12` is the number of chunks newly indexed in this run (varies depending on the PDF's page count).
+`Indexed: 12` is the number of chunks newly indexed in this run (varies depending on the document's length).
 
 A JSON log is saved under `logs/` on every run. Use `--output-log` to change where the log is written.
 If you run `add` again on a project that has already been indexed and then re-run `index`, already-indexed documents are skipped and only the newly added ones are processed.
@@ -111,16 +120,16 @@ With the default profile, **hybrid search** runs (a combination of keyword searc
 The output looks like this:
 
 ```
-[1] score=6.39  doc=sample.pdf  chunk=eb0495d2...
+[1] score=6.39  doc=sample.md  chunk=eb0495d2...
     …the opening excerpt of the chunk body is shown here…
 
-[2] score=5.81  doc=sample.pdf  chunk=3fa12c11...
+[2] score=5.81  doc=sample.md  chunk=3fa12c11...
     …excerpt from the next chunk…
 
 Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
 
 Document distribution:
-  sample.pdf  ████████████████████ 3
+  sample.md   ████████████████████ 3
 ```
 
 What each line means:
@@ -205,7 +214,7 @@ By having an AI agent like Claude Code read [AGENTS.md](../AGENTS.md) and [SKILL
 #### Creating a knowledge base
 
 ```
-> Create a new mrag project at ./my-kb and build a default RAG knowledge base from all the PDFs stored under ./documents/.
+> Create a new mrag project at ./my-kb and build a default RAG knowledge base from all the Markdown files stored under ./documents/.
 
 ...
 
@@ -217,13 +226,13 @@ By having an AI agent like Claude Code read [AGENTS.md](../AGENTS.md) and [SKILL
 
 ⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
       /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
-      --include '**/*.pdf' --dry-run --json)
+      --include '**/*.md' --dry-run --json)
 
 ...
 
 ⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
       /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
-      --include '**/*.pdf' --strict --json)
+      --include '**/*.md' --strict --json)
 
 ...
 

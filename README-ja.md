@@ -6,7 +6,11 @@
 
 mragは小規模なRAGナレッジベースを作成、運用するためのCLIです。ドキュメントのインデックス化から検索までの機能を提供し、ニーズに応じたカスタムRAGを作成するための様々なストラテジーを提供します。AIエージェント向けのskillを使って様々なAIエージェントにナレッジベースを提供できます。
 
+mragが取り込むのはMarkdownとプレーンテキストです。それ以外の形式の変換は [docling](https://github.com/docling-project/docling) や [MarkItDown](https://github.com/microsoft/markitdown) といったドキュメント変換エンジンの担当です。先にそれらで変換し、生成されたMarkdownをmragへ渡してください。
+
 ---
+
+> **1.0.0での破壊的変更(PDF取り込みの廃止とMITライセンス化)**: mragはPDFを抽出しなくなりました。`mrag add` が受け付けるのは `.md`、`.markdown`、`.txt` のみで、`.pdf`、`.html`、`.docx`、`.pptx`、`.xlsx` は `requires external conversion to Markdown` として拒否されます。`--extractor`(`mrag add` と `mrag extract`)および `--converter-jobs` は廃止し、`mrag.yaml` の `default_extraction` キーとプロファイルの `extraction` キーも削除しました。既存の設定ファイルに残っていても無視されるだけなので害はありません。**既存のナレッジベースはそのまま動作します**: `mrag index`、`mrag reindex`、および全ての検索経路が読むのは `data/documents/` に保存済みの抽出済みテキストであり、元のPDFではありません。本変更はプロファイルハッシュを変えないため、この変更自体による再インデックスは発生しません(0.24.0〜0.27.0をまたぐアップグレードでは、別の理由で再インデックスが必要になる場合があります。以下の各注記を参照してください)。影響を受けるのは**新規**PDFの取り込みだけです。doclingやMarkItDownで変換してから、生成されたMarkdownを追加してください。この撤去により本プロジェクト唯一のAGPL依存が外れたため、**mragのライセンスはMITになりました**(0.27.0以前はAGPL-3.0のままです)。
 
 > **0.27.0での不具合修正(`mrag reindex`)**: reindexが再構築前にプロファイルを空にする方式をやめました。修正した不具合は2件です。**(1)** プロファイルのchunk行を削除する一方でQdrantのpointを一度も削除していなかったため、reindexのたびに1世代分のvectorが残り続けていました。ベクトル検索はchunk行が存在しないhitを警告なしに捨てるため、この孤児pointが`top_k`の枠を占め、要求件数より少ない結果が返っていました。reindex回数に比例して悪化し、しかも何の警告も出ません。**(2)** 削除が再構築より先に完了していたため、Ollamaへ接続できない等の失敗が起きるとプロファイルのインデックスが失われた状態で残りました。reindexは文書単位の強制再構築を行うようになり、各文書の旧chunk・FTS行・vector pointは新しいもののembeddingが成功した後にのみ置き換えられます。したがって実行が失敗しても従来のインデックスは検索可能なまま残り、exit 1 で終了します。またreindexは完了後にcollectionとデータベースを突き合わせ、`Reclaimed N orphaned vector point(s)` を表示します。**旧版が蓄積した孤児pointは、プロファイルごとに `mrag reindex` を一度実行すれば回収されます** — Qdrantの手動クリーンアップは不要です。なお**異なる埋め込みモデル**で構築されたcollectionに残るpointはプロファイルへ帰属できないため対象外です。モデルを変更した経緯がある場合は該当collectionを手動で削除してください。プロファイルを本当に空にしたい呼び出し側のために `cleanup_profile_index()` は残していますが、clientが渡されないときにvector削除を黙って飛ばすのではなく自前でQdrant clientを構築するようにしました。
 
@@ -85,7 +89,7 @@ ollama pull bge-m3
 ```bash
 mrag init my-kb --non-interactive
 cd my-kb
-mrag add /path/to/documents --recursive --include '**/*.pdf'
+mrag add /path/to/documents --recursive --include '**/*.md'
 mrag index
 mrag search "クエリ"
 ```
@@ -169,12 +173,12 @@ duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰�
 
 Copyright (c) 2026 BathTimeFish KK.
 
-Licensed under [GNU Affero General Public License v3.0](./LICENSE).
+Licensed under the [MIT License](./LICENSE).
+
+0.27.0以前のリリースはAGPL-3.0でした。これはPyMuPDF依存に起因する条件であり、1.0.0での撤去により解消しています。
 
 
 ## 謝辞
-
-mrag は PDF テキスト抽出とテーブル検出に [PyMuPDF](https://github.com/pymupdf/pymupdf) を利用しています。PyMuPDF は [Artifex Software](https://artifex.com) が開発・メンテナンスしており、AGPL-3.0 ライセンスのもとで配布されています。
 
 mrag は SQLite FTS5 による日本語形態素解析に [@hotchpotch](https://github.com/hotchpotch) 氏の [sqlite-vaporetto](https://github.com/hotchpotch/sqlite-vaporetto) を利用しています。
 

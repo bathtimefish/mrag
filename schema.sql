@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS documents (
   filename                 TEXT NOT NULL,
   original_path            TEXT NOT NULL,         -- relative: data/documents/<id>/original.*
   file_hash                TEXT NOT NULL,         -- SHA256 of original file
-  source_type              TEXT NOT NULL,         -- pdf | md | txt | html
-  extraction_provider      TEXT,                  -- pymupdf | marker | markitdown | docling | unstructured
+  source_type              TEXT NOT NULL,         -- md | txt (pre-1.0 rows may hold pdf | html)
+  extraction_provider      TEXT,                  -- plain (pre-1.0 rows may hold pymupdf)
   extraction_output_format TEXT,                 -- markdown | text
   extracted_markdown_path  TEXT,                 -- relative: data/documents/<id>/extracted.md
   extracted_text_path      TEXT,                 -- relative: data/documents/<id>/extracted.txt

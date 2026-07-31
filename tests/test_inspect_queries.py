@@ -33,6 +33,7 @@ def _insert_document(
     conn: sqlite3.Connection,
     doc_id: str,
     *,
+    # Pre-1.0 values: PDF ingestion is gone, but existing catalogs still hold them.
     filename: str = "f.pdf",
     source_type: str = "pdf",
     status: str = "extracted",

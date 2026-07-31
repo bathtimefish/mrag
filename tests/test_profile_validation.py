@@ -213,3 +213,50 @@ class TestIndexIdentity:
             validate_effective_tokenizer(profile, "trigram")
 
         assert validate_effective_tokenizer(profile, "vaporetto") == "vaporetto"
+
+
+class TestRetiredExtractionConfig:
+    """mrag 1.0 removed in-process PDF extraction along with its config keys.
+
+    Projects created before that still carry `extraction:` in profiles and
+    `default_extraction:` in mrag.yaml. Loading must keep working, and the keys
+    must not disturb the index identity, or every existing knowledge base would
+    be forced through a full reindex on upgrade.
+    """
+
+    _LEGACY_EXTRACTION = {"pdf": {"provider": "pymupdf", "output_format": "markdown"}}
+
+    def test_legacy_profile_extraction_key_is_ignored(self):
+        profile = ProfileConfig(name="legacy", extraction=self._LEGACY_EXTRACTION)
+
+        assert not hasattr(profile, "extraction")
+
+    def test_legacy_profile_extraction_key_does_not_change_index_identity(self):
+        legacy = ProfileConfig(name="same", extraction=self._LEGACY_EXTRACTION)
+        current = ProfileConfig(name="same")
+
+        assert legacy.compute_hash() == current.compute_hash()
+
+    def test_legacy_project_default_extraction_key_is_ignored(self, tmp_path):
+        import yaml
+
+        from mrag.config.project import load_project_config
+
+        (tmp_path / "mrag.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "project": {"name": "legacy"},
+                    "knowledge_base": {"id": "kb-legacy", "name": "Legacy"},
+                    "default_profile": "default",
+                    "fts_tokenizer": "trigram",
+                    "default_extraction": self._LEGACY_EXTRACTION,
+                    "qdrant": {"mode": "local"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        config = load_project_config(tmp_path)
+
+        assert config.knowledge_id == "kb-legacy"
+        assert not hasattr(config, "default_extraction")

@@ -4,16 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mrag"
-version = "0.27.0"
+version = "1.0.0"
 description = "Micro RAG — A lightweight, local-first retrieval runtime"
-license = { text = "AGPL-3.0" }
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",
     "rich>=13",
     "pyyaml>=6",
     "pydantic>=2",
-    "pymupdf>=1.24",
     "qdrant-client>=1.9",
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",

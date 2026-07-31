@@ -15,15 +15,6 @@ class KnowledgeBaseConfig(BaseModel):
     name: str
 
 
-class ExtractionPdfConfig(BaseModel):
-    provider: str = "pymupdf"
-    output_format: str = "text"
-
-
-class DefaultExtractionConfig(BaseModel):
-    pdf: ExtractionPdfConfig = Field(default_factory=ExtractionPdfConfig)
-
-
 class ProjectSection(BaseModel):
     name: str
 
@@ -33,9 +24,6 @@ class ProjectConfig(BaseModel):
     knowledge_base: KnowledgeBaseConfig
     default_profile: str = "default"
     fts_tokenizer: str = "trigram"
-    default_extraction: DefaultExtractionConfig = Field(
-        default_factory=DefaultExtractionConfig
-    )
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
 
     @property

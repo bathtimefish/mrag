@@ -79,7 +79,7 @@ Content-Type: application/json
     {
       "chunk_id": "...",
       "document_id": "...",
-      "filename": "manual.pdf",
+      "filename": "manual.md",
       "score": 0.823412,
       "content": "ヒットしたチャンクの本文",
       "metadata": {
@@ -120,7 +120,7 @@ Authorization: Bearer <MRAG_API_KEY>
 [
   {
     "id": "abcdef0123456789",
-    "filename": "manual.pdf",
+    "filename": "manual.md",
     "file_hash": "sha256:...",
     "status": "indexed",
     "created_at": "2026-05-22T10:00:00"
@@ -145,7 +145,7 @@ GET /api/v1/documents/{document_id} HTTP/1.1
 ```json
 {
   "id": "abcdef0123456789",
-  "filename": "manual.pdf",
+  "filename": "manual.md",
   "file_hash": "sha256:...",
   "status": "indexed",
   "created_at": "2026-05-22T10:00:00",

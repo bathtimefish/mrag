@@ -11,7 +11,6 @@ console = Console()
 
 def extract(
     file: Path = typer.Argument(..., help="File to extract (dry-run, no DB writes)"),
-    extractor: Optional[str] = typer.Option(None, "--extractor", "-e"),
     out: Optional[Path] = typer.Option(None, "--out", help="Save output to file"),
     format: str = typer.Option("text", "--format", help="Output format: text | markdown"),
 ) -> None:
@@ -21,8 +20,7 @@ def extract(
         raise typer.Exit(1)
 
     try:
-        source_type = detect_source_type(file)
-        extractor_obj = get_extractor(source_type, extractor)
+        extractor_obj = get_extractor(detect_source_type(file))
         result = extractor_obj.extract(file.resolve())
     except (ValueError, ImportError) as e:
         console.print(f"[red]Error:[/red] {e}")

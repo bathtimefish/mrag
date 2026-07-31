@@ -2,7 +2,7 @@
 
 This document covers the four chunking strategies implemented in mrag.
 
-Chunking is the process of slicing documents into search-friendly units. The tutorial ran with the default settings, but the right way to slice depends on what kind of document you are working with (plain text, Markdown, PDFs containing tables, and so on).
+Chunking is the process of slicing documents into search-friendly units. The tutorial ran with the default settings, but the right way to slice depends on what kind of document you are working with (plain text, Markdown, converted documents containing tables, and so on).
 
 In mrag, the strategy is selected via the `chunking.strategy` field in `profiles/<profile-name>.yaml`.
 
@@ -11,14 +11,14 @@ In mrag, the strategy is selected via the `chunking.strategy` field in `profiles
 
 | Strategy | Intended format | Description |
 |----------|-----------------|-------------|
-| `recursive` | Plain text, PDF | Default. Splits recursively in the order paragraph → line → character |
+| `recursive` | Plain text | Default. Splits recursively in the order paragraph → line → character |
 | `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
 | `block_aware` | Markdown containing tables and code blocks | Recognizes paragraphs, tables, and code as typed "blocks"; tables and code are never split mid-block |
 | `parent_child` | Cases that need both precise retrieval and rich context | Small child chunks score the hit; the larger parent chunk is what gets returned |
 
 Quick selection guide:
 
-- **Mostly PDFs or assorted text formats** → `recursive`
+- **Mostly plain or assorted text formats** → `recursive`
 - **Documents with clear heading structure** → `markdown_recursive`
 - **Manuals or specifications with many tables and code blocks** → `block_aware`
 - **You want to surface broader surrounding context on a hit** → `parent_child`
@@ -27,7 +27,7 @@ Quick selection guide:
 
 ## `recursive` — the default
 
-The most general-purpose strategy for plain text and PDFs.
+The most general-purpose strategy for plain and unstructured text.
 
 The default profile created by `mrag init --non-interactive` uses this configuration.
 

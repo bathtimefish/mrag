@@ -6,7 +6,11 @@ English / [日本語](README-ja.md)
 
 mrag is a CLI for building and operating small-scale RAG knowledge bases. It provides everything from document indexing to search, with a variety of strategies for building custom RAG pipelines to fit your needs. Skills for AI agents let you expose your knowledge base to any AI agent.
 
+mrag ingests Markdown and plain text. Converting other formats is the job of a document conversion engine such as [docling](https://github.com/docling-project/docling) or [MarkItDown](https://github.com/microsoft/markitdown); run one of those first and feed mrag the Markdown it produces.
+
 ---
+
+> **Breaking change in 1.0.0 (PDF ingestion removed, project relicensed to MIT):** mrag no longer extracts PDF. `mrag add` accepts `.md`, `.markdown` and `.txt` only; `.pdf`, `.html`, `.docx`, `.pptx` and `.xlsx` are rejected with `requires external conversion to Markdown`. The `--extractor` option (on `mrag add` and `mrag extract`) and `--converter-jobs` are gone, as are the `default_extraction` key in `mrag.yaml` and the `extraction` key in profiles — leaving them in an existing config is harmless, they are ignored. **Existing knowledge bases keep working**: `mrag index`, `mrag reindex` and every search path read the extracted text already stored under `data/documents/`, never the original PDF, and this change does not alter the profile hash, so it triggers no reindex of its own. (Upgrading across 0.24.0–0.27.0 may still require one for unrelated reasons — see those notes below.) Only ingesting a *new* PDF is affected — convert it with docling or MarkItDown first and add the resulting Markdown. This removal drops the project's only AGPL dependency, so **mrag is now licensed under MIT** (0.27.0 and earlier remain AGPL-3.0).
 
 > **Bug fix in 0.27.0 (`mrag reindex`):** Reindex no longer empties the profile before rebuilding it. Two defects are fixed. **(1)** It deleted a profile's chunk rows without ever deleting the matching Qdrant points, so every reindex left a full generation of vectors behind. Because vector search silently discards hits whose chunk row is gone, those orphans consumed `top_k` slots and returned fewer results than requested — worsening once per reindex, with no warning. **(2)** The deletion ran to completion *before* the rebuild, so any failure (an unreachable Ollama, for example) left the profile with no index at all. Reindex now forces a per-document rebuild: each document's old chunks, FTS rows and vector points are replaced only after its new ones have been embedded successfully, so a failed run leaves the previous index searchable and exits 1. Reindex also reconciles the collection against the database afterwards and reports `Reclaimed N orphaned vector point(s)`, so **one `mrag reindex` per profile reclaims the orphans an earlier version accumulated** — no manual Qdrant cleanup is needed. Points left in a collection built under a *different embedding model* cannot be attributed to a profile and are not touched; remove those collections manually if you have switched models. `cleanup_profile_index()` remains available for callers that genuinely want to empty a profile, and now builds its own Qdrant client rather than skipping the vector deletion when none is passed.
 
@@ -84,7 +88,7 @@ Four mrag commands are all it takes to create a KB from a directory and search i
 ```bash
 mrag init my-kb --non-interactive
 cd my-kb
-mrag add /path/to/documents --recursive --include '**/*.pdf'
+mrag add /path/to/documents --recursive --include '**/*.md'
 mrag index
 mrag search "your query"
 ```
@@ -169,12 +173,12 @@ Per-feature details live under `./docs/`.
 
 Copyright (c) 2026 BathTimeFish KK.
 
-Licensed under [GNU Affero General Public License v3.0](./LICENSE).
+Licensed under the [MIT License](./LICENSE).
+
+Releases up to and including 0.27.0 were licensed under AGPL-3.0, a condition of the PyMuPDF dependency that 1.0.0 removed.
 
 
 ## Acknowledgements
-
-mrag uses [PyMuPDF](https://github.com/pymupdf/pymupdf) for PDF text extraction and table detection. PyMuPDF is developed and maintained by [Artifex Software](https://artifex.com) and licensed under AGPL-3.0.
 
 mrag uses [sqlite-vaporetto](https://github.com/hotchpotch/sqlite-vaporetto) by [@hotchpotch](https://github.com/hotchpotch) for Japanese morphological tokenization via SQLite FTS5.
 

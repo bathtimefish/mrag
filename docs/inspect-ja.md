@@ -32,7 +32,7 @@ mrag inspect document <doc-id> --profile default
 
 出力に含まれる主な情報：
 
-- ファイル名、ソース形式（pdf / md / txt）、抽出プロバイダ（pymupdf など）
+- ファイル名、ソース形式（md / txt）、抽出プロバイダ（`plain`。1.0 以前のドキュメントは `pymupdf` と表示されることがあります）
 - **プロファイルごと**のチャンク件数（`parent_child` プロファイルでは親・子のカウントも分かれて表示）
 - **拡張処理（augmentation）のステータス**：`succeeded` / `raw_fallback` の件数
 - **Embedding 処理のステータス**（v0.21.0+）：`embedded` / `fallback_no_vector` の件数
@@ -71,7 +71,7 @@ mrag inspect chunks <doc-id> --profile default --show-context --json
 - **`embedding_status`** — `fallback_no_vector` / `null`（v0.21.0+。`fallback_no_vector` のチャンクは vector 検索でヒットしない）
 - **`has_qdrant_point`** — `true` / `false`（v0.21.0+。fallback チャンクは `false`）
 
-> ページングの目安：数百チャンクを超える大型 PDF などでは `--limit 50` でターミナルを溢れさせない運用がおすすめです。小〜中規模のドキュメントなら省略（全件出力）で問題ありません。
+> ページングの目安：数百チャンクを超える大型ドキュメントなどでは `--limit 50` でターミナルを溢れさせない運用がおすすめです。小〜中規模のドキュメントなら省略（全件出力）で問題ありません。
 
 > プロファイル解決：`--profile` を省略した場合、そのドキュメントが**ちょうど 1 つのプロファイル**でしかインデックスされていなければ自動選択されます。複数プロファイルでインデックスされている場合は exit 1 で候補一覧が表示されるので、`--profile <name>` で指定し直してください。
 
