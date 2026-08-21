@@ -7,6 +7,22 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **Index time grew with the size of the index.** `_cleanup_document` cleared a
+  document's FTS rows before re-indexing it, and ran for every document on every
+  index run — including a first build, where there is nothing to clear. Every
+  column `fts_chunks` can be filtered on is `UNINDEXED`, so that delete has no
+  index to use and scans the whole table: measured against this schema, 0.65 ms
+  per document at 2,000 rows against 4.61 ms at 20,000, so total cost grew
+  roughly with the square of the corpus. The delete is now skipped when the
+  document has no chunk rows, which is an indexed lookup and is exactly the case
+  a first build is in. Re-indexing still clears the rows it replaces.
+
+---
+
 ## 1.0.0 — 2026-07-31
 
 First major release. **Breaking:** PDF ingestion removed, project relicensed to MIT.

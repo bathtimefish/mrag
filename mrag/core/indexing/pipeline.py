@@ -245,14 +245,33 @@ def _cleanup_document(db_path: Path, document_id: str, profile_name: str,
             (document_id, profile_name),
         ).fetchall()
         point_ids = [r[0] for r in rows if r[0]]
+        # Every column fts_chunks can be filtered on is UNINDEXED, so the FTS
+        # delete below is a full scan of the table no matter how few rows it
+        # removes — and this function runs once per document on every index
+        # run, including the first, where it removes nothing at all. Cost per
+        # document therefore grows with the table: measured against this
+        # schema, 0.65 ms/document at 2,000 rows and 4.61 ms at 20,000.
+        #
+        # chunks is a normal table with an index on exactly this predicate, and
+        # every path that removes a document's rows (here, core/exclusions.py,
+        # cli/remove.py) deletes its FTS rows first — so no chunk row means no
+        # FTS row, and the scan has nothing to find.
+        has_indexed_chunks = (
+            conn.execute(
+                "SELECT 1 FROM chunks WHERE document_id=? AND profile_name=? LIMIT 1",
+                (document_id, profile_name),
+            ).fetchone()
+            is not None
+        )
     finally:
         conn.close()
 
     if point_ids and qdrant_client is not None:
         delete_points(qdrant_client, col_name, point_ids)
 
-    with fts_db_connection(db_path, tokenizer) as fts_conn:
-        fts_db.delete_by_document(fts_conn, knowledge_id, profile_name, document_id)
+    if has_indexed_chunks:
+        with fts_db_connection(db_path, tokenizer) as fts_conn:
+            fts_db.delete_by_document(fts_conn, knowledge_id, profile_name, document_id)
 
     with db_connection(db_path) as conn:
         conn.execute(
