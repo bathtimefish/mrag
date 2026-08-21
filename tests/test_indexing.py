@@ -802,6 +802,67 @@ def test_reindex_deletes_the_vector_points_it_replaces(tmp_path: Path, sample_tx
     assert after.isdisjoint(before), "reindex should have written a fresh point set"
 
 
+def test_a_first_index_skips_the_fts_scan_it_has_nothing_to_find(
+    tmp_path: Path, sample_txt: Path
+):
+    """Regression: cleanup scanned the whole FTS table once per document.
+
+    `fts_chunks` filters only on UNINDEXED columns, so
+    `delete_by_document` has no index to use and scans every row already
+    written. `_cleanup_document` calls it for every document on every index
+    run — including the first, where there is nothing to delete — so cost per
+    document grew with the table: 0.65 ms/document at 2,000 rows against
+    4.61 ms at 20,000, measured against this schema.
+
+    A rebuild must still delete, or the fresh rows would join the ones they
+    replace and every chunk would match twice.
+    """
+    from unittest.mock import patch
+
+    qdrant = StatefulQdrant()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, sample_txt)
+        provider = FakeEmbeddingProvider()
+
+        with patch("mrag.db.fts.delete_by_document",
+                   wraps=fts_db.delete_by_document) as delete, \
+             patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider",
+                   return_value=provider), \
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant):
+            result = runner.invoke(app, ["index"], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        assert delete.call_count == 0, "a first build has no FTS row to delete"
+
+        db = find_db(project_dir)
+        conn = open_connection(db)
+        first_build = conn.execute("SELECT COUNT(*) FROM fts_chunks").fetchone()[0]
+        conn.close()
+        assert first_build > 0, "the skip must not have cost the index its rows"
+
+        with patch("mrag.db.fts.delete_by_document",
+                   wraps=fts_db.delete_by_document) as delete, \
+             patch("mrag.core.indexing.pipeline.OllamaEmbeddingProvider",
+                   return_value=provider), \
+             patch("mrag.core.indexing.pipeline.make_client", return_value=qdrant), \
+             patch("mrag.cli.reindex.make_client", return_value=qdrant):
+            result = runner.invoke(app, ["reindex"], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        assert delete.call_count == 1, "a rebuild must clear the rows it replaces"
+
+    conn = open_connection(db)
+    rebuilt = conn.execute("SELECT COUNT(*) FROM fts_chunks").fetchone()[0]
+    duplicates = conn.execute(
+        "SELECT COUNT(*) FROM ("
+        " SELECT chunk_id FROM fts_chunks GROUP BY chunk_id HAVING COUNT(*) <> 1)"
+    ).fetchone()[0]
+    conn.close()
+    assert rebuilt == first_build
+    assert duplicates == 0, "the rebuild must not have left the rows it replaced"
+
+
 def test_reindex_reclaims_points_orphaned_by_earlier_runs(tmp_path: Path, sample_txt: Path):
     from unittest.mock import patch
 
