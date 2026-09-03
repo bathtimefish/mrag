@@ -18,7 +18,8 @@ from mrag.core.retrieval.hybrid import hybrid_search
 from mrag.core.retrieval.keyword import keyword_search
 from mrag.core.retrieval.vector import vector_search
 from mrag.db.connection import find_db, open_connection
-from mrag.db.qdrant import collection_name, make_client, normalize_name
+from mrag.db.qdrant import make_client, normalize_name
+from mrag.db.qdrant_migrate import resolve_collection
 
 
 @dataclass
@@ -125,10 +126,13 @@ def run_retrieval(
             port=config.qdrant.port,
             path=project_dir / "qdrant",
         )
-        col = collection_name(
-            config.knowledge_id,
-            resolved_profile_name,
-            normalize_name(profile.embedding.model),
+        col = resolve_collection(
+            qdrant,
+            db_path=db_path,
+            config=config,
+            profile_name=resolved_profile_name,
+            model_normalized=normalize_name(profile.embedding.model),
+            notify=warn,
         )
 
         if resolved_strategy == "vector":

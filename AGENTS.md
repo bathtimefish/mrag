@@ -47,7 +47,7 @@ mrag init   →   mrag add   →   mrag index   →   mrag search / mrag serve /
 3. **`mrag index`** — Embeds chunks and writes to SQLite FTS5 + Qdrant. Differential: only processes un-indexed documents. Always writes a JSON run log to `logs/` (timestamped). Use `--skip-list-json <log>` to skip documents that failed in a previous run.
 4. **`mrag search <query>`**, **`mrag serve`**, or **`mrag mcp`** — Retrieve results. Output includes chunk text, score stats (min/max/mean/σ), and document distribution.
 
-Use **`mrag eval <query>`** at any time after indexing for deeper quality inspection: duplicate chunk detection and multi-profile comparison.
+Use **`mrag eval <query>`** at any time after indexing for deeper quality inspection: duplicate and near-duplicate chunk detection and multi-profile comparison.
 
 ---
 
@@ -528,7 +528,7 @@ Fatal errors (YAML parse failure, schema mismatch) exit immediately; everything 
 
 ## Reading project state
 
-Use `mrag doctor` to verify the mrag runtime environment (SQLite, FTS5, vaporetto, Ollama). It is project-independent — run it from any directory to confirm the install:
+Use `mrag doctor` to verify the mrag runtime environment (SQLite, FTS5, apsw, vaporetto, Ollama). It is project-independent — run it from any directory to confirm the install:
 
 ```bash
 mrag doctor
@@ -619,6 +619,7 @@ MCP is read-only in the current implementation. It exposes search/list/inspect t
 | `mrag.yaml not found` | Not in project directory | `cd <project-dir>` |
 | Zero search results | `mrag index` not run, or wrong tokenizer | Run `mrag index`; check `fts_tokenizer` in `mrag.yaml` |
 | `Collection not found` error | Qdrant server not running (`mode: server`) | Start Qdrant, or switch to `mode: local` |
+| `Collection … not found` right after upgrading past 0.24.0 | Index built before the 0.24.0 collection rename | Nothing — the next search or index migrates it (one `Migrated N vector point(s)` notice); `mrag reindex` only if it persists |
 | Indexing fails with connection error | Ollama not running or embedding model not pulled | `ollama serve` + `ollama pull bge-m3` |
 | Indexing fails with connection error (contextual) | Augmentation model not pulled | `ollama pull gemma4:e2b` (or whatever `augmentation.model` is set to) |
 | `mrag index` very slow | `augmentation.strategy: contextual` calls LLM once per chunk | Expected; use `strategy: none` to skip augmentation |

@@ -16,7 +16,7 @@ description: >
 license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # SKILL.md — mrag Skill Procedures
@@ -825,6 +825,7 @@ mrag doctor
 Checks and reports:
 - SQLite version (>= 3.35.0)
 - FTS5 `trigram` tokenizer
+- apsw (optional — the `vaporetto` extra; without it a `fts_tokenizer: vaporetto` project fails at search time)
 - sqlite-vaporetto native library (optional)
 - Ollama reachability at `http://localhost:11434`
 
@@ -925,7 +926,7 @@ mrag eval "device configuration options" --profile default --profile second
 ```
 
 **Output sections:**
-- Per-result: score, document filename, chunk ID, content preview, duplicate warning if content matches another result
+- Per-result: score, document filename, chunk ID, content preview, and a duplicate warning that names the earlier result it repeats — `⚠ duplicate of [1]` for an exact match, `⚠ near-duplicate (0.93) of [1]` when the text differs only in chunk boundary, heading level or spacing (typical of annual report series)
 - **Score stats** — min / max / mean / σ across results
 - **Document distribution** — bar chart of how many chunks came from each document
 - **Profile Diff table** (multi-profile mode) — rank-by-rank chunk comparison with ✓ for identical placements
@@ -1044,7 +1045,7 @@ Because `context_text + chunk content` is written to the vector index, contextua
 | Chunk text | ✓ | ✓ |
 | Score stats (min/max/mean/σ) | ✓ | ✓ |
 | Document distribution | ✓ | ✓ |
-| Duplicate chunk detection | — | ✓ |
+| Duplicate / near-duplicate chunk detection | — | ✓ |
 | Multi-profile diff | — | ✓ |
 | Typical use | Day-to-day retrieval and synthesis | Index quality analysis, profile tuning |
 
@@ -1513,6 +1514,7 @@ Zero results from keyword search?                           →  check mrag inde
 Zero results from vector/hybrid?                            →  check Ollama running; run mrag doctor
 Reranker hides keyword in preview — looks like a miss?      →  mrag search "<word>" --strategy keyword --no-rerank [--json]  (BM25-only fact check; --json .content has full body)
 Qdrant "Collection not found" error?                        →  mode: server needs a running Qdrant; or switch to mode: local
+Search fails with "Collection … not found" after an upgrade? →  an index built before 0.24.0 is migrated on the next search/index (one "Migrated N vector point(s)" notice); run mrag reindex only if it still fails
 Need to hide one document but retain its source?            →  dry-run `mrag exclusions add --document-id <id>`, then repeat with `--reason "..." --force`
 Need derived index data physically cleaned but source kept? →  the same `exclusions add --force` command cleans FTS/chunks/variants/Qdrant while retaining source
 `exclusions add --force` exited 3 / degraded?               →  policy is active and retrieval is blocked; restore Qdrant, then repeat the exact command to reconcile cleanup

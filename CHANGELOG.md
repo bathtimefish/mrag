@@ -7,7 +7,7 @@ kept; the repository history is the record for those releases.
 
 ---
 
-## Unreleased
+## 1.0.1 — 2026-09-03
 
 ### Fixed
 
@@ -20,6 +20,45 @@ kept; the repository history is the record for those releases.
   roughly with the square of the corpus. The delete is now skipped when the
   document has no chunk rows, which is an indexed lookup and is exactly the case
   a first build is in. Re-indexing still clears the rows it replaces.
+- **A knowledge base indexed before 0.24.0 could not be searched in `local`
+  mode.** 0.24.0 renamed Qdrant collections and said only `qdrant.mode: server`
+  was affected. It was not: the name is derived the same way in `local` mode, so
+  every vector or hybrid search on a project indexed before 0.24.0 failed with
+  `Collection mrag_…_<fingerprint> not found`, and a `mrag index` run after
+  upgrading created the new collection for newly added documents only, leaving
+  everything indexed earlier unreachable. The vectors are now migrated on first
+  use: `mrag search`, `mrag eval`, `mrag serve`, `mrag mcp`, `mrag index` and
+  `mrag reindex` move the points that `chunk_variants` still attributes to the
+  old collection into the new one, repoint those rows, and drop the old
+  collection once nothing references it. No re-embedding; one notice on stderr
+  (`Migrated N vector point(s) from pre-0.24.0 Qdrant collection …`); about
+  20 seconds per 30,000 points in local mode. Only points the database names
+  are moved, so on a shared Qdrant server a collection that also holds another
+  knowledge base's points keeps them and is left in place, and a legacy
+  collection that `mrag reindex` already rebuilt under the new name is treated
+  as an orphan — removed in local mode, left alone on a server — rather than
+  merged back. The 0.24.0 entry below carries a correction.
+- **`mrag eval` missed near-duplicate results.** Its duplicate check compared
+  chunk text byte for byte after stripping outer whitespace, so the copies that
+  actually flood results — the same paragraph re-published in every edition of
+  an annual survey, differing only in chunk boundary, heading level or spacing —
+  were never flagged. On one such corpus six of the eight results for a query
+  were copies of one paragraph and none was marked. Results are now compared on
+  normalized character shingles (Unicode NFKC, case, whitespace and punctuation
+  removed) with an overlap threshold of 0.85, and the flag names the earlier
+  result: `⚠ duplicate of [1]`, `⚠ near-duplicate (0.93) of [1]`, and
+  `⚠ duplicated by [3], [4]` on the first occurrence. Texts shorter than 40
+  normalized characters are still flagged only on an exact match.
+
+### Changed
+
+- **`mrag doctor` reports apsw on its own line.** A project whose
+  `fts_tokenizer` is `vaporetto` fails at search time with `APSW is not
+  installed` when the `vaporetto` extra is missing, but doctor only implied that
+  through a failed library load — and skipped even that when it found more than
+  one sqlite-vaporetto library. It now prints the apsw version, or `not
+  installed` with the install command, and when the library is found but apsw
+  is absent says so instead of "failed to load".
 
 ---
 
@@ -159,3 +198,8 @@ Only ingesting a *new* PDF is affected.
   on that profile return empty results rather than mixed or wrong ones. No data
   is deleted; the old collection is simply orphaned in Qdrant and can be removed
   manually once you have confirmed the new one is populated.
+
+  **Correction:** the claim that `local` mode was unaffected was wrong. The
+  rename applied to both modes, and local-mode projects indexed before 0.24.0
+  failed with `Collection … not found` until the automatic migration described
+  under 1.0.1 was added.

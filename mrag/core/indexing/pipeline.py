@@ -25,13 +25,13 @@ from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.db.exclusions import active_document_ids
 from mrag.db.qdrant import (
-    collection_name,
     delete_points,
     ensure_collection,
     list_point_ids,
     make_client,
     upsert_points,
 )
+from mrag.db.qdrant_migrate import resolve_collection
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -660,12 +660,6 @@ def run_index(
         from mrag.core.ollama_client import probe_connection
         probe_connection(profile.augmentation.endpoint)
 
-    col_name = collection_name(
-        config.knowledge_id,
-        profile_name,
-        embedding_provider.get_normalized_name(),
-    )
-
     if qdrant_client is None:
         qdrant_client = make_client(
             mode=config.qdrant.mode,
@@ -673,6 +667,17 @@ def run_index(
             port=config.qdrant.port,
             path=project_dir / "qdrant",
         )
+
+    # A profile indexed before 0.24.0 keeps its vectors under the old collection
+    # name; move them first so this run and its cleanup write to one collection.
+    col_name = resolve_collection(
+        qdrant_client,
+        db_path=db_path,
+        config=config,
+        profile_name=profile_name,
+        model_normalized=embedding_provider.get_normalized_name(),
+        notify=(lambda msg: console.print(f"[dim]{_now_ts()}[/dim]  {msg}")) if console else None,
+    )
 
     ensure_collection(qdrant_client, col_name, embedding_provider.get_dimension())
 

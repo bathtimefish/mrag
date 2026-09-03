@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 import pytest
 from qdrant_client.models import Distance, VectorParams
 
-from mrag.db.qdrant import _identity_fingerprint, collection_name, ensure_collection
+from mrag.db.qdrant import (
+    _identity_fingerprint,
+    collection_name,
+    ensure_collection,
+    legacy_collection_name,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -113,3 +118,23 @@ def test_ensure_collection_raises_on_named_vector_config() -> None:
 
     with pytest.raises(ValueError, match="named vectors"):
         ensure_collection(client, col_name, 768)
+
+
+# ---------------------------------------------------------------------------
+# legacy_collection_name
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_collection_name_reproduces_pre_0_24_scheme() -> None:
+    # Projects indexed before 0.24.0 hold their vectors under this exact name;
+    # the migration in mrag.db.qdrant_migrate looks it up, so it must not drift.
+    assert legacy_collection_name("kb_ehrf_kb", "default", "bge_m3") == "mrag_kb_ehrf_kb_default_bge_m3"
+    assert legacy_collection_name("kb-1", "parent child", "bge-m3") == "mrag_kb_1_parent_child_bge_m3"
+
+
+def test_legacy_collection_name_is_the_fingerprinted_name_without_its_suffix() -> None:
+    legacy = legacy_collection_name("kb_example", "default", "bge_m3")
+    current = collection_name("kb_example", "default", "bge_m3")
+
+    assert current.startswith(legacy + "_")
+    assert current != legacy

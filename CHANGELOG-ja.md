@@ -7,7 +7,7 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
-## 未リリース
+## 1.0.1 — 2026-09-03
 
 ### 修正
 
@@ -19,6 +19,41 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   4.61 ms/文書であり、総costはcorpus規模のおよそ二乗で増えていました。文書のchunk行
   が存在しない場合には削除を行わないようにしました — これは索引の効く検索であり、
   初回buildはまさにこの場合にあたります。再indexは従来どおり置き換える行を削除します。
+- **0.24.0より前に構築したナレッジベースが `local` モードで検索できなかった問題**。
+  0.24.0でQdrant collectionの命名方式を変更した際、影響は `qdrant.mode: server`
+  のみと記載していましたが誤りでした。collection名は `local` モードでも同じ方法で
+  導出されるため、0.24.0より前にindexしたプロジェクトではvector / hybrid検索が
+  すべて `Collection mrag_…_<fingerprint> not found` で失敗し、アップグレード後の
+  `mrag index` は新規追加文書だけを新しいcollectionに書き込んで、それ以前の文書を
+  到達不能のまま残していました。vectorは初回利用時に自動で移行されるようになりました。
+  `mrag search`、`mrag eval`、`mrag serve`、`mrag mcp`、`mrag index`、`mrag reindex`
+  のいずれも、`chunk_variants` が旧collectionに紐づけたままのpointを新collectionへ
+  移し、該当行を付け替え、参照が無くなった旧collectionを削除します。再embeddingは
+  不要で、stderrに1行の通知(`Migrated N vector point(s) from pre-0.24.0 Qdrant
+  collection …`)が出るだけです。localモードで30,000 pointあたり約20秒です。移動する
+  のはデータベースが名前を持つpointだけなので、共有Qdrant server上で別ナレッジベース
+  のpointも含むcollectionはそれらを保持したまま残され、`mrag reindex` で新名称に
+  再構築済みの旧collectionは孤児として扱われます(localモードでは削除、serverでは
+  放置。統合し直すことはありません)。下記0.24.0の項に訂正を追記しました。
+- **`mrag eval` が近似重複の結果を見落としていた問題**。重複判定は外側の空白を
+  除いたchunk本文の完全一致だったため、実際に結果を埋め尽くす種類の重複 — 年次
+  調査報告の各年版に転載された同一段落で、chunk境界・見出しレベル・空白だけが
+  異なるもの — が一度も警告されませんでした。あるcorpusでは1クエリの上位8件中
+  6件が同一段落のコピーで、いずれも無印でした。結果は正規化した文字shingle
+  (Unicode NFKC、大文字小文字・空白・句読点を除去)の重なり係数0.85以上で比較する
+  ようになり、警告は先行する結果を名指しします: `⚠ duplicate of [1]`、
+  `⚠ near-duplicate (0.93) of [1]`、初出側には `⚠ duplicated by [3], [4]`。
+  正規化後40文字未満の本文は従来どおり完全一致のみ警告します。
+
+### 変更
+
+- **`mrag doctor` がapswを独立した行で報告するようになりました**。`fts_tokenizer`
+  が `vaporetto` のプロジェクトは、`vaporetto` extraが無いと検索時に
+  `APSW is not installed` で失敗しますが、doctorはそれをライブラリのロード失敗
+  として暗示するだけで、しかもsqlite-vaporettoライブラリを複数検出した場合には
+  ロード試験自体を省略していました。apswのバージョン、または `not installed` と
+  インストールコマンドを表示し、ライブラリはあるがapswが無い場合は
+  "failed to load" ではなくその旨を述べるようになりました。
 
 ---
 
@@ -160,3 +195,7 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   のではなく空の結果を返します。データが削除されるわけではなく、旧collectionは
   Qdrant上に取り残されるだけなので、新しいcollectionへのデータ投入を確認したうえで
   手動で削除できます。
+
+  **訂正:** `local` モードには影響しないという記述は誤りでした。命名変更は両モードに
+  適用されており、0.24.0より前にindexしたlocalモードのプロジェクトは、1.0.1の項に
+  記載した自動移行が入るまで `Collection … not found` で失敗していました。
