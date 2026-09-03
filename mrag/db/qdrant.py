@@ -28,6 +28,18 @@ def _identity_fingerprint(*parts: str) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
 
 
+def legacy_collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str:
+    """The pre-0.24.0 collection name: the normalized slugs with no fingerprint.
+
+    Kept only so ``mrag.db.qdrant_migrate`` can find collections that a project
+    indexed before 0.24.0 still holds its vectors in. Never write to this name.
+    """
+    kb = normalize_name(kb_id)
+    profile = normalize_name(profile_name)
+    model = normalize_name(model_normalized)
+    return f"mrag_{kb}_{profile}_{model}"
+
+
 def collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str:
     """Derives a stable, collision-resistant Qdrant collection name.
 
@@ -38,9 +50,11 @@ def collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str
     normalization) inputs, makes that practically impossible while keeping
     the human-readable prefix for debugging.
 
-    Changing this format is a breaking change for existing Qdrant Server
-    deployments: previously created collections will no longer match and
-    will be orphaned rather than reused. Run `mrag reindex` after upgrading.
+    Changing this format is a breaking change for every existing deployment,
+    ``local`` mode included: previously created collections no longer match.
+    Collections named under the pre-0.24.0 scheme are migrated on first use by
+    ``mrag.db.qdrant_migrate.resolve_collection``; any future rename needs the
+    same treatment.
     """
     kb = normalize_name(kb_id)
     profile = normalize_name(profile_name)

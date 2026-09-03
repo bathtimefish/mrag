@@ -1,10 +1,14 @@
+import re
 import statistics
+import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from mrag.config.profile import load_profile, validate_effective_tokenizer
@@ -15,7 +19,8 @@ from mrag.core.retrieval.hybrid import hybrid_search
 from mrag.core.retrieval.keyword import keyword_search
 from mrag.core.retrieval.vector import vector_search
 from mrag.db.connection import find_db, open_connection
-from mrag.db.qdrant import collection_name, make_client, normalize_name
+from mrag.db.qdrant import make_client, normalize_name
+from mrag.db.qdrant_migrate import resolve_collection
 
 console = Console()
 
@@ -69,10 +74,13 @@ def _run_search(
             port=config.qdrant.port,
             path=project_dir / "qdrant",
         )
-        col = collection_name(
-            config.knowledge_id,
-            profile_name,
-            normalize_name(prof.embedding.model),
+        col = resolve_collection(
+            qdrant_client,
+            db_path=db_path,
+            config=config,
+            profile_name=profile_name,
+            model_normalized=normalize_name(prof.embedding.model),
+            notify=lambda msg: console.print(f"[yellow]WARN[/yellow]  {msg}"),
         )
         if retrieval_strategy == "vector":
             results = vector_search(
@@ -147,17 +155,96 @@ def _fetch_filenames(db_path: Path, results: list[RetrievalResult]) -> dict[str,
     return {r["id"]: r["filename"] for r in rows}
 
 
-def detect_duplicates(results: list[RetrievalResult]) -> set[str]:
-    """Return chunk_ids whose content is identical to another result's content."""
-    seen: dict[str, str] = {}
+# Duplicate detection. Corpora that re-publish the same text every year (annual
+# policy surveys, report series) return the same paragraph from several
+# documents, and those copies rarely match byte for byte: chunk boundaries
+# shift with the surrounding document, heading levels differ, whitespace and
+# full-width punctuation vary. Exact matching missed every one of them, so
+# results are compared on normalized character shingles instead.
+#
+# The overlap coefficient (|A ∩ B| / min(|A|, |B|)) is used rather than
+# Jaccard because it stays high when one chunk is the other plus a few extra
+# sentences — the shifted-boundary case — where Jaccard drops with the length
+# difference. Measured on real annual-series chunks: true copies score
+# 0.89–1.00, unrelated chunks 0.00–0.02, so the threshold has a wide margin.
+_DEDUP_STRIP = re.compile(
+    r"[\s#*_`>|\-–—•·・:：、。,.()（）「」『』\[\]!?！？\"'’“”]+"
+)
+_SHINGLE_SIZE = 5
+NEAR_DUPLICATE_THRESHOLD = 0.85
+# Below this many normalized characters there are too few shingles for the
+# overlap to mean anything; such results are only ever flagged on exact match.
+_MIN_NEAR_DUPLICATE_CHARS = 40
+
+
+@dataclass(frozen=True)
+class DuplicateMatch:
+    """A result that repeats an earlier, higher-ranked result."""
+
+    rank: int
+    """1-based rank of the earlier result."""
+    chunk_id: str
+    """chunk_id of the earlier result."""
+    similarity: float
+    exact: bool
+
+
+def _dedup_key(text: str) -> str:
+    return _DEDUP_STRIP.sub("", unicodedata.normalize("NFKC", text)).lower()
+
+
+def _shingles(key: str) -> set[str]:
+    if len(key) < _SHINGLE_SIZE:
+        return {key} if key else set()
+    return {key[i:i + _SHINGLE_SIZE] for i in range(len(key) - _SHINGLE_SIZE + 1)}
+
+
+def _overlap(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+def find_duplicates(
+    results: list[RetrievalResult],
+    threshold: float = NEAR_DUPLICATE_THRESHOLD,
+) -> dict[str, DuplicateMatch]:
+    """Map each result that repeats an earlier one to that earlier result.
+
+    Exact matches are compared after normalization (Unicode NFKC, case,
+    whitespace and punctuation removed); near matches need an overlap of at
+    least ``threshold`` between the two results' character shingles and both
+    texts to be long enough for that to be meaningful. Each result is matched
+    against earlier results in rank order, so the reported rank is the first
+    occurrence.
+    """
+    keys = [_dedup_key(r.content) for r in results]
+    shingles = [_shingles(k) for k in keys]
+    matches: dict[str, DuplicateMatch] = {}
+    for j, later in enumerate(results):
+        for i in range(j):
+            earlier = results[i]
+            if keys[i] == keys[j]:
+                matches[later.chunk_id] = DuplicateMatch(i + 1, earlier.chunk_id, 1.0, True)
+                break
+            if min(len(keys[i]), len(keys[j])) < _MIN_NEAR_DUPLICATE_CHARS:
+                continue
+            similarity = _overlap(shingles[i], shingles[j])
+            if similarity >= threshold:
+                matches[later.chunk_id] = DuplicateMatch(i + 1, earlier.chunk_id, similarity, False)
+                break
+    return matches
+
+
+def detect_duplicates(
+    results: list[RetrievalResult],
+    threshold: float = NEAR_DUPLICATE_THRESHOLD,
+) -> set[str]:
+    """Return the chunk_ids on either side of a duplicate or near-duplicate pair."""
     dupes: set[str] = set()
-    for r in results:
-        key = r.content.strip()
-        if key in seen:
-            dupes.add(r.chunk_id)
-            dupes.add(seen[key])
-        else:
-            seen[key] = r.chunk_id
+    for chunk_id, match in find_duplicates(results, threshold).items():
+        dupes.add(chunk_id)
+        dupes.add(match.chunk_id)
     return dupes
 
 
@@ -198,7 +285,12 @@ def _print_single_profile(
     reranked: bool,
     filename_map: dict[str, str],
 ) -> None:
-    duplicates = detect_duplicates(results)
+    duplicates = find_duplicates(results)
+    duplicated_by: dict[int, list[int]] = {}
+    for rank, r in enumerate(results, 1):
+        match = duplicates.get(r.chunk_id)
+        if match is not None:
+            duplicated_by.setdefault(match.rank, []).append(rank)
 
     console.print()
     console.print(f"[bold]Query:[/bold] {query}")
@@ -219,7 +311,14 @@ def _print_single_profile(
         score_str = f"score=[cyan]{r.score:.4f}[/cyan]"
         if retrieval_score is not None:
             score_str += f"  (retrieval=[dim]{retrieval_score:.4f}[/dim])"
-        dupe_flag = "  [yellow]⚠ duplicate content[/yellow]" if r.chunk_id in duplicates else ""
+        dupe_flag = ""
+        match = duplicates.get(r.chunk_id)
+        if match is not None:
+            kind = "duplicate" if match.exact else f"near-duplicate ({match.similarity:.2f})"
+            dupe_flag = f"  [yellow]⚠ {kind} of {escape(f'[{match.rank}]')}[/yellow]"
+        elif i in duplicated_by:
+            later = ", ".join(f"[{rank}]" for rank in duplicated_by[i])
+            dupe_flag = f"  [yellow]⚠ duplicated by {escape(later)}[/yellow]"
 
         console.print(f"[bold]\\[{i}][/bold] {score_str}{dupe_flag}")
         console.print(

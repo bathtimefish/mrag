@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
@@ -16,7 +17,8 @@ from mrag.config.project import ProjectConfig
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.db.connection import find_db
-from mrag.db.qdrant import collection_name, make_client, normalize_name
+from mrag.db.qdrant import make_client, normalize_name
+from mrag.db.qdrant_migrate import resolve_collection
 
 
 def create_app(
@@ -56,10 +58,13 @@ def create_app(
                 path=project_dir / "qdrant",
             )
 
-        col = collection_name(
-            config.knowledge_id,
-            profile_name,
-            normalize_name(prof.embedding.model),
+        col = resolve_collection(
+            qdrant,
+            db_path=db_path,
+            config=config,
+            profile_name=profile_name,
+            model_normalized=normalize_name(prof.embedding.model),
+            notify=lambda msg: print(f"WARN  {msg}", file=sys.stderr),
         )
 
         app.state.project_dir = project_dir

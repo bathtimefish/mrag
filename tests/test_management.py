@@ -238,3 +238,40 @@ def test_remove_then_document_not_in_db(indexed_project):
     conn.close()
     assert doc is None
     assert fts_count == 0
+
+
+def _doctor_module():
+    # `mrag.cli` re-exports the `doctor` command under the module's own name, so
+    # a dotted monkeypatch target would resolve to the function, not the module.
+    import importlib
+    return importlib.import_module("mrag.cli.doctor")
+
+
+def test_doctor_reports_missing_apsw_on_its_own_line(tmp_path, monkeypatch):
+    # A vaporetto project fails at search time with "APSW is not installed";
+    # doctor has to say so even when the library check stops early.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_doctor_module(), "_apsw_version", lambda: None)
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    assert result.exit_code == 0
+    line = next(l for l in result.output.splitlines() if "apsw (optional" in l)
+    assert "WARN" in line and "not installed" in line
+
+
+def test_doctor_reports_installed_apsw_version(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_doctor_module(), "_apsw_version", lambda: "9.9.9.0")
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    line = next(l for l in result.output.splitlines() if "apsw (optional" in l)
+    assert "OK" in line and "9.9.9.0" in line
+
+
+def test_doctor_names_apsw_when_library_is_found_but_cannot_load(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_doctor_module(), "_apsw_version", lambda: None)
+    monkeypatch.setattr(
+        "mrag.db.tokenizer.find_vaporetto_lib",
+        lambda: tmp_path / "libsqlite_vaporetto.dylib",
+    )
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    assert "apsw is not installed" in result.output.replace("\n", "")

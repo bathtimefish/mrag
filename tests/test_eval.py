@@ -10,7 +10,7 @@ from mrag.cli import app
 from mrag.config.project import load_project_config
 from mrag.core.indexing.pipeline import run_index
 from mrag.core.retrieval.base import RetrievalResult
-from mrag.cli.eval import detect_duplicates, _fetch_filenames
+from mrag.cli.eval import detect_duplicates, find_duplicates, _fetch_filenames
 from mrag.db.connection import find_db
 from tests.test_indexing import FakeEmbeddingProvider, _fake_qdrant_client
 
@@ -256,3 +256,56 @@ class TestEvalMultiProfile:
         assert result.exit_code == 0
         assert "Warning" in result.output
         assert "embedding models" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Near-duplicate detection
+# ---------------------------------------------------------------------------
+
+_PARAGRAPH = (
+    "フランスでは1930年代には世界最高の国道網を有していたため高速道路の整備が遅れたが、"
+    "1950年代以降高速道路の整備に着手した。財源の不足から、1955年に高速道路法が制定され、"
+    "コンセッション方式による高速道路整備が本格化した。"
+)
+
+
+class TestNearDuplicates:
+    def test_shifted_chunk_boundaries_are_near_duplicates(self):
+        # The same paragraph re-published in two annual editions: one chunk
+        # starts with the section heading, the other runs on into the next
+        # sentence. Exact matching never caught these.
+        a = "# (5)フランス\n\n" + _PARAGRAPH
+        b = _PARAGRAPH + " 現在は主要3社が全国の高速道路網を運営している。"
+        assert detect_duplicates([_r("c1", 0.9, a), _r("c2", 0.8, b)]) == {"c1", "c2"}
+
+    def test_whitespace_heading_level_and_width_differences_are_exact_duplicates(self):
+        a = "## 1.米国\n米国では、1920〜30年代に、自動車が急速に普及し、道路の混雑が問題となった。"
+        b = "# 1.米国  \n米国では、1920〜30 年代に自動車が急速に普及し、道路の混雑が問題となった。"
+        match = find_duplicates([_r("c1", 0.9, a), _r("c2", 0.8, b)])["c2"]
+        assert match.exact is True
+        assert match.rank == 1 and match.chunk_id == "c1"
+
+    def test_unrelated_long_texts_are_not_flagged(self):
+        a = _PARAGRAPH
+        b = (
+            "米国では、1956年に燃料税を主な財源とする連邦道路信託基金が設置され、"
+            "道路特定財源制度によりインターステート高速道路網が整備された。"
+        )
+        assert detect_duplicates([_r("c1", 0.9, a), _r("c2", 0.8, b)]) == set()
+
+    def test_short_texts_are_only_matched_exactly(self):
+        # Too few shingles for an overlap to mean anything.
+        assert detect_duplicates([_r("c1", 0.9, "dup"), _r("c2", 0.8, "dupe")]) == set()
+        assert detect_duplicates([_r("c1", 0.9, "dup"), _r("c2", 0.8, "dup")]) == {"c1", "c2"}
+
+    def test_matches_point_at_the_earliest_occurrence(self):
+        results = [
+            _r("c1", 0.9, _PARAGRAPH),
+            _r("c2", 0.8, "unrelated " * 10),
+            _r("c3", 0.7, "# 見出し\n" + _PARAGRAPH),
+            _r("c4", 0.6, _PARAGRAPH + " 続き。"),
+        ]
+        matches = find_duplicates(results)
+        assert set(matches) == {"c3", "c4"}
+        assert matches["c3"].rank == 1 and matches["c4"].rank == 1
+        assert detect_duplicates(results) == {"c1", "c3", "c4"}

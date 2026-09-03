@@ -8,9 +8,11 @@ the responsibility of the individual project commands at runtime.
 Doctor checks:
   - SQLite version (>= 3.35.0)
   - SQLite FTS5 trigram tokenizer
+  - apsw (optional; the `vaporetto` extra, needed to load sqlite-vaporetto)
   - sqlite-vaporetto native library (optional)
   - Ollama default endpoint (http://localhost:11434) reachability
 """
+import importlib.util
 import sqlite3
 from typing import Callable
 
@@ -69,6 +71,34 @@ def _check_fts5_trigram() -> tuple[bool, str]:
         conn.close()
 
 
+_APSW_INSTALL_HINT = "uv pip install -e '.[vaporetto]'"
+
+
+def _apsw_version() -> str | None:
+    """Installed apsw version, or None when the module is absent."""
+    if importlib.util.find_spec("apsw") is None:
+        return None
+    import apsw
+    return apsw.apswversion()
+
+
+def _check_apsw() -> tuple[bool, str]:
+    """apsw is what loads the sqlite-vaporetto extension.
+
+    Reported on its own line rather than folded into the vaporetto check: a
+    project configured for vaporetto fails at search time with "APSW is not
+    installed", and that has to be visible here even when the library check
+    stops early (for example on an ambiguous library location).
+    """
+    version = _apsw_version()
+    if version is None:
+        return False, (
+            f"not installed — needed to load sqlite-vaporetto ({_APSW_INSTALL_HINT}); "
+            "projects with fts_tokenizer: vaporetto cannot be searched without it"
+        )
+    return True, version
+
+
 def _check_vaporetto() -> tuple[bool, str]:
     from mrag.db.tokenizer import (
         VaporettoLibraryAmbiguityError,
@@ -81,8 +111,10 @@ def _check_vaporetto() -> tuple[bool, str]:
         return False, str(exc)
     if lib is None:
         return False, "library not found (optional — place libsqlite_vaporetto in ~/.mrag/extensions/)"
+    if _apsw_version() is None:
+        return False, f"found at {lib} but apsw is not installed, so it cannot load ({_APSW_INSTALL_HINT})"
     if not probe_vaporetto(lib):
-        return False, f"found at {lib} but failed to load (check apsw installation)"
+        return False, f"found at {lib} but failed to load"
     return True, f"ready ({lib.name})"
 
 
@@ -110,6 +142,7 @@ def doctor() -> None:
     console.print("[bold]SQLite[/bold]")
     _check("version (3.35.0+)", _check_sqlite_version)
     _check("FTS5 trigram tokenizer", _check_fts5_trigram)
+    _check_warn("apsw (optional, vaporetto extra)", _check_apsw)
     _check_warn("sqlite-vaporetto (optional)", _check_vaporetto)
 
     console.print()
