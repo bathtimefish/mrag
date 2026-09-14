@@ -70,7 +70,7 @@ Please give a short succinct context to situate this chunk within the overall do
 
 - `{document}` と `{chunk}` の 2 つの placeholder は必須です。空テンプレート、必須 placeholder の欠落、未知の placeholder、変換指定、書式指定、不正な波括弧は、インデックス作成や provider 呼び出しの開始前に拒否されます。
 - プロンプト内で波括弧そのものを使う場合は、`{{` と `}}` のように二重に記述します。
-- ドキュメント本文は冒頭 8000 文字までが `{document}` に展開されます
+- ドキュメント本文は冒頭 8000 文字までが `{document}` に展開されます。サーバーが prompt を大きすぎるとして拒否した場合(`input … is too large to process`)、そのチャンクは抜粋を半分にして 4000・2000・1000 文字の順に再送し、1000 文字でも拒否されたときに初めて `failure_policy` が適用されます。最初の prompt を受け付けるサーバーには、従来のリリースとまったく同じ内容が送られます
 - 編集後は次回 `mrag index` 実行時から新プロンプトが使われます
 
 > contextual profileでは、有効な`context_prompt.txt`のcontent hashがindex identityに含まれます。プロンプトを書き換えると、次回の通常の **`mrag index`** で自動的に再インデックスされます。`augmentation.strategy: none`のprofileは影響を受けません。
@@ -125,7 +125,7 @@ embedding:
 
 `mrag index` 実行中、ログには以下のような行が混じります：
 
-- `↻ retry` — LLM 呼び出しに失敗してリトライしている（情報。回復すれば成功扱い）
+- `↻ retry` — LLM 呼び出しに失敗してリトライしている（情報。回復すれば成功扱い）。`prompt too large for the server with a N-character document excerpt; retrying with M` は、サーバーが prompt を拒否したため抜粋を短くして再送していることを示します
 - `⤵ fallback` — リトライしきっても失敗したチャンクで raw に切り替えた（要監視）
 - `⚠ large document` — 300 チャンク以上のドキュメントで拡張処理を開始するときに出る（情報。長時間処理の予告）
 - `Embedding fallback for chunk (input prefix: ...) — error: ...` — Embedding がチャンク単位で失敗（v0.21.0+。Ollama / モデル側のバグ報告に引用可能な先頭 200 文字を含む）

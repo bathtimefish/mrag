@@ -7,6 +7,29 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.0.2 — 2026-09-14
+
+### Fixed
+
+- **A contextual prompt the server refused as too large was never shortened, so
+  the chunk fell back to raw.** The document excerpt in the prompt is capped at
+  8,000 characters, but a server refuses prompts by tokens, and how many it
+  accepts depends on its batch size: a llama.cpp server behind Ollama answered
+  `input (2123 tokens) is too large to process. increase the physical batch size
+  (current batch size: 2048)` for Japanese business documents well inside the
+  cap. llama.cpp reports that as a server error, and an HTTP 500 is what
+  `ollama_post` treats as transient, so the identical prompt could be sent three
+  times with backoff before the chunk fell back. The refusal is now recognised by
+  its message whatever the status and is never retried, and contextual augmentation retries the
+  chunk with the excerpt halved — 4,000, 2,000, then 1,000 characters — each
+  step shown as a `↻ retry` line. `failure_policy` applies only if the
+  1,000-character prompt is refused as well. **A server that accepts the first
+  prompt receives exactly the request 1.0.1 sent**, the index identity is
+  unchanged, and no re-indexing is needed; chunks that fell back before gain
+  context the next time their document is indexed. Whether a prompt is refused
+  depends on the server: Ollama 0.34.0 on Apple Silicon accepted 14,621 tokens
+  in one prompt.
+
 ## 1.0.1 — 2026-09-03
 
 ### Fixed
