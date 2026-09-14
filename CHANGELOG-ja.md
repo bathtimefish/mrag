@@ -7,6 +7,26 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.0.2 — 2026-09-14
+
+### 修正
+
+- **サーバーがcontextual promptを大きすぎるとして拒否しても抜粋を短くせず、chunkが
+  rawになっていた問題**。prompt内の文書抜粋は8,000文字で打ち切りますが、
+  サーバーはtoken数で拒否し、受け付ける量はそのbatch sizeで決まります。Ollamaの背後の
+  llama.cpp serverは、上限よりずっと短い日本語の業務文書に対して
+  `input (2123 tokens) is too large to process. increase the physical batch size
+  (current batch size: 2048)` を返しました。llama.cppはこれをserver errorとして報告し、
+  `ollama_post` はHTTP 500を一時的な障害とみなすため、同じpromptがbackoff付きで
+  3回送られてからfallbackすることがありました。拒否はstatusにかかわらずメッセージで判別して
+  リトライしないようにし、contextual augmentationは抜粋を半分にして再送します —
+  4,000、2,000、1,000文字の順で、各段階は `↻ retry` 行として表示されます。
+  `failure_policy` が適用されるのは、1,000文字のpromptも拒否された場合だけです。
+  **最初のpromptを受け付けるサーバーには1.0.1とまったく同じ要求が送られ**、
+  index identityは変わらず、再indexは不要です。これまでfallbackしていたchunkは、
+  その文書が次にindexされるときに文脈を得ます。拒否されるかどうかはサーバーに
+  依存します。Apple Silicon上のOllama 0.34.0は14,621 tokenのpromptを受け付けました。
+
 ## 1.0.1 — 2026-09-03
 
 ### 修正

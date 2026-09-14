@@ -4,7 +4,7 @@ description: Operate mrag knowledge bases when creating, ingesting, searching, t
 license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 # mrag knowledge base operations

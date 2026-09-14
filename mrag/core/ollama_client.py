@@ -10,6 +10,8 @@ Retry policy:
   - RuntimeError from validate() → retried (e.g. empty Ollama response)
   - httpx.ConnectError      → NOT retried; raised as ConnectionError immediately
   - HTTP 4xx                → NOT retried; raised as RuntimeError immediately
+  - "too large to process"  → NOT retried, whatever the status; raised as
+                              OllamaInputTooLargeError immediately
 """
 from __future__ import annotations
 
@@ -19,6 +21,22 @@ from typing import Callable
 import httpx
 
 _RETRYABLE_HTTP_CODES = {500, 502, 503, 504}
+
+# A llama.cpp server refuses a prompt that does not fit its physical batch with
+# "input (N tokens) is too large to process. increase the physical batch size",
+# and Ollama passes the message on. Observed from Ollama 0.33.2 serving
+# gemma4:e2b with a 2,048-token batch; Ollama 0.34.0 on Apple Silicon accepted
+# 14,621 tokens, so whether a prompt is refused depends on the server.
+_INPUT_TOO_LARGE_MARKER = "too large to process"
+
+
+class OllamaInputTooLargeError(RuntimeError):
+    """The server refused the prompt as larger than it can process at once.
+
+    Never retried: the same prompt fails the same way every time, so retrying
+    only spends the backoff. A caller that can send less catches this, and
+    every other caller still sees a RuntimeError.
+    """
 
 # Model capabilities never change while a process runs, and augmentation asks
 # once per chunk, so the answer is cached per (endpoint, model) rather than
@@ -109,6 +127,8 @@ def ollama_post(
 
     Raises:
         ConnectionError: Ollama is not reachable (ConnectError — not retried).
+        OllamaInputTooLargeError: The server refused the prompt as too large
+                        (not retried).
         RuntimeError:   Non-retryable HTTP error or retry exhaustion.
     """
     url = f"{endpoint.rstrip('/')}{path}"
@@ -130,6 +150,11 @@ def ollama_post(
             ) from exc
 
         except httpx.HTTPStatusError as exc:
+            if _INPUT_TOO_LARGE_MARKER in exc.response.text.lower():
+                raise OllamaInputTooLargeError(
+                    f"Ollama returned HTTP {exc.response.status_code}: "
+                    f"{exc.response.text}"
+                ) from exc
             if exc.response.status_code not in _RETRYABLE_HTTP_CODES:
                 raise RuntimeError(
                     f"Ollama returned HTTP {exc.response.status_code}: "

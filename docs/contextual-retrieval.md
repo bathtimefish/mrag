@@ -70,7 +70,7 @@ Please give a short succinct context to situate this chunk within the overall do
 
 - The two placeholders `{document}` and `{chunk}` are required. Empty templates, missing or unknown placeholders, conversions, format specifications, and malformed braces are rejected before indexing or provider calls begin.
 - Use `{{` and `}}` when literal braces are needed in the prompt.
-- The document body is expanded into `{document}` up to the first 8000 characters
+- The document body is expanded into `{document}` up to the first 8000 characters. If the server refuses the prompt as too large (`input … is too large to process`), mrag retries that chunk with the excerpt halved — 4000, 2000, then 1000 characters — and applies `failure_policy` only if the 1000-character prompt is refused too. A server that accepts the first prompt is sent exactly what earlier releases sent
 - Edits are picked up from the next `mrag index` run
 
 > For contextual profiles, the effective `context_prompt.txt` content hash is part of the index identity. Rewriting the prompt triggers automatic re-indexing on the next ordinary **`mrag index`** run. Profiles using `augmentation.strategy: none` are unaffected.
@@ -125,7 +125,7 @@ embedding:
 
 While `mrag index` runs, the log includes lines like the following:
 
-- `↻ retry` — an LLM call failed and is being retried (informational; counts as a success if it recovers)
+- `↻ retry` — an LLM call failed and is being retried (informational; counts as a success if it recovers). `prompt too large for the server with a N-character document excerpt; retrying with M` means the server refused the prompt and the chunk is being retried with a shorter excerpt
 - `⤵ fallback` — a chunk failed even after retries and was switched to raw (worth monitoring)
 - `⚠ large document` — printed at the start of augmentation for documents with 300+ chunks (informational — a heads-up that processing will take a while)
 - `Embedding fallback for chunk (input prefix: ...) — error: ...` — A chunk failed embedding (v0.21.0+; includes the first 200 chars of the failing input for reproduction/bug reports)
