@@ -111,3 +111,34 @@ def test_profile_hash_changes_on_config_change(tmp_path: Path, monkeypatch: pyte
     profile.chunking.chunk_size = 1600
     h2 = profile.compute_hash()
     assert h1 != h2, "profile_hash must change when config changes"
+
+
+def test_force_refuses_existing_documents_before_overwriting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    init_mod = importlib.import_module("mrag.cli.init")
+    monkeypatch.setattr(init_mod, "detect_best_tokenizer", lambda: ("trigram", None))
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "--name", "kb", "--non-interactive"]).exit_code == 0
+    project = tmp_path / "kb"
+    source = project / "notes.txt"
+    source.write_text("important source", encoding="utf-8")
+    monkeypatch.chdir(project)
+    assert runner.invoke(app, ["add", str(source)]).exit_code == 0
+    before = (project / "profiles" / "default.yaml").read_bytes()
+    result = runner.invoke(app, ["init", str(project), "--name", "changed", "--kb-id", "kb_kb", "--non-interactive", "--force"])
+    assert result.exit_code != 0
+    assert "retained document" in result.output
+    assert (project / "profiles" / "default.yaml").read_bytes() == before
+
+
+def test_force_refuses_tokenizer_drift_before_overwriting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    init_mod = importlib.import_module("mrag.cli.init")
+    monkeypatch.setattr(init_mod, "detect_best_tokenizer", lambda: ("trigram", None))
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "--name", "kb", "--non-interactive"]).exit_code == 0
+    project = tmp_path / "kb"
+    before = (project / "mrag.yaml").read_bytes()
+    monkeypatch.setattr(init_mod, "detect_best_tokenizer", lambda: ("vaporetto", Path("/tmp/fake.dylib")))
+    result = runner.invoke(app, ["init", str(project), "--name", "kb", "--non-interactive", "--force"])
+    assert result.exit_code != 0
+    assert "FTS tokenizer" in result.output
+    assert (project / "mrag.yaml").read_bytes() == before

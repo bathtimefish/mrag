@@ -76,6 +76,19 @@ class TestOllamaEmbeddingProvider:
         prov = self._provider()
         assert prov.embed([]) == []
 
+    def test_input_limit_sends_ctx_and_physical_batch_together(self):
+        payloads = []
+
+        def fake_post(endpoint, path, payload, **kwargs):
+            payloads.append(payload)
+            return {"embeddings": [[1.0, 2.0]]}
+
+        with patch("mrag.core.embedding.ollama.ollama_post", side_effect=fake_post):
+            self._provider().embed(["short"])
+            OllamaEmbeddingProvider("bge-m3", max_input_tokens=8192).embed(["long"])
+        assert "options" not in payloads[0]
+        assert payloads[1]["options"] == {"num_ctx": 8192, "num_batch": 8192}
+
     def test_dimension_set_after_embed(self):
         prov = self._provider()
         fake_resp = MagicMock()

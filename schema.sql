@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS documents (
   id                       TEXT PRIMARY KEY,
   knowledge_id             TEXT NOT NULL,
   filename                 TEXT NOT NULL,
+  source_identity          TEXT,
   original_path            TEXT NOT NULL,         -- relative: data/documents/<id>/original.*
   file_hash                TEXT NOT NULL,         -- SHA256 of original file
   source_type              TEXT NOT NULL,         -- md | txt (pre-1.0 rows may hold pdf | html)
@@ -28,6 +29,13 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at               TEXT NOT NULL,
   updated_at               TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS source_roots (
+  root_key TEXT PRIMARY KEY,
+  label TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_source_identity
+  ON documents(source_identity) WHERE source_identity IS NOT NULL;
 
 -- ================================================================
 -- embedding_models
@@ -183,8 +191,8 @@ CREATE TABLE IF NOT EXISTS document_indexes (
 -- ================================================================
 -- document_exclusions
 -- Persistent retrieval policy. NULL profile_name means every current and
--- future profile. document_id intentionally has no FK: OSS force re-add uses
--- row replacement while retaining the stable document ID and policy.
+-- future profile. document_id intentionally has no FK so policy can survive
+-- source replacement while retaining the stable document ID.
 -- ================================================================
 CREATE TABLE IF NOT EXISTS document_exclusions (
   id           TEXT PRIMARY KEY,

@@ -34,6 +34,9 @@ def apply_schema(
     Create all tables and indexes. Safe to call on an existing DB (IF NOT EXISTS).
     The FTS5 fts_chunks table is created with the given tokenizer.
     """
+    if isinstance(conn, sqlite3.Connection):
+        from mrag.db.connection import _migrate_source_identity
+        _migrate_source_identity(conn)
     sql = _read_schema_sql()
     clause = fts5_tokenize_clause(tokenizer)
     sql = sql.replace(_FTS_TOKENIZE_PLACEHOLDER, f"tokenize = '{clause}'")

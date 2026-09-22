@@ -24,6 +24,7 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         initial_delay: float = 2.0,
         backoff_multiplier: float = 2.0,
         max_delay: float = 30.0,
+        max_input_tokens: int | None = None,
     ) -> None:
         self.model = model
         self.endpoint = endpoint.rstrip("/")
@@ -32,6 +33,7 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         self.initial_delay = initial_delay
         self.backoff_multiplier = backoff_multiplier
         self.max_delay = max_delay
+        self.max_input_tokens = max_input_tokens
         self._dimension: int | None = None
 
     # ------------------------------------------------------------------
@@ -109,10 +111,16 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
                 expected_dimension=expected_dimension,
             )
 
+        payload: dict[str, Any] = {"model": self.model, "input": texts}
+        if self.max_input_tokens is not None:
+            payload["options"] = {
+                "num_ctx": self.max_input_tokens,
+                "num_batch": self.max_input_tokens,
+            }
         data = ollama_post(
             self.endpoint,
             "/api/embed",
-            {"model": self.model, "input": texts},
+            payload,
             max_attempts=self.max_attempts,
             initial_delay=self.initial_delay,
             backoff_multiplier=self.backoff_multiplier,

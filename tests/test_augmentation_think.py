@@ -90,6 +90,15 @@ class TestRequestPayload:
         assert "chunk body" in payload["prompt"]
         assert "document body" in payload["prompt"]
 
+    def test_generation_limits_are_sent_only_when_configured(self):
+        assert "options" not in _capture_payload(["completion"], _config())
+        config = _config()
+        config.max_context_tokens = 512
+        config.context_window_tokens = 16384
+        assert _capture_payload(["completion"], config)["options"] == {
+            "num_predict": 512, "num_ctx": 16384,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Capability probe
@@ -188,3 +197,19 @@ class TestProfileHash:
 
     def test_default_is_off(self):
         assert AugmentationConfig().think is False
+
+    def test_generation_limits_change_only_contextual_identity(self):
+        profile = self._profile(False)
+        before = profile.compute_hash()
+        profile.augmentation.max_context_tokens = 512
+        assert profile.compute_hash() != before
+        profile.augmentation.strategy = "none"
+        without = profile.compute_hash()
+        profile.augmentation.max_context_tokens = None
+        assert profile.compute_hash() == without
+
+    def test_embedding_input_limit_changes_index_identity(self):
+        profile = ProfileConfig(name="default")
+        before = profile.compute_hash()
+        profile.embedding.max_input_tokens = 8192
+        assert profile.compute_hash() != before

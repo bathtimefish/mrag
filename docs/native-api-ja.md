@@ -122,8 +122,19 @@ Authorization: Bearer <MRAG_API_KEY>
     "id": "abcdef0123456789",
     "filename": "manual.md",
     "file_hash": "sha256:...",
-    "status": "indexed",
-    "created_at": "2026-05-22T10:00:00"
+    "status": "ready",
+    "document_id": "abcdef0123456789",
+    "source_identity": "docs/manual.md",
+    "display_name": "docs/manual.md",
+    "source_binding_status": "project_relative",
+    "content_hash": "sha256:...",
+    "source_status": "ready",
+    "index_status": "indexed",
+    "retrieval_status": "eligible",
+    "profile": "default",
+    "exclusion_id": null,
+    "created_at": "2026-05-22T10:00:00",
+    "updated_at": "2026-05-22T10:00:00"
   }
 ]
 ```
@@ -131,7 +142,9 @@ Authorization: Bearer <MRAG_API_KEY>
 各フィールド：
 
 - **`id`** — `mrag add` 時に払い出されるドキュメント ID
-- **`status`** — ドキュメントの**抽出処理**ステータス。値は `pending` / `extracted` / `error` のいずれか（インデックス処理のステータスではない点に注意。プロファイル別のインデックス状態は SQLite の `document_indexes` テーブルに保持されています）
+- **`status`** — 全体状態 `building` / `ready` / `error`。抽出状態は `source_status`、索引状態は `index_status`、除外状態は `retrieval_status` に分けて示します。
+- **`source_identity`** — 元ファイルのパスに基づく安定した識別子。外部パスは不透明な root key を使い、移行した行は `legacy/v1/<document_id>` と `source_binding_status: legacy_unbound` になります。`display_name` に root key は表示しません。
+- 一覧行は MCP の `list_documents` と共通で、`(source_identity, document_id)` 順です。
 - **`created_at`** — `mrag add` した日時
 
 ### 詳細
@@ -140,7 +153,10 @@ Authorization: Bearer <MRAG_API_KEY>
 GET /api/v1/documents/{document_id} HTTP/1.1
 ```
 
-レスポンスは一覧の各エントリに **`extracted_text_path`** と **`chunk_count`** が追加されたものです：
+詳細レスポンスは従来の抽出中心の項目（`id`、`filename`、`file_hash`、
+`status`、`created_at`）に `extracted_text_path` と `chunk_count` を加えた形です。
+ここでの `status` は保存済み抽出状態（`pending` / `extracted` / `error`）です。
+全体状態と source identity は一覧エンドポイントで確認してください：
 
 ```json
 {

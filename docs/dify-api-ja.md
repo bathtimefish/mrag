@@ -68,7 +68,7 @@ Content-Type: application/json
 - **`query`** — 検索クエリ文字列。フィールドそのものが欠落すると 422。空文字は受け付けますが、実用上は検索結果が空になりやすいので呼び出し側で弾くことを推奨します
 - **`retrieval_setting.top_k`** — 返す最大件数（`1` 以上 `100` 以下）
 - **`retrieval_setting.score_threshold`** — 正規化後スコアの下限（`0.0`〜`1.0`）。**未満のレコードは返却から除外**されます
-- **`metadata_condition`** — Dify 仕様上は受け取りますが、**現バージョンでは無視**されます。送っても 200 で返ります
+- **`metadata_condition`** — `and` / `or` の条件群を適用します。対象は `document_id`、`source`、`chunk_id`、`heading_path` の4項目で、文字列演算子 `contains`、`not contains`、`start with`、`end with`、`is`、`is not`、`empty`、`not empty` に対応します。名前は文字列または文字列配列です。非対応の条件は HTTP 400 / `error_code: 4001` を返します。条件がある場合は `top_k` の4倍まで候補を取得してから絞り込みます。
 
 
 ## レスポンス形式
@@ -82,7 +82,9 @@ Content-Type: application/json
       "title": "manual.md",
       "metadata": {
         "chunk_id": "...",
-        "document_id": "..."
+        "document_id": "...",
+        "source": "manual.md",
+        "heading_path": "章 > 節"
       }
     }
   ]
@@ -94,7 +96,7 @@ Content-Type: application/json
 - **`content`** — チャンクの本文（`parent_child` プロファイルでは**親チャンク**の本文が入ります）
 - **`score`** — `[0.0, 1.0]` の範囲に正規化されたスコア（後述）
 - **`title`** — ヒットしたチャンクが属するドキュメントのファイル名。ファイル名が解決できない場合は `document_id` の先頭 8 文字
-- **`metadata`** — チャンクに紐づく内部メタデータ（`chunk_id` / `document_id` など）
+- **`metadata`** — 上記の絞り込み可能な4項目。`heading_path` は ` > ` でつないだ文字列です。
 
 activeなdocument exclusionは、すべての検索strategyでresponse構築前に適用されます。詳細は
 [ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
@@ -142,10 +144,11 @@ activeなdocument exclusionは、すべての検索strategyでresponse構築前�
 | 401 | 1001 | `Authorization` ヘッダ欠落・形式不正 |
 | 401 | 1002 | Bearer トークン不一致 |
 | 404 | 2001 | `knowledge_id` が `mrag.yaml` の値と不一致 |
+| 400 | 4001 | `metadata_condition` の項目・演算子・構造が非対応 |
 | 422 | — | `knowledge_id` または `query` の欠落、`top_k` が範囲外、JSON 構造不正 |
 | 500 | — | Qdrant / 内部リソース不到達などのサーバー内部例外 |
 
-`error_code: 1001 / 1002 / 2001` のエラーは `{"error_code": ..., "error_msg": ...}` 形式で返します。422 / 500 は FastAPI のデフォルト形式（`{"detail": ...}`）です。
+`error_code: 1001 / 1002 / 2001 / 4001` のエラーは `{"error_code": ..., "error_msg": ...}` 形式で返します。422 / 500 は FastAPI のデフォルト形式（`{"detail": ...}`）です。
 
 
 ## Dify 側の設定

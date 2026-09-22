@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from mrag.config.project import ProjectConfig
+from mrag.core.ingestion.source_identity import source_identity
 from mrag.db.connection import db_connection, find_db
 from mrag.extractors import detect_source_type, get_extractor
 from mrag.extractors.base import ExtractionResult
@@ -83,20 +84,13 @@ def add_document(
     Ingest a document into the project.
 
     Returns (document_id, warnings).
-    Raises FileExistsError if the same file_hash is already registered and force=False.
+    Raises FileExistsError if this source and its content are already registered.
     """
-    db_path = find_db(project_dir)
-    file_hash = hash_document(file_path)
-
-    existing_id = find_duplicate(file_hash, db_path)
-    if existing_id and not force:
-        raise DuplicateDocumentError(existing_id)
-    prepared = prepare_document(file_path, file_hash=file_hash)
+    prepared = prepare_document(file_path)
     return persist_prepared_document(
         prepared,
         project_dir,
         config,
-        existing_id=existing_id,
         force=force,
     )
 
@@ -106,8 +100,8 @@ def persist_prepared_document(
     project_dir: Path,
     config: ProjectConfig,
     *,
-    existing_id: str | None = None,
     force: bool = False,
+    source_root: Path | None = None,
 ) -> tuple[str, list[str]]:
     """Persist a prepared extraction; callers serialize this write boundary."""
     db_path = find_db(project_dir)
@@ -118,14 +112,15 @@ def persist_prepared_document(
     # Plain sources carry their own format, so one value serves both the metadata
     # sidecar and the catalog row.
     output_format = "markdown" if source_type == "md" else "text"
-    registered_id = find_duplicate(file_hash, db_path)
-    if registered_id and not force:
-        raise DuplicateDocumentError(registered_id)
-    if registered_id:
-        existing_id = registered_id
-
-    # Reuse existing_id on force so INSERT OR REPLACE hits the PK and replaces the row.
-    document_id = existing_id if (existing_id and force) else str(uuid.uuid4())
+    with db_connection(db_path) as conn:
+        roots = {r["root_key"] for r in conn.execute("SELECT root_key FROM source_roots")}
+        identity, new_root = source_identity(file_path, project_dir, roots, source_root)
+        existing = conn.execute(
+            "SELECT id, file_hash FROM documents WHERE source_identity = ?", (identity,)
+        ).fetchone()
+    if existing and existing["file_hash"] == file_hash and not force:
+        raise DuplicateDocumentError(existing["id"])
+    document_id = existing["id"] if existing else str(uuid.uuid4())
     doc_dir = project_dir / "data" / "documents" / document_id
     doc_dir.mkdir(parents=True, exist_ok=True)
 
@@ -166,32 +161,29 @@ def persist_prepared_document(
 
     now = _now_iso()
     with db_connection(db_path) as conn:
-        conn.execute(
-            """INSERT OR REPLACE INTO documents
-               (id, knowledge_id, filename, original_path, file_hash, source_type,
-                extraction_provider, extraction_output_format,
-                extracted_markdown_path, extracted_text_path, extraction_meta_path,
-                extracted_hash, status, error_message, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                document_id,
-                config.knowledge_id,
-                file_path.name,
-                rel(original_dest),
-                file_hash,
-                source_type,
-                "plain",
-                output_format,
-                rel(md_path),
-                rel(txt_path),
-                rel(meta_path),
-                extracted_hash,
-                "extracted",
-                None,
-                now,
-                now,
-            ),
-        )
+        if new_root is not None:
+            conn.execute("INSERT OR IGNORE INTO source_roots (root_key, label) VALUES (?, ?)", new_root)
+        fields = (file_path.name, rel(original_dest), file_hash, source_type,
+                  "plain", output_format, rel(md_path), rel(txt_path), rel(meta_path),
+                  extracted_hash, "extracted", None, now)
+        if existing:
+            conn.execute(
+                """UPDATE documents SET filename=?, original_path=?, file_hash=?,
+                   source_type=?, extraction_provider=?, extraction_output_format=?,
+                   extracted_markdown_path=?, extracted_text_path=?, extraction_meta_path=?,
+                   extracted_hash=?, status=?, error_message=?, updated_at=? WHERE id=?""",
+                (*fields, document_id),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO documents
+                   (id, knowledge_id, source_identity, filename, original_path, file_hash,
+                    source_type, extraction_provider, extraction_output_format,
+                    extracted_markdown_path, extracted_text_path, extraction_meta_path,
+                    extracted_hash, status, error_message, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (document_id, config.knowledge_id, identity, *fields[:-1], now, now),
+            )
 
     return document_id, result.warnings
 

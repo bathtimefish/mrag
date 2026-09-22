@@ -77,6 +77,13 @@ def generate_context(
             chunk=chunk_content,
         )
         payload = {"model": config.model, "prompt": prompt, "stream": False}
+        options = {}
+        if config.max_context_tokens is not None:
+            options["num_predict"] = config.max_context_tokens
+        if config.context_window_tokens is not None:
+            options["num_ctx"] = config.context_window_tokens
+        if options:
+            payload["options"] = options
         # `think` is only accepted by models that report the capability; sending
         # it to any other model is an error, so it is omitted rather than
         # assumed. Probed after the first render, so a bad template is still

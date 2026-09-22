@@ -16,7 +16,7 @@ The Native API is designed for programs that call mrag directly. It covers not o
 | Method | Path | Role |
 |---|---|---|
 | `POST` | `/api/v1/retrieve` | Run a retrieval query and return matching chunks (`/api/v1/search` is an alias) |
-| `GET` | `/api/v1/documents` | List indexed documents |
+| `GET` | `/api/v1/documents` | List registered documents and their source/index/retrieval states |
 | `GET` | `/api/v1/documents/{document_id}` | Get a single document's details (including chunk count) |
 | `GET` | `/api/v1/profiles` | List profiles |
 | `GET` | `/api/v1/profiles/{profile_name}` | Get a single profile's details |
@@ -122,8 +122,19 @@ Response:
     "id": "abcdef0123456789",
     "filename": "manual.md",
     "file_hash": "sha256:...",
-    "status": "extracted",
-    "created_at": "2026-05-22T10:00:00"
+    "status": "ready",
+    "document_id": "abcdef0123456789",
+    "source_identity": "docs/manual.md",
+    "display_name": "docs/manual.md",
+    "source_binding_status": "project_relative",
+    "content_hash": "sha256:...",
+    "source_status": "ready",
+    "index_status": "indexed",
+    "retrieval_status": "eligible",
+    "profile": "default",
+    "exclusion_id": null,
+    "created_at": "2026-05-22T10:00:00",
+    "updated_at": "2026-05-22T10:00:00"
   }
 ]
 ```
@@ -131,7 +142,9 @@ Response:
 Field details:
 
 - **`id`** — Document ID assigned by `mrag add`
-- **`status`** — The document's **extraction** status. One of `pending` / `extracted` / `error` (note that this is *not* the indexing status — per-profile indexing state is kept in the SQLite `document_indexes` table)
+- **`status`** — Aggregate `building`, `ready`, or `error`. `source_status` maps extraction to `building`, `ready`, or `error`; `index_status` reports `not_indexed`, `pending`, `indexing`, `indexed`, `fallback`, `stale`, or `error`.
+- **`source_identity`** — Stable path-derived identity. External paths use an opaque root key; migrated rows use `legacy/v1/<document_id>` and `source_binding_status: legacy_unbound`. `display_name` omits the external key.
+- **`retrieval_status`** — `eligible` or `excluded`. The list row is shared with MCP `list_documents` and sorted by `(source_identity, document_id)`.
 - **`created_at`** — When the document was added via `mrag add`
 
 ### Detail
@@ -140,7 +153,11 @@ Field details:
 GET /api/v1/documents/{document_id} HTTP/1.1
 ```
 
-The response is a list entry with **`extracted_text_path`** and **`chunk_count`** added:
+The detail response retains the older extraction-oriented fields (`id`,
+`filename`, `file_hash`, `status`, `created_at`) and adds
+`extracted_text_path` and `chunk_count`. Its `status` is the stored extraction
+status (`pending`, `extracted`, or `error`); use the list endpoint for the
+combined status and source identity:
 
 ```json
 {

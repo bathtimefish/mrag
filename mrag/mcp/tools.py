@@ -9,6 +9,7 @@ from typing import Any
 
 from mrag.config.mcp import EffectiveMcpConfig
 from mrag.config.profile import load_profile
+from mrag.core.ingestion.inventory import list_document_rows
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
@@ -159,33 +160,14 @@ def list_documents_tool(
     limit = limit or 100
     conn = open_connection(ctx.db_path)
     try:
-        total = conn.execute("SELECT COUNT(*) AS cnt FROM documents").fetchone()["cnt"]
-        rows = conn.execute(
-            """
-            SELECT id, filename, file_hash, source_type, status, created_at
-            FROM documents
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (limit, offset),
-        ).fetchall()
+        rows = list_document_rows(conn)
     finally:
         conn.close()
     return {
-        "total": int(total),
+        "total": len(rows),
         "limit": limit,
         "offset": offset,
-        "documents": [
-            {
-                "id": r["id"],
-                "filename": r["filename"],
-                "file_hash": r["file_hash"],
-                "source_type": r["source_type"],
-                "status": r["status"],
-                "created_at": r["created_at"],
-            }
-            for r in rows
-        ],
+        "documents": rows[offset:offset + limit],
     }
 
 

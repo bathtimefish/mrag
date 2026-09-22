@@ -29,14 +29,31 @@ class RetrieveResponse(BaseModel):
 
 
 class DocumentItem(BaseModel):
+    document_id: str
+    display_name: str
+    source_identity: str
+    source_binding_status: str
+    content_hash: str
+    source_status: str
+    index_status: str
+    retrieval_status: str
+    profile: str | None
+    exclusion_id: str | None
+    updated_at: str
+    id: str
+    filename: str
+    file_hash: str
+    source_type: str
+    status: str
+    created_at: str
+
+
+class DocumentDetail(BaseModel):
     id: str
     filename: str
     file_hash: str
     status: str
     created_at: str
-
-
-class DocumentDetail(DocumentItem):
     extracted_text_path: str | None
     chunk_count: int
 

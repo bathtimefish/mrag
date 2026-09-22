@@ -10,6 +10,7 @@ from mrag.api.models import (
     RetrieveResponse,
 )
 from mrag.config.profile import load_profile
+from mrag.core.ingestion.inventory import list_document_rows
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import open_connection
 
@@ -93,20 +94,9 @@ async def search(req: RetrieveRequest, request: Request) -> RetrieveResponse:
 async def list_documents(request: Request) -> list[DocumentItem]:
     state = _get_state(request)
     conn = open_connection(state.db_path)
-    rows = conn.execute(
-        "SELECT id, filename, file_hash, status, created_at FROM documents ORDER BY created_at DESC"
-    ).fetchall()
+    rows = list_document_rows(conn)
     conn.close()
-    return [
-        DocumentItem(
-            id=r["id"],
-            filename=r["filename"],
-            file_hash=r["file_hash"],
-            status=r["status"],
-            created_at=r["created_at"],
-        )
-        for r in rows
-    ]
+    return [DocumentItem(**r) for r in rows]
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)

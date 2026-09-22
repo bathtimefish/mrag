@@ -233,6 +233,20 @@ def test_list_documents(api_client):
     assert "created_at" in doc
 
 
+def test_native_and_mcp_document_lists_share_contract(api_client):
+    from mrag.config.mcp import load_mcp_config, resolve_mcp_config
+    from mrag.mcp.tools import McpToolContext, list_documents_tool
+
+    project = api_client.tmp_path
+    cfg = load_mcp_config(env={"MRAG_PROJECT_DIR": str(project)})
+    ctx = McpToolContext(resolve_mcp_config(cfg, env={}))
+    native = api_client.client.get("/api/v1/documents").json()
+    mcp = list_documents_tool(ctx)["documents"]
+    assert native == mcp
+    assert native[0]["source_binding_status"] == "external_root"
+    assert native[0]["document_id"] == native[0]["id"]
+
+
 def test_get_document(api_client):
     docs_resp = api_client.client.get("/api/v1/documents")
     doc_id = docs_resp.json()[0]["id"]

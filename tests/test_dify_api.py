@@ -159,7 +159,7 @@ def test_dify_retrieve_score_threshold_filters(dify_client):
 
 
 def test_dify_retrieve_metadata_condition_accepted(dify_client):
-    # metadata_condition is optional; must be accepted without error even if not applied
+    # An unmatched condition must be applied, not silently ignored.
     resp = dify_client.client.post(
         "/retrieval",
         json={
@@ -173,6 +173,48 @@ def test_dify_retrieve_metadata_condition_accepted(dify_client):
         },
     )
     assert resp.status_code == 200
+    assert resp.json()["records"] == []
+
+
+def test_dify_filter_overfetches_and_returns_fixed_metadata(dify_client, monkeypatch):
+    import mrag.api.routers.dify as router
+    seen = {}
+    results = [
+        SimpleNamespace(document_id="d1", chunk_id="c1", content="first", score=0.9, metadata={"heading_path": ["Other"]}),
+        SimpleNamespace(document_id="d2", chunk_id="c2", content="second", score=0.8, metadata={"heading_path": ["Manual", "Match"], "private": "hidden"}),
+    ]
+
+    def fake_retrieve(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(results=results)
+
+    monkeypatch.setattr(router, "run_retrieval", fake_retrieve)
+    monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
+    resp = dify_client.client.post("/retrieval", json={
+        "knowledge_id": dify_client.config.knowledge_id,
+        "query": "match", "retrieval_setting": {"top_k": 1},
+        "metadata_condition": {"logical_operator": "and", "conditions": [
+            {"name": "heading_path", "comparison_operator": "contains", "value": "Match"}
+        ]},
+    })
+    assert resp.status_code == 200
+    assert seen["top_k"] == 4
+    assert [r["content"] for r in resp.json()["records"]] == ["second"]
+    assert resp.json()["records"][0]["metadata"] == {
+        "document_id": "d2", "source": "two.md", "chunk_id": "c2", "heading_path": "Manual > Match",
+    }
+
+
+def test_dify_rejects_unsupported_filter(dify_client):
+    resp = dify_client.client.post("/retrieval", json={
+        "knowledge_id": dify_client.config.knowledge_id,
+        "query": "Hello", "retrieval_setting": {"top_k": 1},
+        "metadata_condition": {"logical_operator": "and", "conditions": [
+            {"name": "source", "comparison_operator": ">", "value": "a"}
+        ]},
+    })
+    assert resp.status_code == 400
+    assert resp.json()["error_code"] == 4001
 
 
 # ---------------------------------------------------------------------------
