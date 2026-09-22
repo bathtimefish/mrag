@@ -4,7 +4,7 @@ description: Operate mrag knowledge bases when creating, ingesting, searching, t
 license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "1.0.2"
+  version: "1.1.0"
 ---
 
 # mrag knowledge base operations
@@ -43,7 +43,8 @@ to mrag's source code do not require following a KB lifecycle.
 - Source identity tracks the original file path within the KB or a registered
   external root. Re-adding changed content from that source keeps its document
   ID. Migrated documents have `legacy_unbound` identity because their original
-  path cannot be reconstructed.
+  path cannot be reconstructed. Content already registered under any source,
+  including a migrated document, is still `skipped_duplicate`.
 
 ## Read details for the current operation
 

@@ -7,6 +7,18 @@ from pathlib import Path
 
 
 SCHEME_VERSION = 1
+# The catalog_settings key recording the scheme a catalog's identities follow.
+SCHEME_KEY = "source_identity_scheme"
+
+
+def require_scheme(recorded: str | None) -> None:
+    """Refuse to derive identities under a scheme the catalog was not built with."""
+    if recorded != str(SCHEME_VERSION):
+        raise ValueError(
+            f"This project's source identities follow scheme {recorded or 'unknown'}, "
+            f"but this mrag derives scheme {SCHEME_VERSION}; the catalog needs an "
+            "explicit migration before sources can be added."
+        )
 
 
 def _relative(value: str) -> str:

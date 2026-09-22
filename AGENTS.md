@@ -32,7 +32,9 @@ whole manual or repeating an environment audit before every edit.
 - **Source identity is path-based.** A document ID stays stable when content at
   the same source changes. Project paths and registered external roots have
   distinct identities; legacy rows retain `legacy_unbound` identity rather than
-  guessing their original path. Native API and MCP lists share one row contract.
+  guessing their original path. Content identity (SHA-256) still applies across
+  sources, so a re-added file matching any registered document — migrated rows
+  included — is `skipped_duplicate`. Native API and MCP lists share one row contract.
 - **Tokenizer choice is a schema decision.** `mrag.yaml.fts_tokenizer` must match
   the initialized FTS5 table and any explicit profile tokenizer. `reindex` does
   not migrate that table to another tokenizer. Preserve index/query

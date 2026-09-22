@@ -142,3 +142,14 @@ def test_force_refuses_tokenizer_drift_before_overwriting(tmp_path: Path, monkey
     assert result.exit_code != 0
     assert "FTS tokenizer" in result.output
     assert (project / "mrag.yaml").read_bytes() == before
+
+
+def test_force_keeps_the_existing_kb_id_when_none_is_given(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    init_mod = importlib.import_module("mrag.cli.init")
+    monkeypatch.setattr(init_mod, "detect_best_tokenizer", lambda: ("trigram", None))
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "--name", "kb", "--kb-id", "custom_id", "--non-interactive"]).exit_code == 0
+    project = tmp_path / "kb"
+    result = runner.invoke(app, ["init", str(project), "--name", "renamed", "--non-interactive", "--force"])
+    assert result.exit_code == 0, result.output
+    assert "id: custom_id" in (project / "mrag.yaml").read_text(encoding="utf-8")

@@ -216,9 +216,14 @@ def init(
     # kb_id precedence:
     #   1. --kb-id
     #   2. kb_info_input.knowledge_base.id
-    #   3. derived from name (non-interactive default)
+    #   3. the existing project's ID under --force, else derived from name
+    #      (non-interactive default)
     #   4. interactive prompt
     default_kb_id = _default_kb_id_from_name(name)
+    if force and (project_dir / "mrag.yaml").exists():
+        # Reinitializing keeps the knowledge base it reinitializes: renaming the
+        # project must not derive a new ID that the check below then refuses.
+        default_kb_id = load_project_config(project_dir).knowledge_id
     if kb_id is None:
         if kb_info_input is not None:
             kb_id = kb_info_input.knowledge_base.id
@@ -289,7 +294,7 @@ def init(
             console.print("[red]Error:[/red] --force cannot change an existing project's FTS tokenizer. Create a new project or restore the original tokenizer environment.")
             raise typer.Exit(1)
         if existing.knowledge_id != kb_id:
-            console.print("[red]Error:[/red] --force cannot change an existing knowledge-base ID.")
+            console.print(f"[red]Error:[/red] --force cannot change an existing knowledge-base ID ({existing.knowledge_id!r} -> {kb_id!r}).")
             raise typer.Exit(1)
         retained = project_dir / "data" / "documents"
         if retained.exists() and any(retained.iterdir()):

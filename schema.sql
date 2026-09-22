@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS source_roots (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_source_identity
   ON documents(source_identity) WHERE source_identity IS NOT NULL;
 
+-- Catalog-wide settings. `source_identity_scheme` is written by the
+-- connection-time migration from SCHEME_VERSION (mrag/core/ingestion/
+-- source_identity.py), the one place that value is defined.
+CREATE TABLE IF NOT EXISTS catalog_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- ================================================================
 -- embedding_models
 -- Populated by: mrag index (first use of a model)

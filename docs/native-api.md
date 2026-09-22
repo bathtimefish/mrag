@@ -121,13 +121,13 @@ Response:
   {
     "id": "abcdef0123456789",
     "filename": "manual.md",
-    "file_hash": "sha256:...",
-    "status": "ready",
+    "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "status": "extracted",
     "document_id": "abcdef0123456789",
     "source_identity": "docs/manual.md",
     "display_name": "docs/manual.md",
     "source_binding_status": "project_relative",
-    "content_hash": "sha256:...",
+    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     "source_status": "ready",
     "index_status": "indexed",
     "retrieval_status": "eligible",
@@ -142,7 +142,8 @@ Response:
 Field details:
 
 - **`id`** — Document ID assigned by `mrag add`
-- **`status`** — Aggregate `building`, `ready`, or `error`. `source_status` maps extraction to `building`, `ready`, or `error`; `index_status` reports `not_indexed`, `pending`, `indexing`, `indexed`, `fallback`, `stale`, or `error`.
+- **`status`** — The stored extraction status `pending`, `extracted`, or `error`, as in earlier releases and in the detail response. The derived states are separate fields: `source_status` maps extraction to `building`, `ready`, or `error`; `index_status` reports `not_indexed`, `pending`, `indexing`, `indexed`, `fallback`, `stale`, or `error`.
+- **`file_hash`** / **`content_hash`** — SHA-256 of the original file as 64 hexadecimal characters, with no prefix
 - **`source_identity`** — Stable path-derived identity. External paths use an opaque root key; migrated rows use `legacy/v1/<document_id>` and `source_binding_status: legacy_unbound`. `display_name` omits the external key.
 - **`retrieval_status`** — `eligible` or `excluded`. The list row is shared with MCP `list_documents` and sorted by `(source_identity, document_id)`.
 - **`created_at`** — When the document was added via `mrag add`
@@ -156,14 +157,14 @@ GET /api/v1/documents/{document_id} HTTP/1.1
 The detail response retains the older extraction-oriented fields (`id`,
 `filename`, `file_hash`, `status`, `created_at`) and adds
 `extracted_text_path` and `chunk_count`. Its `status` is the stored extraction
-status (`pending`, `extracted`, or `error`); use the list endpoint for the
-combined status and source identity:
+status (`pending`, `extracted`, or `error`), the same value the list reports;
+use the list endpoint for the derived states and source identity:
 
 ```json
 {
   "id": "abcdef0123456789",
   "filename": "manual.md",
-  "file_hash": "sha256:...",
+  "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "status": "extracted",
   "created_at": "2026-05-22T10:00:00",
   "extracted_text_path": "data/extracted/abcdef0123456789.md",

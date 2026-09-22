@@ -54,7 +54,9 @@ def list_document_rows(conn: sqlite3.Connection) -> list[dict]:
             "source_identity": identity,
             "source_binding_status": binding_status(identity),
             "content_hash": row["file_hash"],
-            "status": "error" if source_status == "error" or index_status == "error" else "ready" if source_status == "ready" else "building",
+            # The stored extraction status, as GET /documents/{id} and earlier
+            # releases report it; the derived states have fields of their own.
+            "status": row["status"],
             "source_status": source_status,
             "index_status": index_status,
             "retrieval_status": "excluded" if exclusion else "eligible",

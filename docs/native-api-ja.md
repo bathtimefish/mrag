@@ -121,13 +121,13 @@ Authorization: Bearer <MRAG_API_KEY>
   {
     "id": "abcdef0123456789",
     "filename": "manual.md",
-    "file_hash": "sha256:...",
-    "status": "ready",
+    "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "status": "extracted",
     "document_id": "abcdef0123456789",
     "source_identity": "docs/manual.md",
     "display_name": "docs/manual.md",
     "source_binding_status": "project_relative",
-    "content_hash": "sha256:...",
+    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     "source_status": "ready",
     "index_status": "indexed",
     "retrieval_status": "eligible",
@@ -142,7 +142,8 @@ Authorization: Bearer <MRAG_API_KEY>
 各フィールド：
 
 - **`id`** — `mrag add` 時に払い出されるドキュメント ID
-- **`status`** — 全体状態 `building` / `ready` / `error`。抽出状態は `source_status`、索引状態は `index_status`、除外状態は `retrieval_status` に分けて示します。
+- **`status`** — 保存済みの抽出状態 `pending` / `extracted` / `error`。従来のリリースおよび詳細レスポンスと同じ値です。導出した状態は別の項目で示します：抽出は `source_status`（`building` / `ready` / `error`）、索引は `index_status`、除外は `retrieval_status`。
+- **`file_hash`** / **`content_hash`** — 元ファイルの SHA-256。接頭辞の無い 64 桁の16進文字列です。
 - **`source_identity`** — 元ファイルのパスに基づく安定した識別子。外部パスは不透明な root key を使い、移行した行は `legacy/v1/<document_id>` と `source_binding_status: legacy_unbound` になります。`display_name` に root key は表示しません。
 - 一覧行は MCP の `list_documents` と共通で、`(source_identity, document_id)` 順です。
 - **`created_at`** — `mrag add` した日時
@@ -155,14 +156,14 @@ GET /api/v1/documents/{document_id} HTTP/1.1
 
 詳細レスポンスは従来の抽出中心の項目（`id`、`filename`、`file_hash`、
 `status`、`created_at`）に `extracted_text_path` と `chunk_count` を加えた形です。
-ここでの `status` は保存済み抽出状態（`pending` / `extracted` / `error`）です。
-全体状態と source identity は一覧エンドポイントで確認してください：
+ここでの `status` は保存済み抽出状態（`pending` / `extracted` / `error`）で、一覧と同じ値です。
+導出した状態と source identity は一覧エンドポイントで確認してください：
 
 ```json
 {
   "id": "abcdef0123456789",
   "filename": "manual.md",
-  "file_hash": "sha256:...",
+  "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "status": "indexed",
   "created_at": "2026-05-22T10:00:00",
   "extracted_text_path": "data/extracted/abcdef0123456789.md",

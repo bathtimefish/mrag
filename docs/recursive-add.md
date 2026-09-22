@@ -87,12 +87,14 @@ The ignore file itself is never ingested.
 
 ## Duplicates and replacement
 
-The source path determines document identity. An unchanged registered source is
-reported as `skipped_duplicate`; changed content at that source replaces the
-retained extraction under the same document ID. Use `--force` to re-extract
-unchanged content. Distinct source paths remain distinct even when their SHA-256
-content hashes match. External directory ingestion registers an opaque root key,
-so later single-file additions can find the same source.
+Content identity uses SHA-256. A file whose content is already registered —
+from this source, from another path, or as a document migrated from before
+source identities — is reported as `skipped_duplicate` and is not an error.
+Changed content at a registered source replaces the retained extraction under
+the same document ID. Pass `--force` only when unchanged content must be
+extracted again; mrag preserves the existing document ID, and a document matched
+by content keeps its own source identity. External directory ingestion registers
+an opaque root key, so later single-file additions can find the same source.
 
 Prepared documents are persisted through a serialized write boundary, and the
 final report remains in stable relative-path order.

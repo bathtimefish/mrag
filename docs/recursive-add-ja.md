@@ -78,10 +78,12 @@ ignore file自体は取り込まれません。
 
 ## duplicateと置換
 
-文書の同一性は元ファイルのパスで決まります。同じ場所の内容が変わらなければ
-`skipped_duplicate`、変われば同じ document ID のまま抽出物を更新します。
-内容が同じでも元パスが違えば別文書です。変更のない内容を再抽出したい場合だけ
-`--force` を指定してください。外部ディレクトリの追加時は不透明な root key を登録し、
+content identityにはSHA-256を使用します。内容が登録済みのfileは、同じ元ファイル・
+別のパス・source identity導入前から移行した文書のいずれに一致しても`skipped_duplicate`
+としてreportされ、errorにはなりません。登録済みの元ファイルの内容が変わった場合は、
+同じ document ID のまま抽出物を更新します。同一contentを再抽出する必要がある場合だけ
+`--force`を指定してください。document IDは保持され、内容で一致した文書は自身の
+source identityを保ちます。外部ディレクトリの追加時は不透明な root key を登録し、
 後から単一ファイルとして追加しても同じ元ファイルを見つけられます。
 mragは既存document IDを維持して抽出recordを置換します。
 

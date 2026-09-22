@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from mrag.config.project import ProjectConfig
-from mrag.core.ingestion.source_identity import source_identity
+from mrag.core.ingestion.source_identity import SCHEME_KEY, require_scheme, source_identity
 from mrag.db.connection import db_connection, find_db
 from mrag.extractors import detect_source_type, get_extractor
 from mrag.extractors.base import ExtractionResult
@@ -21,20 +21,6 @@ def _sha256(data: bytes | str) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def find_duplicate(file_hash: str, db_path: Path) -> str | None:
-    """Return existing document_id if a document with this file_hash exists, else None."""
-    from mrag.db.connection import open_connection
-
-    conn = open_connection(db_path)
-    try:
-        row = conn.execute(
-            "SELECT id FROM documents WHERE file_hash = ?", (file_hash,)
-        ).fetchone()
-        return row["id"] if row else None
-    finally:
-        conn.close()
 
 
 class DuplicateDocumentError(FileExistsError):
@@ -113,11 +99,26 @@ def persist_prepared_document(
     # sidecar and the catalog row.
     output_format = "markdown" if source_type == "md" else "text"
     with db_connection(db_path) as conn:
+        scheme = conn.execute(
+            "SELECT value FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)
+        ).fetchone()
+        require_scheme(scheme["value"] if scheme else None)
         roots = {r["root_key"] for r in conn.execute("SELECT root_key FROM source_roots")}
         identity, new_root = source_identity(file_path, project_dir, roots, source_root)
         existing = conn.execute(
-            "SELECT id, file_hash FROM documents WHERE source_identity = ?", (identity,)
+            "SELECT id, filename, file_hash FROM documents WHERE source_identity = ?",
+            (identity,),
         ).fetchone()
+        same_source = existing is not None
+        if existing is None:
+            # Content identity still applies across sources. Without it, a catalog
+            # upgraded from before source identities (every row `legacy/v1/<id>`)
+            # would register each re-added file a second time.
+            existing = conn.execute(
+                "SELECT id, filename, file_hash FROM documents WHERE file_hash = ? "
+                "ORDER BY created_at, id LIMIT 1",
+                (file_hash,),
+            ).fetchone()
     if existing and existing["file_hash"] == file_hash and not force:
         raise DuplicateDocumentError(existing["id"])
     document_id = existing["id"] if existing else str(uuid.uuid4())
@@ -163,7 +164,10 @@ def persist_prepared_document(
     with db_connection(db_path) as conn:
         if new_root is not None:
             conn.execute("INSERT OR IGNORE INTO source_roots (root_key, label) VALUES (?, ?)", new_root)
-        fields = (file_path.name, rel(original_dest), file_hash, source_type,
+        # A content match under another source keeps that document's identity
+        # and name: --force re-extracts it and never rebinds it to this path.
+        filename = existing["filename"] if existing and not same_source else file_path.name
+        fields = (filename, rel(original_dest), file_hash, source_type,
                   "plain", output_format, rel(md_path), rel(txt_path), rel(meta_path),
                   extracted_hash, "extracted", None, now)
         if existing:
