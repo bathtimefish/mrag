@@ -113,6 +113,8 @@ class EmbeddingConfig(BaseModel):
     provider: str = "ollama"
     model: str = "bge-m3"
     endpoint: str = "http://localhost:11434"
+    # Ollama needs both values; num_ctx alone does not enlarge the physical batch.
+    max_input_tokens: int | None = Field(default=None, ge=1, le=1048576)
     cache: EmbeddingCacheConfig = Field(default_factory=EmbeddingCacheConfig)
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
     failure_policy: EmbeddingFailurePolicyConfig = Field(default_factory=EmbeddingFailurePolicyConfig)
@@ -132,6 +134,9 @@ class AugmentationConfig(BaseModel):
     # throws them away. Off by default; has no effect on models that do not
     # report the "thinking" capability.
     think: bool = False
+    # Absent in older profiles: retain their Ollama request and index identity.
+    max_context_tokens: int | None = Field(default=None, ge=1, le=8192)
+    context_window_tokens: int | None = Field(default=None, ge=1, le=1048576)
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
     failure_policy: AugmentationFailurePolicyConfig = Field(default_factory=AugmentationFailurePolicyConfig)
 
@@ -216,12 +221,16 @@ class ProfileConfig(BaseModel):
                     ).hexdigest(),
                 }
             )
+            if self.augmentation.max_context_tokens is not None:
+                augmentation["max_context_tokens"] = self.augmentation.max_context_tokens
+            if self.augmentation.context_window_tokens is not None:
+                augmentation["context_window_tokens"] = self.augmentation.context_window_tokens
 
         relevant = {
             "index_identity_version": INDEX_IDENTITY_VERSION,
             "chunking": self.chunking.model_dump(),
             "embedding": self.embedding.model_dump(
-                exclude={"cache", "retry", "failure_policy"}
+                exclude={"cache", "retry", "failure_policy"}, exclude_none=True
             ),
             "augmentation": augmentation,
             "keyword": {

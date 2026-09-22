@@ -1118,7 +1118,9 @@ def test_augmentation_contextual_strategy_calls_llm(tmp_path: Path, sample_txt: 
 
     fake_context = "This chunk is about testing augmentation."
 
-    with patch("mrag.core.indexing.augmentation.generate_context", return_value=fake_context) as mock_gen:
+    with patch("mrag.core.ollama_client.probe_connection"), patch(
+        "mrag.core.indexing.augmentation.generate_context", return_value=fake_context
+    ) as mock_gen:
         run_index(
             project_dir=project_dir,
             config=config,

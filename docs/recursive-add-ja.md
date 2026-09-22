@@ -78,8 +78,13 @@ ignore file自体は取り込まれません。
 
 ## duplicateと置換
 
-content identityにはSHA-256を使用します。登録済みfileは`skipped_duplicate`としてreportされ、
-errorにはなりません。同一contentを再抽出する必要がある場合だけ`--force`を指定してください。
+content identityにはSHA-256を使用します。内容が登録済みのfileは、同じ元ファイル・
+別のパス・source identity導入前から移行した文書のいずれに一致しても`skipped_duplicate`
+としてreportされ、errorにはなりません。登録済みの元ファイルの内容が変わった場合は、
+同じ document ID のまま抽出物を更新します。同一contentを再抽出する必要がある場合だけ
+`--force`を指定してください。document IDは保持され、内容で一致した文書は自身の
+source identityを保ちます。外部ディレクトリの追加時は不透明な root key を登録し、
+後から単一ファイルとして追加しても同じ元ファイルを見つけられます。
 mragは既存document IDを維持して抽出recordを置換します。
 
 準備後のdocumentは直列化されたwrite boundaryを通して永続化し、最終reportは相対pathの

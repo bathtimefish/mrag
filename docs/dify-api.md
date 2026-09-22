@@ -68,7 +68,7 @@ Field semantics:
 - **`query`** — The search query string. A missing field returns 422. An empty string is accepted at the schema layer, but tends to yield empty results in practice — filter it on the caller side.
 - **`retrieval_setting.top_k`** — Maximum number of records to return (between `1` and `100`).
 - **`retrieval_setting.score_threshold`** — Lower bound on the normalized score (between `0.0` and `1.0`). **Records below this value are filtered out**.
-- **`metadata_condition`** — Accepted for Dify spec compatibility but **ignored in the current version**. The endpoint still returns 200 if you send it.
+- **`metadata_condition`** — Optional `and`/`or` group of conditions. Filterable metadata fields are `document_id`, `source`, `chunk_id`, and `heading_path`. Supported string operators are `contains`, `not contains`, `start with`, `end with`, `is`, `is not`, `empty`, and `not empty`. A field name may be a string or a list of names (any may match). Unsupported conditions return HTTP 400 with `error_code: 4001`. With a filter, mrag fetches up to four times `top_k` before filtering, then returns at most `top_k` matches.
 
 
 ## Response format
@@ -82,7 +82,9 @@ Field semantics:
       "title": "manual.md",
       "metadata": {
         "chunk_id": "...",
-        "document_id": "..."
+        "document_id": "...",
+        "source": "manual.md",
+        "heading_path": "Chapter > Section"
       }
     }
   ]
@@ -94,7 +96,7 @@ Field semantics:
 - **`content`** — Chunk body (for a `parent_child` profile, the **parent chunk's** body)
 - **`score`** — Score normalized into the `[0.0, 1.0]` range (see below)
 - **`title`** — Filename of the document the chunk belongs to. Falls back to the first 8 characters of `document_id` if the filename cannot be resolved
-- **`metadata`** — Internal metadata attached to the chunk (`chunk_id` / `document_id`, etc.)
+- **`metadata`** — The four stable, filterable fields above. `heading_path` is a ` > `-joined string.
 
 Active document exclusions are enforced before this response is built, for
 every retrieval strategy. See [document retrieval
@@ -143,10 +145,11 @@ Auth failures return Dify-compatible error codes:
 | 401 | 1001 | `Authorization` header missing or malformed |
 | 401 | 1002 | Bearer token mismatch |
 | 404 | 2001 | `knowledge_id` does not match the value in `mrag.yaml` |
+| 400 | 4001 | Unsupported `metadata_condition` field, operator, or structure |
 | 422 | — | `knowledge_id` or `query` missing, `top_k` out of range, JSON structure invalid |
 | 500 | — | Internal server exceptions, e.g. Qdrant unreachable |
 
-Errors with `error_code: 1001 / 1002 / 2001` are returned in the `{"error_code": ..., "error_msg": ...}` shape. `422` / `500` use FastAPI's default shape (`{"detail": ...}`).
+Errors with `error_code: 1001 / 1002 / 2001 / 4001` are returned in the `{"error_code": ..., "error_msg": ...}` shape. `422` / `500` use FastAPI's default shape (`{"detail": ...}`).
 
 
 ## Setting up the Dify side

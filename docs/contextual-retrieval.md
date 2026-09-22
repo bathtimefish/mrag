@@ -6,6 +6,20 @@ This document covers mrag's contextual augmentation feature.
 
 In mrag, enabling `augmentation.strategy: contextual` in a profile activates this augmentation during the `mrag index` run.
 
+New projects set `augmentation.max_context_tokens: 512` and
+`augmentation.context_window_tokens: 16384`. These become Ollama
+`options.num_predict` and `options.num_ctx` for `/api/generate`. Older profiles
+without the fields keep their prior request and index identity. Changing either
+setting for a contextual profile requires differential reindexing. A larger
+window uses more model memory; ensure it fits the chosen model and host.
+
+New `bge-m3` profiles also set `embedding.max_input_tokens: 8192`, sent as
+both `options.num_ctx` and `options.num_batch` to `/api/embed`. Sending only
+`num_ctx` does not enlarge Ollama's physical embedding batch. Existing profiles
+without this field keep their previous request; changing it changes the index
+identity. An HTTP 200 response alone does not prove a long embedding input was
+not truncated, so inspect long chunks and the model's supported input length.
+
 
 ## How it works
 

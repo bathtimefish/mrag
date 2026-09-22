@@ -7,6 +7,63 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.1.0 — 2026-09-22
+
+### 追加
+
+- **Ollamaへ依頼する生成長と入力長の上限。** 新規profileは
+  `augmentation.max_context_tokens: 512`、`augmentation.context_window_tokens: 16384`、
+  `embedding.max_input_tokens: 8192`を持ちます。contextual augmentationは前の2つを
+  `/api/generate`の`options.num_predict`と`options.num_ctx`として送り、埋め込みは3つ目を
+  `/api/embed`の`options.num_ctx`と`options.num_batch`の両方として、index時にも検索時にも送ります。
+  これらが無いと、暴走したcontextはserverの上限まで生成され、長すぎるpromptはOllamaがerrorなしに
+  切り詰めて文書抜粋を落とします。Ollama 0.34.0では、長いchunkが先頭2,048 tokenだけでHTTP 200のまま埋め込まれます。
+  mragは値をmodel自身の最大と照合しません。modelの対応範囲内で設定してください。
+- **Source identity。** 各文書が由来を記録します。project内ならproject相対path、
+  project外ならopaqueなroot keyとroot相対pathで、単一fileの`mrag add`と再帰addが同じ規則で導出します。
+  登録済みの元fileの内容が変わった場合は、同じdocument IDのまま抽出物を置き換えます。
+- **文書一覧の行**をNative APIの`GET /api/v1/documents`とMCPの`list_documents`で共有します。
+  従来の項目に加えて`source_identity`、`display_name`、`source_binding_status`、`content_hash`、
+  `source_status`、`index_status`、`retrieval_status`、`profile`、`exclusion_id`、`updated_at`を返します。
+
+### 修正
+
+- **Difyの`metadata_condition`が受理されて無視されていた問題**。filterを指定したrequestに、
+  filterの効いていない結果が正しい結果として返っていました。`document_id`、`source`、`chunk_id`、
+  `heading_path`に対して、`contains`、`not contains`、`start with`、`end with`、`is`、`is not`、
+  `empty`、`not empty`を`and` / `or`で適用します。filter前に`top_k`の4倍の候補を取得します。
+  この範囲外のfield・演算子・構造は無視せず、HTTP 400と`error_code: 4001`で拒否します。
+- **`mrag init --force`が、何を取り残すかを告げずにprojectを上書きしていた問題**。
+  設定を書き直す一方で`mrag.db`は残すため、vaporetto libraryの無い環境で再初期化すると、
+  vaporettoで構築済みのFTS表に対して`trigram`と書かれていました。文書を持つproject、
+  異なるKB ID、`mrag.yaml`またはFTS表と食い違うtokenizerは、何も書く前に拒否します。
+  空のprojectでは上書きするfileを表示します。`--kb-id`を省略した場合は既存のIDを維持します。
+  また`mrag.yaml`の無いdirectoryに`mrag.db`がある場合も`mrag init`は拒否します。
+
+### 変更
+
+- 文書一覧の順序を新しい順から`(source_identity, document_id)`順に変更しました。
+  Native APIとMCPの`list_documents`のpaginationが対象です。`status`は保存値
+  (`pending`、`extracted`、`error`)のままです。
+- Dify recordの`metadata`は`document_id`、`source`、`chunk_id`、`heading_path`
+  (見出しpathを` > `で連結)の4項目だけになりました。`metadata_condition`で指定できる項目です。
+  それ以外のchunk metadataは返しません。
+- content identityは変わりません。SHA-256が登録済み文書と一致するfileは、どのpathから来ても
+  `skipped_duplicate`です。`--force`は一致した文書をそのIDのまま再抽出し、その文書のidentityを保ちます。
+
+### 互換性
+
+**既存の知識ベースはそのまま動作し、再indexは不要です。** catalogへ書き込む最初のcommandが
+`source_identity`を追加し、identity方式を記録します。読み取りでは変更しません。
+このリリースより前に追加した文書は由来を復元できないため、`legacy/v1/<document_id>`・
+`source_binding_status: legacy_unbound`として一覧に出ます。mragはpathを推測しません。
+変更の無いそれらのfileを追加し直すと`skipped_duplicate`になります。新しい上限設定を持たないprofileは
+1.0.2と同一のrequestを送り、index identityも変わりません。設定すると該当profileのidentityが変わり、
+次の`mrag index`でその文書を作り直します。Ollamaは別の`num_ctx`で起動したrunnerを載せ直すため、
+同じserverを使うclient間ではmodelごとに値を揃えてください。
+
+---
+
 ## 1.0.2 — 2026-09-14
 
 ### 修正

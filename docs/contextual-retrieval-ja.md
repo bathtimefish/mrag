@@ -6,6 +6,19 @@
 
 mrag では、プロファイルの `augmentation.strategy: contextual` を有効にするとこの augmentation が `mrag index` 実行時に適用されます。
 
+新規プロジェクトは `augmentation.max_context_tokens: 512` と
+`augmentation.context_window_tokens: 16384` を設定します。これらは Ollama の
+`/api/generate` に `options.num_predict` と `options.num_ctx` として送られます。
+旧プロファイルに設定がなければ従来の要求と索引識別子を維持します。contextual
+プロファイルで値を変えると差分索引の再構築が必要です。大きな context window は
+モデルのメモリを多く使うので、モデルと実行環境の上限を確認してください。
+
+新規の `bge-m3` プロファイルは `embedding.max_input_tokens: 8192` も設定し、
+`/api/embed` に `options.num_ctx` と `options.num_batch` の両方として送ります。
+`num_ctx` だけでは埋め込みの物理 batch は広がりません。旧プロファイルには送らず、
+値を変えた場合は索引識別子が変わります。HTTP 200 だけでは長い入力が切り詰められなかった
+証拠にはならないため、長いチャンクとモデルの入力上限を確認してください。
+
 
 ## 処理の概要
 

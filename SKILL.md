@@ -4,7 +4,7 @@ description: Operate mrag knowledge bases when creating, ingesting, searching, t
 license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "1.0.2"
+  version: "1.1.0"
 ---
 
 # mrag knowledge base operations
@@ -29,6 +29,8 @@ to mrag's source code do not require following a KB lifecycle.
   prefer Docling for PDF structure and MarkItDown for Office documents.
 - Preserve the initialized FTS5 tokenizer. Editing YAML or running `reindex`
   does not migrate the FTS5 schema. An explicit profile tokenizer must match.
+- `init --force` is only for an empty project with the same KB ID and FTS5
+  tokenizer. It refuses a project containing documents.
 - Before indexing or vector retrieval, check the selected profile's embedding
   model/endpoint and `qdrant.mode`. Local mode needs no external Qdrant process;
   server mode does. A missing mode defaults to server. Contextual indexing also
@@ -38,6 +40,11 @@ to mrag's source code do not require following a KB lifecycle.
   exclusion IDs are not interchangeable. `remove --force` deletes retained
   sources as well as indexes. Exclusion retains sources; restoration requires
   a subsequent explicit `index` to make them searchable again.
+- Source identity tracks the original file path within the KB or a registered
+  external root. Re-adding changed content from that source keeps its document
+  ID. Migrated documents have `legacy_unbound` identity because their original
+  path cannot be reconstructed. Content already registered under any source,
+  including a migrated document, is still `skipped_duplicate`.
 
 ## Read details for the current operation
 

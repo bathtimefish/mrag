@@ -1,5 +1,6 @@
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,7 @@ from mrag.config.kb_info import (
     suggest_kb_id,
     validate_kb_id,
 )
+from mrag.config.project import load_project_config
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
 from mrag.db.connection import db_connection
 from mrag.db.migrate import apply_schema
@@ -67,11 +69,14 @@ embedding:
   provider: ollama
   model: bge-m3
   endpoint: http://localhost:11434
+  max_input_tokens: 8192
   cache:
     enabled: false
 
 augmentation:
   strategy: none
+  max_context_tokens: 512
+  context_window_tokens: 16384
 
 keyword:
   provider: sqlite_fts5
@@ -159,7 +164,7 @@ def init(
         "--print-kb-info-schema",
         help="Print the JSON Schema for --kb-info-json input and exit. Other arguments are ignored.",
     ),
-    force: bool = typer.Option(False, "--force", help="Reinitialize existing project"),
+    force: bool = typer.Option(False, "--force", help="Reinitialize an empty existing project; refuses to overwrite documents or change its tokenizer"),
 ) -> None:
     """Initialize a new MRAG project."""
     # --print-kb-info-schema short-circuits everything else (no file writes).
@@ -204,13 +209,21 @@ def init(
         console.print(f"[red]Error:[/red] {project_dir}/mrag.yaml already exists.")
         console.print("Use [bold]--force[/bold] to reinitialize.")
         raise typer.Exit(1)
+    if (project_dir / "mrag.db").exists() and not (project_dir / "mrag.yaml").exists():
+        console.print("[red]Error:[/red] mrag.db exists without mrag.yaml; refusing to initialize over unknown project data.")
+        raise typer.Exit(1)
 
     # kb_id precedence:
     #   1. --kb-id
     #   2. kb_info_input.knowledge_base.id
-    #   3. derived from name (non-interactive default)
+    #   3. the existing project's ID under --force, else derived from name
+    #      (non-interactive default)
     #   4. interactive prompt
     default_kb_id = _default_kb_id_from_name(name)
+    if force and (project_dir / "mrag.yaml").exists():
+        # Reinitializing keeps the knowledge base it reinitializes: renaming the
+        # project must not derive a new ID that the check below then refuses.
+        default_kb_id = load_project_config(project_dir).knowledge_id
     if kb_id is None:
         if kb_info_input is not None:
             kb_id = kb_info_input.knowledge_base.id
@@ -271,6 +284,33 @@ def init(
         console.print(f"[green]✓[/green] vaporetto tokenizer detected ({lib_path.name})")
     else:
         console.print("[dim]  trigram tokenizer (vaporetto not found)[/dim]")
+
+    # An existing FTS5 table cannot be retokenized with CREATE IF NOT EXISTS.
+    # Refuse before writing config/profile files so --force cannot silently
+    # strand indexed data behind a contradictory tokenizer or KB identity.
+    if force and (project_dir / "mrag.yaml").exists():
+        existing = load_project_config(project_dir)
+        if existing.fts_tokenizer != fts_tokenizer:
+            console.print("[red]Error:[/red] --force cannot change an existing project's FTS tokenizer. Create a new project or restore the original tokenizer environment.")
+            raise typer.Exit(1)
+        if existing.knowledge_id != kb_id:
+            console.print(f"[red]Error:[/red] --force cannot change an existing knowledge-base ID ({existing.knowledge_id!r} -> {kb_id!r}).")
+            raise typer.Exit(1)
+        retained = project_dir / "data" / "documents"
+        if retained.exists() and any(retained.iterdir()):
+            console.print("[red]Error:[/red] --force refuses to reinitialize a project containing retained document files.")
+            raise typer.Exit(1)
+        db_path = project_dir / "mrag.db"
+        if db_path.exists():
+            with sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True) as conn:
+                fts = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'fts_chunks'").fetchone()
+                if fts and f"tokenize = '{fts_tokenizer}'" not in fts[0]:
+                    console.print("[red]Error:[/red] --force cannot change the existing FTS table tokenizer.")
+                    raise typer.Exit(1)
+                if conn.execute("SELECT 1 FROM documents LIMIT 1").fetchone():
+                    console.print("[red]Error:[/red] --force refuses to reinitialize a project containing documents. Use a new project directory.")
+                    raise typer.Exit(1)
+        console.print("[yellow]Warning:[/yellow] --force will overwrite mrag.yaml, kb_information.yaml, profiles/default.yaml, and profiles/context_prompt.txt in this empty project.")
 
     # -----------------------------------------------------------------------
     # Phase 4: Create directory structure and write files

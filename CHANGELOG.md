@@ -7,6 +7,79 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.1.0 — 2026-09-22
+
+### Added
+
+- **Limits on what Ollama is asked to generate and embed.** New profiles set
+  `augmentation.max_context_tokens: 512`, `augmentation.context_window_tokens:
+  16384` and `embedding.max_input_tokens: 8192`. Contextual augmentation sends
+  the first two as `options.num_predict` and `options.num_ctx` to
+  `/api/generate`; embedding sends the third as both `options.num_ctx` and
+  `options.num_batch` to `/api/embed`, at index and at query time. Without them
+  a runaway context note runs to the server's limit, an over-long prompt is cut
+  by Ollama without an error — dropping the document excerpt — and, on Ollama
+  0.34.0, a long chunk is embedded from its first 2,048 tokens behind an
+  HTTP 200. mrag
+  does not check the values against the model's own maximum; set them within
+  what the model supports.
+- **Source identity.** Every document records where it came from:
+  a project-relative path, or an opaque root key plus a root-relative path for
+  a source outside the project, derived the same way by single-file and
+  recursive `mrag add`. Changed content at a registered source now replaces
+  that document's extraction under the same document ID.
+- **Document list rows** shared by Native API `GET /api/v1/documents` and MCP
+  `list_documents`: `source_identity`, `display_name`,
+  `source_binding_status`, `content_hash`, `source_status`, `index_status`,
+  `retrieval_status`, `profile`, `exclusion_id` and `updated_at`, next to the
+  existing fields.
+
+### Fixed
+
+- **Dify `metadata_condition` was accepted and ignored**, so a filtered request
+  returned unfiltered records as if they were the answer. It is now applied over
+  `document_id`, `source`, `chunk_id` and `heading_path` with `contains`,
+  `not contains`, `start with`, `end with`, `is`, `is not`, `empty` and
+  `not empty`, joined by `and` / `or`; four times `top_k` candidates are
+  retrieved before filtering. A field, operator or structure outside that set is
+  refused with HTTP 400 and `error_code: 4001` rather than ignored.
+- **`mrag init --force` overwrote a project without saying what it would
+  strand.** It rewrote the configuration and kept `mrag.db`, so reinitializing
+  without the vaporetto library wrote `trigram` over an FTS table built with
+  vaporetto. It now refuses a project that has documents, a different KB ID, or
+  a tokenizer that disagrees with `mrag.yaml` or the FTS table, before writing
+  anything, and names the files it overwrites in an empty project. Without
+  `--kb-id` it keeps the project's existing ID. `mrag init` also refuses a
+  directory holding `mrag.db` without `mrag.yaml`.
+
+### Changed
+
+- The document list is ordered by `(source_identity, document_id)` instead of
+  newest first, in the Native API and in MCP `list_documents` pagination.
+  `status` keeps its stored value (`pending`, `extracted`, `error`).
+- Dify record `metadata` holds exactly `document_id`, `source`, `chunk_id` and
+  `heading_path` (the heading path joined with ` > `), the fields a
+  `metadata_condition` can name. Other chunk metadata is no longer returned.
+- Content identity is unchanged: a file whose SHA-256 matches any registered
+  document is `skipped_duplicate`, whichever path it comes from. `--force`
+  re-extracts the matched document under its ID and keeps its own identity.
+
+### Compatibility
+
+**Existing knowledge bases keep working and need no reindex.** The first
+command that writes the catalog adds `source_identity` and records the identity
+scheme; reading never changes it. Documents added before this release cannot
+say where they came from and are listed as `legacy/v1/<document_id>` with
+`source_binding_status: legacy_unbound` — mrag does not guess their path.
+Re-adding their unchanged files reports them as `skipped_duplicate`. Profiles without the
+new limit settings send exactly the requests 1.0.2 sent and keep their index
+identity; setting any of them changes the identity of the profiles it applies
+to, so the next `mrag index` rebuilds those documents. Ollama reloads a model
+whose runner was started with another `num_ctx`, so keep one value per model
+across the clients that share a server.
+
+---
+
 ## 1.0.2 — 2026-09-14
 
 ### Fixed

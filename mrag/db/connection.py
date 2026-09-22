@@ -23,10 +23,54 @@ def open_connection(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate_source_identity(conn: sqlite3.Connection) -> None:
+    """Add and backfill source identities without changing document IDs or indexes."""
+    from mrag.core.ingestion.source_identity import SCHEME_KEY, SCHEME_VERSION
+
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone():
+        return
+
+    def current() -> bool:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+        if "source_identity" not in columns:
+            return False
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_settings'").fetchone():
+            return False
+        return conn.execute("SELECT 1 FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)).fetchone() is not None
+
+    if current():
+        return
+    # A legacy catalog kept only a copied original under data/documents, so
+    # its prior external source path cannot be reconstructed honestly.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+        if "source_identity" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN source_identity TEXT")
+            conn.execute("UPDATE documents SET source_identity = 'legacy/v1/' || id")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_source_identity "
+            "ON documents(source_identity) WHERE source_identity IS NOT NULL"
+        )
+        conn.execute("CREATE TABLE IF NOT EXISTS source_roots (root_key TEXT PRIMARY KEY, label TEXT NOT NULL)")
+        conn.execute("CREATE TABLE IF NOT EXISTS catalog_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        # Recorded once: a later release with another scheme must migrate the
+        # catalog explicitly instead of recomputing identities on add.
+        conn.execute(
+            "INSERT OR IGNORE INTO catalog_settings (key, value) VALUES (?, ?)",
+            (SCHEME_KEY, str(SCHEME_VERSION)),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 @contextmanager
 def db_connection(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
     conn = open_connection(db_path)
     try:
+        _migrate_source_identity(conn)
         yield conn
         conn.commit()
     except Exception:

@@ -1,6 +1,10 @@
 # Tutorial
 
 This document is a simple tutorial for operating mrag.
+
+`mrag init --force` only reinitializes an empty project with the same KB ID
+and FTS5 tokenizer. It refuses projects with documents before overwriting
+configuration. Use a new directory when a different tokenizer is needed.
 Before starting this tutorial, complete the mrag installation described in the README.
 
 

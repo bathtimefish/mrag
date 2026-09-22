@@ -1,0 +1,18 @@
+{
+  "scheme_version": 1,
+  "canonical_paths": {
+    "docs/handbook.md": "docs/handbook.md",
+    "./docs/handbook.md": "docs/handbook.md",
+    "docs/./handbook.md": "docs/handbook.md",
+    "docs\\handbook.md": "docs/handbook.md"
+  },
+  "invalid_paths": ["", "/absolute/path.md", "C:/windows/path.md", "../outside.md", "docs/../outside.md", "docs//handbook.md"],
+  "external": {
+    "root": "/corpus",
+    "root_key": "45ef356e495c665dce491acb963f1320",
+    "relative": "reports/2026.md",
+    "identity": "external/45ef356e495c665dce491acb963f1320/reports/2026.md",
+    "display_name": "corpus/reports/2026.md"
+  },
+  "legacy": {"document_id": "doc-0001", "identity": "legacy/v1/doc-0001"}
+}

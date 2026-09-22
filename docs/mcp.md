@@ -2,6 +2,11 @@
 
 `mrag mcp` exposes a single mrag project as a read-only Model Context Protocol server.
 
+`list_documents` returns the same document rows and ordering as Native API
+`GET /api/v1/documents`, including source identity, binding, and separate
+source/index/retrieval states. Legacy rows show `legacy_unbound` rather than
+guessing their original path.
+
 Use it when an MCP-capable client should call mrag as tools/resources instead of shelling out to `mrag search --json`.
 
 ## Install

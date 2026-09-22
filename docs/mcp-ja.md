@@ -2,6 +2,10 @@
 
 `mrag mcp` は、1 つの mrag プロジェクトを read-only の Model Context Protocol server として公開します。
 
+`list_documents` は Native API の `GET /api/v1/documents` と同じ行・順序で、
+source identity と binding、抽出・索引・検索対象の状態を返します。旧データは
+元パスを推測せず `legacy_unbound` と示します。
+
 MCP 対応クライアントから `mrag search --json` を shell 実行する代わりに、MCP tools/resources として mrag を呼び出せます。
 
 ## インストール

@@ -58,6 +58,7 @@ def _make_provider(profile: ProfileConfig) -> OllamaEmbeddingProvider:
         initial_delay=profile.embedding.retry.initial_delay_seconds,
         backoff_multiplier=profile.embedding.retry.backoff_multiplier,
         max_delay=profile.embedding.retry.max_delay_seconds,
+        max_input_tokens=profile.embedding.max_input_tokens,
     )
 
 

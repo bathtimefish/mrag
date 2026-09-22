@@ -13,12 +13,10 @@ from mrag.core.ingestion.document import (
     DuplicateDocumentError,
     PreparedDocument,
     add_document,
-    find_duplicate,
     hash_document,
     persist_prepared_document,
     prepare_document,
 )
-from mrag.db.connection import find_db
 from mrag.extractors import detect_source_type, get_extractor
 
 console = Console()
@@ -136,22 +134,10 @@ def _add_directory(
                 items[candidate.relative_path] = _failed(candidate.relative_path, "unsupported_source", str(error))
         return _report(_ordered_items(items), True, True)
 
-    db_path = find_db(project_dir)
     prepared: dict[str, PreparedDocument] = {}
-    existing_ids: dict[str, str | None] = {}
     for candidate in scan.candidates:
         try:
             file_hash = hash_document(candidate.source_path)
-            existing_id = find_duplicate(file_hash, db_path)
-            if existing_id and not force:
-                items[candidate.relative_path] = _item(
-                    candidate.relative_path,
-                    "skipped_duplicate",
-                    document_id=existing_id,
-                    original_sha256=file_hash,
-                )
-                continue
-            existing_ids[candidate.relative_path] = existing_id
             prepared[candidate.relative_path] = prepare_document(
                 candidate.source_path,
                 file_hash=file_hash,
@@ -171,8 +157,8 @@ def _add_directory(
                 document,
                 project_dir,
                 config,
-                existing_id=existing_ids.get(candidate.relative_path),
                 force=force,
+                source_root=source_root,
             )
             items[candidate.relative_path] = _item(
                 candidate.relative_path,
