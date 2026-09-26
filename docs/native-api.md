@@ -144,7 +144,7 @@ Field details:
 - **`id`** — Document ID assigned by `mrag add`
 - **`status`** — The stored extraction status `pending`, `extracted`, or `error`, as in earlier releases and in the detail response. The derived states are separate fields: `source_status` maps extraction to `building`, `ready`, or `error`; `index_status` reports `not_indexed`, `pending`, `indexing`, `indexed`, `fallback`, `stale`, or `error`.
 - **`file_hash`** / **`content_hash`** — SHA-256 of the original file as 64 hexadecimal characters, with no prefix
-- **`source_identity`** — Stable path-derived identity. External paths use an opaque root key; migrated rows use `legacy/v1/<document_id>` and `source_binding_status: legacy_unbound`. `display_name` omits the external key.
+- **`source_identity`** — Stable path-derived identity, exactly as stored. A path inside the project is itself; a source outside it is `identities/external/<root-key>/<path>` (`external_root`); a migrated row is `identities/legacy/v1/<document_id>` (`legacy_unbound`). `display_name` omits the external key. A catalog still on identity scheme 1 (created by 1.1.0) lists its stored `external/...` and `legacy/...` values, read as `mrag catalog migrate-identities` will convert them.
 - **`retrieval_status`** — `eligible` or `excluded`. The list row is shared with MCP `list_documents` and sorted by `(source_identity, document_id)`.
 - **`created_at`** — When the document was added via `mrag add`
 

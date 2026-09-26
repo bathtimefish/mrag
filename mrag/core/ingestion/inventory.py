@@ -5,13 +5,55 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 
-from mrag.core.ingestion.source_identity import binding_status, display_name
+from mrag.core.ingestion.source_identity import (
+    SCHEME_KEY,
+    SCHEME_UNRECORDED,
+    SCHEME_VERSION,
+    binding_status,
+    display_name,
+    legacy_identity,
+    read_scheme_one,
+)
+
+
+def _recorded_scheme(conn: sqlite3.Connection) -> int:
+    has_settings = conn.execute("SELECT 1 FROM sqlite_master WHERE name='catalog_settings'").fetchone()
+    row = (conn.execute("SELECT value FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)).fetchone()
+           if has_settings else None)
+    return int(row[0]) if row else SCHEME_UNRECORDED
+
+
+def _read_identity(scheme: int, stored: str | None, document_id: str, labels: dict[str, str]) -> tuple[str, str, str]:
+    """Return (listed identity, binding, display name) for one stored value.
+
+    A catalog nobody has migrated is read through the rule the explicit
+    migration applies, so what a listing shows before `mrag catalog
+    migrate-identities` is what the migration makes true. The listed identity is
+    what is stored; the binding and the name are what it is read as.
+    """
+    if stored is None:
+        # Written by a release from before source identities, after the
+        # catalog was migrated: an unrecoverable path, named as one.
+        identity = legacy_identity(document_id)
+        return identity, "legacy_unbound", identity
+    if scheme == SCHEME_VERSION:
+        return stored, binding_status(stored), display_name(stored, labels)
+    if scheme == SCHEME_UNRECORDED:
+        reading = read_scheme_one(stored, document_id, set(labels))
+        if reading.identity is None:
+            return stored, reading.binding, stored
+        return stored, reading.binding, display_name(reading.identity, labels)
+    raise ValueError(
+        f"This project's source identities follow scheme {scheme}, which this mrag "
+        f"(scheme {SCHEME_VERSION}) cannot read; use the mrag release that created it."
+    )
 
 
 def list_document_rows(conn: sqlite3.Connection) -> list[dict]:
     has_roots = conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_roots'").fetchone()
     labels = ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
               if has_roots else {})
+    scheme = _recorded_scheme(conn)
     rows = conn.execute("SELECT * FROM documents").fetchall()
     indexes_by_document = defaultdict(list)
     for index in conn.execute("SELECT document_id, profile_name, status, document_file_hash FROM document_indexes ORDER BY profile_name"):
@@ -27,7 +69,8 @@ def list_document_rows(conn: sqlite3.Connection) -> list[dict]:
     result = []
     for row in rows:
         document_id = row["id"]
-        identity = (row["source_identity"] if "source_identity" in row.keys() else None) or f"legacy/v1/{document_id}"
+        stored = row["source_identity"] if "source_identity" in row.keys() else None
+        identity, binding, name = _read_identity(scheme, stored, document_id, labels)
         indexes = indexes_by_document[document_id]
         profiles = [r["profile_name"] for r in indexes]
         profile = profiles[0] if len(profiles) == 1 else None
@@ -50,9 +93,9 @@ def list_document_rows(conn: sqlite3.Connection) -> list[dict]:
         source_status = {"pending": "building", "extracted": "ready", "error": "error"}[row["status"]]
         result.append({
             "document_id": document_id,
-            "display_name": display_name(identity, labels),
+            "display_name": name,
             "source_identity": identity,
-            "source_binding_status": binding_status(identity),
+            "source_binding_status": binding,
             "content_hash": row["file_hash"],
             # The stored extraction status, as GET /documents/{id} and earlier
             # releases report it; the derived states have fields of their own.

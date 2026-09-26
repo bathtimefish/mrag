@@ -45,6 +45,11 @@ to mrag's source code do not require following a KB lifecycle.
   ID. Migrated documents have `legacy_unbound` identity because their original
   path cannot be reconstructed. Content already registered under any source,
   including a migrated document, is still `skipped_duplicate`.
+- The project's `identities/` directory is reserved: never place sources there
+  (`add` refuses them, recursive add skips the directory). A project created by
+  1.1.0 refuses `add` until `mrag catalog migrate-identities` converts its
+  identities; run it with `--dry-run` first. Document IDs survive and no
+  reindex is needed.
 
 ## Read details for the current operation
 

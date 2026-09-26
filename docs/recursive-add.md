@@ -83,6 +83,12 @@ The ignore file itself is never ingested.
 - The project's `data/` subtree is always skipped, including symlink aliases.
   A source root inside that subtree is rejected. This prevents mrag from
   ingesting its own retained artifacts.
+- The project's `identities/` directory is reserved for the names mrag gives
+  sources outside the project (`identities/external/...`) and documents whose
+  path is unknown (`identities/legacy/...`). It is always skipped, a source root
+  inside it is rejected, and a single file inside it is refused with
+  `source_identity_reserved_path`. `mrag init` puts a README there; if the
+  directory is missing, the next `add` that writes recreates it.
 - Non-regular files are ignored.
 
 ## Duplicates and replacement

@@ -9,6 +9,7 @@ from rich.console import Console
 
 from mrag.config.project import ProjectConfig, load_project_config
 from mrag.core.ingestion.directory import scan_directory
+from mrag.core.ingestion.source_identity import ReservedPathError, SchemeUnsupportedError
 from mrag.core.ingestion.document import (
     DuplicateDocumentError,
     PreparedDocument,
@@ -91,6 +92,10 @@ def _add_single(
         item = _item(str(path), "skipped_duplicate", document_id=error.document_id)
         _render_report(_report([item], False, False), json_output, False)
         return
+    except ReservedPathError as error:
+        _fatal(str(error), json_output, "source_identity_reserved_path")
+    except SchemeUnsupportedError as error:
+        _fatal(str(error), json_output, "source_identity_scheme_unsupported", 2)
     except (OSError, ValueError) as error:
         _fatal(str(error), json_output, "add_failed")
 
@@ -173,6 +178,10 @@ def _add_directory(
                 "skipped_duplicate",
                 document_id=error.document_id,
                 original_sha256=document.file_hash,
+            )
+        except ReservedPathError as error:
+            items[candidate.relative_path] = _failed(
+                candidate.relative_path, "source_identity_reserved_path", str(error)
             )
         except (OSError, ValueError) as error:
             items[candidate.relative_path] = _failed(candidate.relative_path, "persist_failed", str(error))

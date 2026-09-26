@@ -7,6 +7,45 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 未リリース
+
+### 修正
+
+- **project に `external/` や `legacy/` というディレクトリがあると文書一覧が壊れた。**
+  1.1.0 は project 外のソースを `external/<key>/<path>`、移行した行を `legacy/v1/<id>`
+  と名付け、project 内のファイルを素のパスで名付けていたため、両者を区別できません
+  でした。project 内の `external/notes.md` で Native API と MCP の文書一覧全体が失敗し、
+  `external/sub/notes.md` は `notes.md` という外部ファイルとして表示され、
+  `legacy/v1/<既存ID>` にある project 内ファイルはその移行文書とみなされて新しい版として
+  取り込まれました。project のパスではない identity を予約済みの名前空間へ移しました
+  (identity scheme 2): `identities/external/<key>/<path>` と `identities/legacy/v1/<id>`。
+
+### 追加
+
+- **`mrag catalog migrate-identities [--dry-run] [--json]`** は catalog に保存された
+  identity を scheme 2 へ変換します。先に計画を示し、変換できない文書をすべて列挙して
+  それが残る間は何も変更せず、1 つの transaction で書き換え、`logs/` に監査ログを
+  残します。document ID は変わらず、再 index もしません。MRAG Plus にも同じコマンドが
+  あります。
+- **`identities/`** を予約しました。`mrag init` がその旨の `identities/README.md` を
+  作ります。`mrag add` はその中のファイルを拒否し(`source_identity_reserved_path`、
+  symlink 経由でも同じ)、再帰的な追加ではこのディレクトリを読み飛ばし、root に
+  指定すると拒否します。ディレクトリが無い場合は書き込みを伴う次の `add` が作り直します。
+
+### 互換性
+
+**1.1.0 で作った project は一覧・検索・index を続けられますが、
+`mrag catalog migrate-identities` を実行するまで `mrag add` を拒否します**
+(exit 2、エラーにコマンド名を表示)。一覧は保存済みの `external/...` や `legacy/...` を
+移行後と同じように解釈し、値は保存されたまま返します。1.1.0 より前の project は
+コマンド不要で、catalog に最初に書き込むときに各行へ `identities/legacy/v1/<id>` が
+付き、文書の無い catalog は開いた時点で scheme 2 になります。`identities/` 配下の
+project ファイルがあると移行は止まるので、その文書を削除し、ファイルを移して
+追加し直してください。共有 identity fixture は MRAG Plus のものとバイト単位で
+一致させました。
+
+---
+
 ## 1.1.0 — 2026-09-22
 
 ### 追加

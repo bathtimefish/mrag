@@ -7,6 +7,48 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **A project directory named `external/` or `legacy/` broke the document
+  list.** 1.1.0 named a source outside the project `external/<key>/<path>` and a
+  migrated row `legacy/v1/<id>`, beside project files named by their bare path,
+  so the two could not be told apart. `external/notes.md` inside a project made
+  the Native API and MCP document list fail outright, `external/sub/notes.md`
+  was listed as an external file called `notes.md`, and a project file at
+  `legacy/v1/<an existing ID>` was taken for that migrated document and added to
+  it as a new version. Identities that are not project paths now live under a
+  reserved namespace (identity scheme 2): `identities/external/<key>/<path>` and
+  `identities/legacy/v1/<id>`.
+
+### Added
+
+- **`mrag catalog migrate-identities [--dry-run] [--json]`** converts a
+  catalog's stored identities to scheme 2. It shows the plan first, lists every
+  document it cannot convert and changes nothing while any remains, rewrites in
+  one transaction, and keeps an audit log in `logs/`. Document IDs do not change
+  and nothing is reindexed. MRAG Plus has the same command.
+- **`identities/`** is reserved. `mrag init` writes `identities/README.md`
+  saying so. `mrag add` refuses a file inside it
+  (`source_identity_reserved_path`, also through a symlink); recursive add skips
+  it and refuses it as the root. A missing directory is recreated by the next
+  `add` that writes.
+
+### Compatibility
+
+**A project created by 1.1.0 keeps listing, searching and indexing, but refuses
+`mrag add` until `mrag catalog migrate-identities` has run** (exit 2, with the
+command named in the error). Its list reads the stored `external/...` and
+`legacy/...` values as the migration will convert them and reports them as
+stored. A project from before 1.1.0 needs no command: its rows are given
+`identities/legacy/v1/<id>` the first time the catalog is written, and a catalog
+with no documents is brought to scheme 2 when opened. A project file under
+`identities/` stops the migration; remove that document, move the file, and add
+it again. The shared identity fixture is now byte-identical to MRAG Plus's.
+
+---
+
 ## 1.1.0 — 2026-09-22
 
 ### Added

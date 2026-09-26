@@ -32,7 +32,9 @@ whole manual or repeating an environment audit before every edit.
 - **Source identity is path-based.** A document ID stays stable when content at
   the same source changes. Project paths and registered external roots have
   distinct identities; legacy rows retain `legacy_unbound` identity rather than
-  guessing their original path. Content identity (SHA-256) still applies across
+  guessing their original path. Non-path identities live under the reserved
+  `identities/` namespace (scheme 2), so no project file may be added from
+  there; only `mrag catalog migrate-identities` rewrites a stored identity. Content identity (SHA-256) still applies across
   sources, so a re-added file matching any registered document — migrated rows
   included — is `skipped_duplicate`. Native API and MCP lists share one row contract.
 - **Tokenizer choice is a schema decision.** `mrag.yaml.fts_tokenizer` must match

@@ -8,6 +8,8 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from mrag.core.ingestion.source_identity import is_reserved
+
 _MAX_IGNORE_BYTES = 1024 * 1024
 
 
@@ -106,6 +108,9 @@ def scan_directory(
     project_data = (project_dir / "data").resolve(strict=False)
     if _within(canonical_root, project_data):
         raise ValueError("The project data directory cannot be added recursively")
+    project = project_dir.resolve(strict=False)
+    if _in_reserved_namespace(canonical_root, project):
+        raise ValueError("The project's identities/ directory is reserved and cannot be added")
 
     path_filter = _PathFilter(source_root, include or [], exclude or [])
     scan = DirectoryScan()
@@ -122,6 +127,7 @@ def scan_directory(
         hidden,
         follow_symlinks,
         project_data,
+        project,
         {root_identity},
         visited_directories,
         seen_files,
@@ -139,6 +145,7 @@ def _walk(
     hidden: bool,
     follow_symlinks: bool,
     project_data: Path,
+    project: Path,
     ancestors: set[tuple[int, int]],
     visited_directories: set[tuple[int, int]],
     seen_files: set[Path],
@@ -167,7 +174,7 @@ def _walk(
             continue
         if stat.S_ISDIR(metadata.st_mode):
             canonical = Path(entry.path).resolve(strict=False)
-            if _within(canonical, project_data):
+            if _within(canonical, project_data) or _in_reserved_namespace(canonical, project):
                 continue
             identity = (metadata.st_dev, metadata.st_ino)
             if identity in ancestors:
@@ -185,6 +192,7 @@ def _walk(
                 hidden,
                 follow_symlinks,
                 project_data,
+                project,
                 ancestors | {identity},
                 visited_directories,
                 seen_files,
@@ -202,10 +210,23 @@ def _walk(
                 DirectoryScanIssue(relative, "directory_entry_resolution_failed", "Entry cannot be resolved")
             )
             continue
-        if _within(canonical, project_data) or canonical in seen_files:
+        if (_within(canonical, project_data) or _in_reserved_namespace(canonical, project)
+                or canonical in seen_files):
             continue
         seen_files.add(canonical)
         scan.candidates.append(DirectoryCandidate(canonical, relative))
+
+
+def _in_reserved_namespace(canonical: Path, project: Path) -> bool:
+    """Whether a canonical path lies in the project's reserved identities/ directory.
+
+    The namespace holds mrag's own notice, never a source, so a walk over the
+    project passes it by exactly as it passes data/.
+    """
+    if not canonical.is_relative_to(project):
+        return False
+    parts = canonical.relative_to(project).parts
+    return bool(parts) and is_reserved(parts[0])
 
 
 def _load_ignore(root: Path) -> list[_IgnoreRule]:

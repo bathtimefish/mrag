@@ -144,7 +144,7 @@ Authorization: Bearer <MRAG_API_KEY>
 - **`id`** — `mrag add` 時に払い出されるドキュメント ID
 - **`status`** — 保存済みの抽出状態 `pending` / `extracted` / `error`。従来のリリースおよび詳細レスポンスと同じ値です。導出した状態は別の項目で示します：抽出は `source_status`（`building` / `ready` / `error`）、索引は `index_status`、除外は `retrieval_status`。
 - **`file_hash`** / **`content_hash`** — 元ファイルの SHA-256。接頭辞の無い 64 桁の16進文字列です。
-- **`source_identity`** — 元ファイルのパスに基づく安定した識別子。外部パスは不透明な root key を使い、移行した行は `legacy/v1/<document_id>` と `source_binding_status: legacy_unbound` になります。`display_name` に root key は表示しません。
+- **`source_identity`** — 元ファイルのパスに基づく安定した識別子で、保存値そのものです。プロジェクト内のパスはそのまま、プロジェクト外のソースは `identities/external/<root-key>/<path>`（`external_root`）、移行した行は `identities/legacy/v1/<document_id>`（`legacy_unbound`）になります。`display_name` に root key は表示しません。identity scheme 1 のままの catalog（1.1.0 で作成）は保存済みの `external/...` や `legacy/...` をそのまま返し、`mrag catalog migrate-identities` が変換するとおりに解釈します。
 - 一覧行は MCP の `list_documents` と共通で、`(source_identity, document_id)` 順です。
 - **`created_at`** — `mrag add` した日時
 
