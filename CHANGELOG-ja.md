@@ -7,7 +7,10 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
-## 未リリース
+## 1.2.0 — 2026-09-27
+
+**互換性のない変更:** Native API の文書一覧と MCP の `list_documents` は新しい
+envelope を返し、既定では抽出済みの文書だけを返します。「変更」を参照してください。
 
 ### 修正
 
@@ -32,7 +35,34 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   symlink 経由でも同じ)、再帰的な追加ではこのディレクトリを読み飛ばし、root に
   指定すると拒否します。ディレクトリが無い場合は書き込みを伴う次の `add` が作り直します。
 
+### 変更
+
+- **文書一覧を MRAG Plus と同じ contract にしました**（Native API の
+  `GET /api/v1/documents` と MCP の `list_documents` は同じものを返します）。
+  レスポンスは配列ではなく envelope — `schema_version`、`status`、`profile`、
+  `filter`、`total`（status で絞り込む前の表示件数）、`returned`（絞り込み後）、
+  `page {limit, offset, count, next_offset}`、`documents` — になりました。
+  `all=true` を指定しない限り抽出済みの文書だけを返します。パラメータは
+  `profile`（既定はサーバーまたは MCP 設定の profile。存在しなければ
+  `404 profile_not_found`）、`all`、繰り返し可能な `status`、`limit`（1〜500、既定 100）、
+  `offset` で、**それ以外のパラメータは無視せず `400` で拒否します**。各状態は
+  選択した profile について導出します。`index_status` は index 後に文書か profile の
+  index identity が変わると `stale` になり（1.1.0 は全 profile をまとめてファイル hash
+  だけを比べていました）、`fallback` はテキスト一致ではなく chunk variant の
+  fallback 印から判定し、profile を限定した除外はその profile について報告します
+  （1.1.0 は複数 profile で index された文書でこれを落としていました）。行には
+  `aggregate_status`（`status=` が絞り込む状態。優先順は
+  `excluded > error > pending > indexing > stale > fallback > indexed > ready`）と
+  `ingest_ms`（常に `null`）を追加しました。`profile` は常に解決した profile、
+  `content_hash` は抽出が完了していない文書では `null`（`file_hash` には保存値）です。
+  行の `status` は保存されている抽出状態のままです。バッチ処理は
+  `?status=stale&status=ready` で、その profile が追いついていない文書だけを取得できます。
+
 ### 互換性
+
+**`GET /api/v1/documents` と MCP `list_documents` のクライアントは、envelope の
+`documents` を読み、pending や失敗した文書を見るには `all=true` を渡し、
+`limit`/`offset` でページングする必要があります。**
 
 **1.1.0 で作った project は一覧・検索・index を続けられますが、
 `mrag catalog migrate-identities` を実行するまで `mrag add` を拒否します**

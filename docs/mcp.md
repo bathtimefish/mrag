@@ -2,10 +2,13 @@
 
 `mrag mcp` exposes a single mrag project as a read-only Model Context Protocol server.
 
-`list_documents` returns the same document rows and ordering as Native API
-`GET /api/v1/documents`, including source identity, binding, and separate
-source/index/retrieval states. Legacy rows show `legacy_unbound` rather than
-guessing their original path.
+`list_documents` returns exactly what Native API `GET /api/v1/documents`
+returns — the same envelope (`total`, `returned`, `page`), rows, statuses and
+ordering — and takes the same arguments: `profile`, `all`, `status` (a list of
+aggregate statuses), `limit` (1–500, default 100) and `offset`. Without `all`
+only extracted documents are listed. Legacy rows show `legacy_unbound` rather
+than guessing their original path. See the [Native API](./native-api.md#list)
+for every field.
 
 Use it when an MCP-capable client should call mrag as tools/resources instead of shelling out to `mrag search --json`.
 
@@ -123,7 +126,7 @@ The MVP server exposes read-only tools:
 | Tool | Purpose |
 |---|---|
 | `search` | Retrieve chunks from the KB |
-| `list_documents` | List registered documents |
+| `list_documents` | List documents with source/index/retrieval state for one profile |
 | `list_profiles` | List retrieval profiles |
 | `inspect_document` | Inspect per-document indexing state |
 | `inspect_chunks` | List chunk metadata |

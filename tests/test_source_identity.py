@@ -197,14 +197,14 @@ def test_add_refuses_a_catalog_recorded_under_another_scheme(tmp_path, monkeypat
 
 
 def test_list_status_is_the_stored_extraction_status(tmp_path, monkeypatch):
-    from mrag.core.ingestion.inventory import list_document_rows
+    from mrag.core.ingestion.inventory import document_inventory
 
     project, add = _project(tmp_path, monkeypatch)
     (project / "a.txt").write_text("alpha", encoding="utf-8")
     add(project / "a.txt")
     conn = open_connection(project / "mrag.db")
     try:
-        [row] = list_document_rows(conn)
+        [row] = document_inventory(conn, project, "default", include_all=True)["rows"]
     finally:
         conn.close()
     assert (row["status"], row["source_status"], row["index_status"]) == ("extracted", "ready", "not_indexed")
@@ -258,7 +258,7 @@ def test_a_source_under_identities_is_refused_before_anything_is_written(tmp_pat
 
 def test_a_project_directory_named_external_lists_without_failing(tmp_path, monkeypatch):
     """The 1.1.0 crash: `external/notes.md` inside the project broke the whole list."""
-    from mrag.core.ingestion.inventory import list_document_rows
+    from mrag.core.ingestion.inventory import document_inventory
 
     project, add = _project(tmp_path, monkeypatch)
     (project / "external" / "sub").mkdir(parents=True)
@@ -267,7 +267,7 @@ def test_a_project_directory_named_external_lists_without_failing(tmp_path, monk
     add(project / "external", "--recursive")
     conn = open_connection(project / "mrag.db")
     try:
-        rows = list_document_rows(conn)
+        rows = document_inventory(conn, project, "default", include_all=True)["rows"]
     finally:
         conn.close()
     assert {(r["display_name"], r["source_binding_status"]) for r in rows} == {
@@ -295,7 +295,7 @@ def test_an_empty_scheme_one_catalog_is_brought_to_the_current_scheme(tmp_path, 
 
 
 def test_a_scheme_one_catalog_lists_is_refused_by_add_and_migrates_explicitly(tmp_path, monkeypatch):
-    from mrag.core.ingestion.inventory import list_document_rows
+    from mrag.core.ingestion.inventory import document_inventory
 
     project, add = _project(tmp_path, monkeypatch)
     outside = tmp_path / "corpus"
@@ -312,7 +312,7 @@ def test_a_scheme_one_catalog_lists_is_refused_by_add_and_migrates_explicitly(tm
     # reports the stored value.
     conn = open_connection(project / "mrag.db")
     try:
-        rows = {r["source_binding_status"]: r for r in list_document_rows(conn)}
+        rows = {r["source_binding_status"]: r for r in document_inventory(conn, project, "default", include_all=True)["rows"]}
     finally:
         conn.close()
     assert rows["external_root"]["source_identity"].startswith("external/")
@@ -422,11 +422,11 @@ def test_both_identity_migrations_keep_ids_index_records_and_exclusions(tmp_path
     assert all(identity.startswith("identities/legacy/v1/") for identity in identities)
 
     # The list says what is known and no more: an unrecoverable path, by ID.
-    from mrag.core.ingestion.inventory import list_document_rows
+    from mrag.core.ingestion.inventory import document_inventory
 
     conn = open_connection(project / "mrag.db")
     try:
-        rows = list_document_rows(conn)
+        rows = document_inventory(conn, project, "default", include_all=True)["rows"]
     finally:
         conn.close()
     assert {r["source_binding_status"] for r in rows} == {"legacy_unbound"}

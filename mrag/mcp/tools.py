@@ -9,7 +9,16 @@ from typing import Any
 
 from mrag.config.mcp import EffectiveMcpConfig
 from mrag.config.profile import load_profile
-from mrag.core.ingestion.inventory import list_document_rows
+from mrag.core.ingestion.inventory import (
+    DEFAULT_PAGE_LIMIT,
+    InventoryQuery,
+    document_inventory,
+    list_envelope,
+    parse_statuses,
+    resolve_profile,
+    validate_limit,
+    validate_offset,
+)
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
@@ -154,21 +163,39 @@ def search_tool(
 def list_documents_tool(
     ctx: McpToolContext,
     *,
+    profile: str | None = None,
+    all: bool = False,
+    status: list[str] | None = None,
     limit: int | None = None,
     offset: int = 0,
 ) -> dict[str, Any]:
-    limit = limit or 100
+    """The same inventory, envelope and limits as `GET /api/v1/documents`."""
+    query = InventoryQuery(
+        profile=profile,
+        include_all=bool(all),
+        statuses=parse_statuses(status),
+        limit=DEFAULT_PAGE_LIMIT if limit is None else validate_limit(limit),
+        offset=validate_offset(offset),
+    )
+    profile_name = resolve_profile(ctx.project_dir, profile, ctx.effective.profile_name)
     conn = open_connection(ctx.db_path)
     try:
-        rows = list_document_rows(conn)
+        inventory = document_inventory(
+            conn, ctx.project_dir, profile_name, include_all=query.include_all, statuses=query.statuses
+        )
     finally:
         conn.close()
-    return {
-        "total": len(rows),
-        "limit": limit,
-        "offset": offset,
-        "documents": rows[offset:offset + limit],
-    }
+    return list_envelope(inventory, query)
+
+
+def find_document_row(ctx: McpToolContext, document_id: str) -> dict[str, Any] | None:
+    """One document's inventory row, whatever its state, for the resource URI."""
+    conn = open_connection(ctx.db_path)
+    try:
+        inventory = document_inventory(conn, ctx.project_dir, ctx.effective.profile_name, include_all=True)
+    finally:
+        conn.close()
+    return next((row for row in inventory["rows"] if row["document_id"] == document_id), None)
 
 
 def list_profiles_tool(ctx: McpToolContext) -> dict[str, Any]:
@@ -415,6 +442,7 @@ __all__ = [
     "inspect_sections_tool",
     "json_text",
     "list_documents_tool",
+    "find_document_row",
     "list_profiles_tool",
     "search_tool",
 ]

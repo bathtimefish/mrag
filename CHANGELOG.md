@@ -7,7 +7,10 @@ kept; the repository history is the record for those releases.
 
 ---
 
-## Unreleased
+## 1.2.0 — 2026-09-27
+
+**Breaking:** the Native API document list and MCP `list_documents` return a
+new envelope and, by default, only extracted documents. See *Changed*.
 
 ### Fixed
 
@@ -35,7 +38,36 @@ kept; the repository history is the record for those releases.
   it and refuses it as the root. A missing directory is recreated by the next
   `add` that writes.
 
+### Changed
+
+- **The document list takes MRAG Plus's contract** (Native API
+  `GET /api/v1/documents` and MCP `list_documents`, which return the same thing).
+  The response is an envelope — `schema_version`, `status`, `profile`,
+  `filter`, `total` (visible before the status filter), `returned` (after it),
+  `page {limit, offset, count, next_offset}` and `documents` — instead of a bare
+  array. Only extracted documents are listed unless `all=true`. Parameters:
+  `profile` (default: the server's or MCP config's profile; unknown is `404
+  profile_not_found`), `all`, repeatable `status`, `limit` (1–500, default 100)
+  and `offset`; **any other parameter is refused with `400`** instead of being
+  ignored. Every status is now derived for the selected profile:
+  `index_status` is `stale` when the document or the profile's index identity
+  changed since it was indexed (1.1.0 compared only the file hash, across all
+  profiles), `fallback` comes from the chunk variants' fallback markers rather
+  than a text match, and a profile-scoped exclusion is reported for that profile
+  (1.1.0 dropped it for documents indexed by more than one profile). Rows gain
+  `aggregate_status` — the one status `status=` filters on, by the priority
+  `excluded > error > pending > indexing > stale > fallback > indexed > ready` —
+  and `ingest_ms` (always `null`); `profile` is always the resolved profile, and
+  `content_hash` is `null` for a document without a complete extraction
+  (`file_hash` keeps the stored value). The row's `status` stays the stored
+  extraction value. A batch job can now ask for exactly what a profile has not
+  caught up with: `?status=stale&status=ready`.
+
 ### Compatibility
+
+**Clients of `GET /api/v1/documents` and MCP `list_documents` must read
+`documents` from the envelope, pass `all=true` to see pending or failed
+documents, and page with `limit`/`offset`.**
 
 **A project created by 1.1.0 keeps listing, searching and indexing, but refuses
 `mrag add` until `mrag catalog migrate-identities` has run** (exit 2, with the

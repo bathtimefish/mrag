@@ -29,23 +29,54 @@ class RetrieveResponse(BaseModel):
 
 
 class DocumentItem(BaseModel):
+    """One row of the shared document inventory (SPEC-CLI-006).
+
+    `status` is the stored extraction value; `aggregate_status` is the status
+    the `status` query parameter filters on.
+    """
+
     document_id: str
     display_name: str
     source_identity: str
     source_binding_status: str
-    content_hash: str
+    content_hash: str | None
+    status: str
+    aggregate_status: str
     source_status: str
     index_status: str
     retrieval_status: str
-    profile: str | None
+    profile: str
     exclusion_id: str | None
+    created_at: str
     updated_at: str
+    ingest_ms: int | None
     id: str
     filename: str
     file_hash: str
     source_type: str
+
+
+class DocumentListFilter(BaseModel):
+    all: bool
+    statuses: list[str]
+
+
+class DocumentListPage(BaseModel):
+    limit: int
+    offset: int
+    count: int
+    next_offset: int | None
+
+
+class DocumentListResponse(BaseModel):
+    schema_version: int
     status: str
-    created_at: str
+    profile: str
+    filter: DocumentListFilter
+    total: int = Field(description="Documents the visibility rules admit, before the status filter.")
+    returned: int = Field(description="Documents left after the status filter, across every page.")
+    page: DocumentListPage
+    documents: list[DocumentItem]
 
 
 class DocumentDetail(BaseModel):

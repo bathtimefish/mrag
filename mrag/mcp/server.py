@@ -112,9 +112,23 @@ def build_fastmcp(effective: EffectiveMcpConfig):
                 no_rerank=no_rerank,
             )
 
-        @server.tool(description="List documents registered in the mrag project.")
-        def list_documents(limit: int | None = None, offset: int = 0) -> dict[str, Any]:
-            return list_documents_tool(ctx, limit=limit, offset=offset)
+        @server.tool(
+            description=(
+                "List documents with their source, index and retrieval state for one profile. "
+                "Without `all`, only documents with a complete extraction are listed; `status` "
+                "keeps rows whose aggregate status is one of the given values."
+            )
+        )
+        def list_documents(
+            profile: str | None = None,
+            all: bool = False,
+            status: list[str] | None = None,
+            limit: int | None = None,
+            offset: int = 0,
+        ) -> dict[str, Any]:
+            return list_documents_tool(
+                ctx, profile=profile, all=all, status=status, limit=limit, offset=offset
+            )
 
         @server.tool(description="List retrieval profiles in the mrag project.")
         def list_profiles() -> dict[str, Any]:

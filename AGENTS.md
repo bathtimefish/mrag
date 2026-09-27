@@ -36,7 +36,9 @@ whole manual or repeating an environment audit before every edit.
   `identities/` namespace (scheme 2), so no project file may be added from
   there; only `mrag catalog migrate-identities` rewrites a stored identity. Content identity (SHA-256) still applies across
   sources, so a re-added file matching any registered document — migrated rows
-  included — is `skipped_duplicate`. Native API and MCP lists share one row contract.
+  included — is `skipped_duplicate`. Native API and MCP lists share one row and
+  envelope contract with MRAG Plus (`mrag/core/ingestion/inventory.py`); change
+  it there, never per surface.
 - **Tokenizer choice is a schema decision.** `mrag.yaml.fts_tokenizer` must match
   the initialized FTS5 table and any explicit profile tokenizer. `reindex` does
   not migrate that table to another tokenizer. Preserve index/query

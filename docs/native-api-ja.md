@@ -110,43 +110,89 @@ source documentを保持するため、検索結果から全chunkが除外され
 ### 一覧
 
 ```http
-GET /api/v1/documents HTTP/1.1
+GET /api/v1/documents?profile=default&all=false&status=stale&status=ready&limit=100&offset=0 HTTP/1.1
 Authorization: Bearer <MRAG_API_KEY>
 ```
+
+パラメータはすべて省略可能で、**受け付けるのはこの 5 つだけです**。それ以外は無視せず `400` で拒否します。
+
+| パラメータ | 意味 |
+|---|---|
+| `profile` | 行の index 状態と除外状態を答える profile。既定はサーバーの `--profile`。存在しない profile は `404 profile_not_found`。 |
+| `all` | `true` で抽出が完了していない文書（`pending`、`error`）も含める。既定の `false` では抽出済みの文書だけ。 |
+| `status` | 繰り返し可。`aggregate_status` がいずれかに一致する行だけを残す。 |
+| `limit` | 1 ページの件数（1〜500）。既定 100。 |
+| `offset` | 読み飛ばす行数。末尾を超える offset はエラーではなく空のページ。 |
 
 レスポンス：
 
 ```json
-[
-  {
-    "id": "abcdef0123456789",
-    "filename": "manual.md",
-    "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "status": "extracted",
-    "document_id": "abcdef0123456789",
-    "source_identity": "docs/manual.md",
-    "display_name": "docs/manual.md",
-    "source_binding_status": "project_relative",
-    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "source_status": "ready",
-    "index_status": "indexed",
-    "retrieval_status": "eligible",
-    "profile": "default",
-    "exclusion_id": null,
-    "created_at": "2026-05-22T10:00:00",
-    "updated_at": "2026-05-22T10:00:00"
-  }
-]
+{
+  "schema_version": 1,
+  "status": "ok",
+  "profile": "default",
+  "filter": {"all": false, "statuses": []},
+  "total": 1,
+  "returned": 1,
+  "page": {"limit": 100, "offset": 0, "count": 1, "next_offset": null},
+  "documents": [
+    {
+      "document_id": "abcdef0123456789",
+      "display_name": "docs/manual.md",
+      "source_identity": "docs/manual.md",
+      "source_binding_status": "project_relative",
+      "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "status": "extracted",
+      "aggregate_status": "indexed",
+      "source_status": "ready",
+      "index_status": "indexed",
+      "retrieval_status": "eligible",
+      "profile": "default",
+      "exclusion_id": null,
+      "created_at": "2026-05-22T10:00:00",
+      "updated_at": "2026-05-22T10:00:00",
+      "ingest_ms": null,
+      "id": "abcdef0123456789",
+      "filename": "manual.md",
+      "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "source_type": "md"
+    }
+  ]
+}
 ```
 
-各フィールド：
+envelope：
 
-- **`id`** — `mrag add` 時に払い出されるドキュメント ID
-- **`status`** — 保存済みの抽出状態 `pending` / `extracted` / `error`。従来のリリースおよび詳細レスポンスと同じ値です。導出した状態は別の項目で示します：抽出は `source_status`（`building` / `ready` / `error`）、索引は `index_status`、除外は `retrieval_status`。
-- **`file_hash`** / **`content_hash`** — 元ファイルの SHA-256。接頭辞の無い 64 桁の16進文字列です。
+- **`total`** — 表示範囲（`all`）が認める文書数。status による絞り込みの前。
+- **`returned`** — status で絞り込んだ後の文書数（全ページ合計）。`total` と `returned` で「文書が無い」と「絞り込みに一致しない」を区別できます。
+- **`page.count`** — このレスポンスの行数。**`page.next_offset`** — 次に指定する offset。最後のページでは `null`。
+
+行のフィールド（行・状態・並び順は MCP の `list_documents` および MRAG Plus と共通）：
+
+- **`status`** — 保存されている抽出状態 `pending`、`extracted`、`error`。以前のリリースや詳細レスポンスと同じ値です。
+- **`aggregate_status`** — 選択した profile についての状態を 1 つにまとめたもので、`status=` が絞り込む対象です。`excluded`、`error`、`pending`、`indexing`、`stale`、`fallback`、`indexed`、`ready` のうち、この順で最初に当てはまるもの。`ready` は抽出済みでこの profile ではまだ index されていない状態です。
+- **`source_status`** — `building`、`ready`、`error`。
+- **`index_status`** — 選択した profile について `not_indexed`、`pending`、`indexing`、`indexed`、`fallback`（一部の chunk が素のテキストへ fallback したか vector を持たない）、`stale`（index 後に文書か profile が変わった）、`error`。
+- **`retrieval_status`** / **`exclusion_id`** — この profile に効く除外があれば `excluded`。profile を限定した規則が全 profile の規則より優先して報告されます。
+- **`content_hash`** — 抽出済み原本の SHA-256（接頭辞なし 64 桁 hex）。抽出が完了していない文書では `null`。**`file_hash`** には常に保存値が入ります。
 - **`source_identity`** — 元ファイルのパスに基づく安定した識別子で、保存値そのものです。プロジェクト内のパスはそのまま、プロジェクト外のソースは `identities/external/<root-key>/<path>`（`external_root`）、移行した行は `identities/legacy/v1/<document_id>`（`legacy_unbound`）になります。`display_name` に root key は表示しません。identity scheme 1 のままの catalog（1.1.0 で作成）は保存済みの `external/...` や `legacy/...` をそのまま返し、`mrag catalog migrate-identities` が変換するとおりに解釈します。
-- 一覧行は MCP の `list_documents` と共通で、`(source_identity, document_id)` 順です。
-- **`created_at`** — `mrag add` した日時
+- **`ingest_ms`** — 常に `null`（mrag は取り込み時間を記録しません）。MRAG Plus と行の形を揃えるためのフィールドです。
+- 並び順は `(source_identity, document_id)` です。
+
+**バッチ差分取得の例。** 変わったものだけを再 index するジョブは、この profile が追いついていない文書をページ単位で取得できます。
+
+```bash
+offset=0
+while :; do
+  page=$(curl -s -H "Authorization: Bearer $MRAG_API_KEY" \
+    "http://127.0.0.1:8000/api/v1/documents?status=stale&status=ready&limit=500&offset=$offset")
+  echo "$page" | jq -r '.documents[] | [.document_id, .aggregate_status, .display_name] | @tsv'
+  offset=$(echo "$page" | jq '.page.next_offset')
+  [ "$offset" = "null" ] && break
+done
+```
+
+以前のリリースは全文書を配列で返していました。1.2.0 はこの envelope を返し、`all=true` を指定しない限り抽出済みの文書だけを返します。
 
 ### 詳細
 
