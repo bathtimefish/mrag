@@ -77,7 +77,10 @@ stored. A project from before 1.1.0 needs no command: its rows are given
 `identities/legacy/v1/<id>` the first time the catalog is written, and a catalog
 with no documents is brought to scheme 2 when opened. A project file under
 `identities/` stops the migration; remove that document, move the file, and add
-it again. The shared identity fixture is now byte-identical to MRAG Plus's.
+it again. The shared identity fixture is now byte-identical to MRAG Plus's, and
+a second shared fixture — a decision table of document facts and the statuses,
+filter results, order and pages they must produce — is read by both products'
+test suites, so a rule changed in only one of them fails.
 
 ---
 
