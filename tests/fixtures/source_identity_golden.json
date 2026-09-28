@@ -1,18 +1,94 @@
 {
-  "scheme_version": 1,
+  "about": "Shared source-identity fixture (SPEC-DATA-004). MRAG Plus holds the canonical copy at quality/golden/source-identity.json; OSS mrag keeps a byte-identical copy at tests/fixtures/source_identity_golden.json. Both test suites read their copy, so a change here has to be made in both.",
+  "scheme_version": 2,
+  "reserved_namespace": "identities",
   "canonical_paths": {
     "docs/handbook.md": "docs/handbook.md",
     "./docs/handbook.md": "docs/handbook.md",
     "docs/./handbook.md": "docs/handbook.md",
-    "docs\\handbook.md": "docs/handbook.md"
+    "docs\\handbook.md": "docs/handbook.md",
+    "external/notes.md": "external/notes.md",
+    "external/sub/notes.md": "external/sub/notes.md",
+    "legacy/v1/doc-0001": "legacy/v1/doc-0001",
+    "identities.md": "identities.md",
+    "docs/identities/notes.md": "docs/identities/notes.md"
   },
-  "invalid_paths": ["", "/absolute/path.md", "C:/windows/path.md", "../outside.md", "docs/../outside.md", "docs//handbook.md"],
+  "invalid_paths": [
+    "",
+    "/absolute/path.md",
+    "C:/windows/path.md",
+    "../outside.md",
+    "docs/../outside.md",
+    "docs//handbook.md"
+  ],
+  "reserved_paths": [
+    "identities",
+    "identities/notes.md",
+    "./identities/notes.md",
+    "Identities/notes.md",
+    "IDENTITIES\\notes.md",
+    "identities/external/notes.md"
+  ],
   "external": {
     "root": "/corpus",
+    "label": "corpus",
     "root_key": "45ef356e495c665dce491acb963f1320",
     "relative": "reports/2026.md",
-    "identity": "external/45ef356e495c665dce491acb963f1320/reports/2026.md",
-    "display_name": "corpus/reports/2026.md"
+    "identity": "identities/external/45ef356e495c665dce491acb963f1320/reports/2026.md",
+    "display_name": "corpus/reports/2026.md",
+    "unlabelled_display_name": "reports/2026.md"
   },
-  "legacy": {"document_id": "doc-0001", "identity": "legacy/v1/doc-0001"}
+  "legacy": {
+    "document_id": "doc-0001",
+    "identity": "identities/legacy/v1/doc-0001",
+    "display_name": "identities/legacy/v1/doc-0001"
+  },
+  "scheme_one_readings": {
+    "document_id": "doc-0001",
+    "registered_roots": ["/corpus"],
+    "cases": [
+      {
+        "stored": "external/45ef356e495c665dce491acb963f1320/reports/2026.md",
+        "reading": "respelled",
+        "identity": "identities/external/45ef356e495c665dce491acb963f1320/reports/2026.md",
+        "binding": "external_root"
+      },
+      {
+        "stored": "legacy/v1/doc-0001",
+        "reading": "respelled",
+        "identity": "identities/legacy/v1/doc-0001",
+        "binding": "legacy_unbound"
+      },
+      {
+        "stored": "legacy/v1/doc-0002",
+        "reading": "unchanged",
+        "identity": "legacy/v1/doc-0002",
+        "binding": "project_relative"
+      },
+      {
+        "stored": "external/0123456789abcdef0123456789abcdef/notes.md",
+        "reading": "unchanged",
+        "identity": "external/0123456789abcdef0123456789abcdef/notes.md",
+        "binding": "project_relative"
+      },
+      {
+        "stored": "external/sub/notes.md",
+        "reading": "unchanged",
+        "identity": "external/sub/notes.md",
+        "binding": "project_relative"
+      },
+      {
+        "stored": "docs/handbook.md",
+        "reading": "unchanged",
+        "identity": "docs/handbook.md",
+        "binding": "project_relative"
+      },
+      {
+        "stored": "identities/notes.md",
+        "reading": "reserved",
+        "identity": null,
+        "binding": "project_relative"
+      }
+    ]
+  }
 }

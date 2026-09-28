@@ -1,0 +1,557 @@
+{
+  "about": "Shared document-inventory status fixture (SPEC-CLI-006, 2026-09-27). MRAG Plus holds the canonical copy at quality/golden/inventory-status.json; OSS mrag keeps a byte-identical copy at tests/fixtures/inventory_status_golden.json. Facts are product-neutral: each suite builds its own inputs from them and lets its implementation decide.",
+  "profile": "default",
+  "other_profile": "other",
+  "aggregate_priority": [
+    "excluded",
+    "error",
+    "pending",
+    "indexing",
+    "stale",
+    "fallback",
+    "indexed",
+    "ready"
+  ],
+  "row_fields": [
+    "document_id",
+    "display_name",
+    "source_identity",
+    "source_binding_status",
+    "content_hash",
+    "status",
+    "source_status",
+    "index_status",
+    "retrieval_status",
+    "profile",
+    "exclusion_id",
+    "created_at",
+    "updated_at",
+    "ingest_ms"
+  ],
+  "envelope_fields": [
+    "schema_version",
+    "status",
+    "profile",
+    "filter",
+    "total",
+    "returned",
+    "page",
+    "documents"
+  ],
+  "filter_fields": [
+    "all",
+    "statuses"
+  ],
+  "page_fields": [
+    "limit",
+    "offset",
+    "count",
+    "next_offset"
+  ],
+  "oss_differences": {
+    "status": "the stored extraction value (pending|extracted|error), not the aggregate",
+    "aggregate_field": "aggregate_status",
+    "aggregate_field_follows": "status",
+    "ingest_ms": null,
+    "appended_fields": [
+      "id",
+      "filename",
+      "file_hash",
+      "source_type"
+    ]
+  },
+  "status_cases": [
+    {
+      "name": "ready, never indexed",
+      "source": "ready",
+      "index": "none",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "not_indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "ready",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "ready and current",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "indexed",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "some chunks fell back",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": true,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "fallback",
+        "retrieval_status": "eligible",
+        "aggregate": "fallback",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "the document changed after indexing",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "document_changed",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "stale",
+        "retrieval_status": "eligible",
+        "aggregate": "stale",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "the profile changed after indexing",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "profile_changed",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "stale",
+        "retrieval_status": "eligible",
+        "aggregate": "stale",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "stale outranks fallback",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "profile_changed",
+      "fallback": true,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "stale",
+        "retrieval_status": "eligible",
+        "aggregate": "stale",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "index pending",
+      "source": "ready",
+      "index": "pending",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "pending",
+        "retrieval_status": "eligible",
+        "aggregate": "pending",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "index in progress",
+      "source": "ready",
+      "index": "indexing",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexing",
+        "retrieval_status": "eligible",
+        "aggregate": "indexing",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "freshness is not judged while indexing",
+      "source": "ready",
+      "index": "indexing",
+      "freshness": "profile_changed",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexing",
+        "retrieval_status": "eligible",
+        "aggregate": "indexing",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "index failed",
+      "source": "ready",
+      "index": "error",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "error",
+        "retrieval_status": "eligible",
+        "aggregate": "error",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "extraction still building",
+      "source": "building",
+      "index": "none",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "building",
+        "index_status": "not_indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "pending",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "extraction failed",
+      "source": "error",
+      "index": "none",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "error",
+        "index_status": "not_indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "error",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "a source error outranks an index record",
+      "source": "error",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "error",
+        "index_status": "indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "error",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "a building source outranks an index record",
+      "source": "building",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "building",
+        "index_status": "indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "pending",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "an error outranks a pending index",
+      "source": "error",
+      "index": "pending",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "error",
+        "index_status": "pending",
+        "retrieval_status": "eligible",
+        "aggregate": "error",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "excluded for every profile",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [
+        "all"
+      ],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexed",
+        "retrieval_status": "excluded",
+        "aggregate": "excluded",
+        "exclusion": "all"
+      }
+    },
+    {
+      "name": "the profile-scoped rule is the one reported",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [
+        "all",
+        "this"
+      ],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexed",
+        "retrieval_status": "excluded",
+        "aggregate": "excluded",
+        "exclusion": "this"
+      }
+    },
+    {
+      "name": "a rule for another profile does not apply",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [
+        "other"
+      ],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "indexed",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "excluded outranks error",
+      "source": "ready",
+      "index": "error",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [
+        "this"
+      ],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "error",
+        "retrieval_status": "excluded",
+        "aggregate": "excluded",
+        "exclusion": "this"
+      }
+    },
+    {
+      "name": "excluded before it was ever indexed",
+      "source": "ready",
+      "index": "none",
+      "freshness": "current",
+      "fallback": false,
+      "exclusions": [
+        "all"
+      ],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "not_indexed",
+        "retrieval_status": "excluded",
+        "aggregate": "excluded",
+        "exclusion": "all"
+      }
+    }
+  ],
+  "listing_cases": {
+    "documents": [
+      {
+        "id": "doc-1",
+        "identity": "b/z.md",
+        "source": "ready",
+        "index": "indexed"
+      },
+      {
+        "id": "doc-2",
+        "identity": "a/y.md",
+        "source": "ready",
+        "index": "none"
+      },
+      {
+        "id": "doc-3",
+        "identity": "c.md",
+        "source": "building",
+        "index": "none"
+      },
+      {
+        "id": "doc-4",
+        "identity": "B.md",
+        "source": "error",
+        "index": "none"
+      },
+      {
+        "id": "doc-5",
+        "identity": "日本語.md",
+        "source": "ready",
+        "index": "indexed"
+      }
+    ],
+    "queries": [
+      {
+        "all": false,
+        "statuses": [],
+        "expect": {
+          "filter_statuses": [],
+          "total": 3,
+          "returned": 3,
+          "order": [
+            "doc-2",
+            "doc-1",
+            "doc-5"
+          ]
+        }
+      },
+      {
+        "all": true,
+        "statuses": [],
+        "expect": {
+          "filter_statuses": [],
+          "total": 5,
+          "returned": 5,
+          "order": [
+            "doc-4",
+            "doc-2",
+            "doc-1",
+            "doc-3",
+            "doc-5"
+          ]
+        }
+      },
+      {
+        "all": true,
+        "statuses": [
+          "ready",
+          "error"
+        ],
+        "expect": {
+          "filter_statuses": [
+            "error",
+            "ready"
+          ],
+          "total": 5,
+          "returned": 2,
+          "order": [
+            "doc-4",
+            "doc-2"
+          ]
+        }
+      },
+      {
+        "all": false,
+        "statuses": [
+          "indexed"
+        ],
+        "expect": {
+          "filter_statuses": [
+            "indexed"
+          ],
+          "total": 3,
+          "returned": 2,
+          "order": [
+            "doc-1",
+            "doc-5"
+          ]
+        }
+      },
+      {
+        "all": false,
+        "statuses": [
+          "pending"
+        ],
+        "expect": {
+          "filter_statuses": [
+            "pending"
+          ],
+          "total": 3,
+          "returned": 0,
+          "order": []
+        }
+      }
+    ]
+  },
+  "page_cases": [
+    {
+      "rows": 5,
+      "limit": 2,
+      "offset": 0,
+      "expect": {
+        "count": 2,
+        "next_offset": 2
+      }
+    },
+    {
+      "rows": 5,
+      "limit": 2,
+      "offset": 2,
+      "expect": {
+        "count": 2,
+        "next_offset": 4
+      }
+    },
+    {
+      "rows": 5,
+      "limit": 2,
+      "offset": 4,
+      "expect": {
+        "count": 1,
+        "next_offset": null
+      }
+    },
+    {
+      "rows": 5,
+      "limit": 2,
+      "offset": 5,
+      "expect": {
+        "count": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "rows": 5,
+      "limit": 2,
+      "offset": 9,
+      "expect": {
+        "count": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "rows": 0,
+      "limit": 100,
+      "offset": 0,
+      "expect": {
+        "count": 0,
+        "next_offset": null
+      }
+    },
+    {
+      "rows": 3,
+      "limit": 3,
+      "offset": 0,
+      "expect": {
+        "count": 3,
+        "next_offset": null
+      }
+    }
+  ]
+}

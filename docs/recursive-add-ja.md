@@ -74,6 +74,11 @@ ignore file自体は取り込まれません。
   mragはdirectory cycleを検出し、同じcanonical file targetを最大1回だけ取り込みます。
 - projectの`data/` subtreeはsymlink aliasを含め常にskipします。その配下をsource rootにする
   指定も拒否し、mrag自身の保持成果物を再取り込みすることを防ぎます。
+- projectの`identities/`ディレクトリは、project外のsource(`identities/external/...`)と
+  元のpathが分からない文書(`identities/legacy/...`)にmragが付ける名前のために予約されて
+  います。常にskipし、その配下をsource rootにする指定は拒否し、配下のfileを単独で追加すると
+  `source_identity_reserved_path`で拒否します。`mrag init`がREADMEを置き、ディレクトリが
+  無い場合は書き込みを伴う次の`add`が作り直します。
 - regular file以外は無視します。
 
 ## duplicateと置換

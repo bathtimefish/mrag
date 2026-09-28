@@ -8,6 +8,7 @@ import yaml
 
 from mrag.mcp.tools import (
     McpToolContext,
+    find_document_row,
     inspect_chunk_tool,
     list_documents_tool,
     list_profiles_tool,
@@ -44,11 +45,10 @@ def documents_resource(ctx: McpToolContext) -> str:
 
 
 def document_resource(ctx: McpToolContext, document_id: str) -> str:
-    docs = list_documents_tool(ctx, limit=100000)["documents"]
-    for doc in docs:
-        if doc["id"] == document_id:
-            return json.dumps(doc, ensure_ascii=False, indent=2)
-    raise FileNotFoundError(f"document '{document_id}' not found")
+    row = find_document_row(ctx, document_id)
+    if row is None:
+        raise FileNotFoundError(f"document '{document_id}' not found")
+    return json.dumps(row, ensure_ascii=False, indent=2)
 
 
 def extracted_resource(ctx: McpToolContext, document_id: str, suffix: str) -> str:

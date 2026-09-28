@@ -223,14 +223,20 @@ def test_retrieve_alternate_profile_does_not_reuse_startup_provider(
 def test_list_documents(api_client):
     resp = api_client.client.get("/api/v1/documents")
     assert resp.status_code == 200
-    docs = resp.json()
-    assert isinstance(docs, list)
-    assert len(docs) >= 1
-    doc = docs[0]
-    assert "id" in doc
-    assert "filename" in doc
-    assert "status" in doc
-    assert "created_at" in doc
+    body = resp.json()
+    # The envelope MRAG Plus answers with (SPEC-API-002).
+    assert (body["schema_version"], body["status"], body["profile"]) == (1, "ok", "default")
+    assert body["filter"] == {"all": False, "statuses": []}
+    assert (body["total"], body["returned"]) == (1, 1)
+    assert body["page"] == {"limit": 100, "offset": 0, "count": 1, "next_offset": None}
+    [doc] = body["documents"]
+    assert list(doc)[:16] == [
+        "document_id", "display_name", "source_identity", "source_binding_status", "content_hash",
+        "status", "aggregate_status", "source_status", "index_status", "retrieval_status", "profile",
+        "exclusion_id", "created_at", "updated_at", "ingest_ms", "id",
+    ]
+    assert (doc["status"], doc["aggregate_status"], doc["index_status"]) == ("extracted", "indexed", "indexed")
+    assert doc["ingest_ms"] is None
 
 
 def test_native_and_mcp_document_lists_share_contract(api_client):
@@ -240,16 +246,83 @@ def test_native_and_mcp_document_lists_share_contract(api_client):
     project = api_client.tmp_path
     cfg = load_mcp_config(env={"MRAG_PROJECT_DIR": str(project)})
     ctx = McpToolContext(resolve_mcp_config(cfg, env={}))
-    native = api_client.client.get("/api/v1/documents").json()
-    mcp = list_documents_tool(ctx)["documents"]
-    assert native == mcp
-    assert native[0]["source_binding_status"] == "external_root"
-    assert native[0]["document_id"] == native[0]["id"]
+    for query, arguments in [
+        ("", {}),
+        ("?all=true&status=indexed&limit=1", {"all": True, "status": ["indexed"], "limit": 1}),
+    ]:
+        native = api_client.client.get(f"/api/v1/documents{query}").json()
+        assert native == list_documents_tool(ctx, **arguments)
+    assert native["documents"][0]["source_binding_status"] == "external_root"
+    assert native["documents"][0]["document_id"] == native["documents"][0]["id"]
+
+
+@pytest.mark.parametrize(
+    ("query", "status", "code"),
+    [
+        ("?statuses=ready", 400, "documents_query_unknown_parameter"),
+        ("?status=missing", 400, "document_status_unknown"),
+        ("?all=yes", 400, "documents_query_invalid"),
+        ("?limit=0", 400, "documents_page_invalid"),
+        ("?limit=501", 400, "documents_page_invalid"),
+        ("?offset=-1", 400, "documents_page_invalid"),
+        ("?profile=nope", 404, "profile_not_found"),
+    ],
+)
+def test_the_document_list_refuses_what_it_would_otherwise_ignore(api_client, query, status, code):
+    resp = api_client.client.get(f"/api/v1/documents{query}")
+    assert resp.status_code == status
+    body = resp.json()
+    assert (body["status"], body["error"]["code"]) == ("error", code)
+
+
+def test_the_document_list_hides_unready_documents_until_all_is_asked(api_client):
+    import sqlite3
+
+    with sqlite3.connect(api_client.tmp_path / "mrag.db") as conn:
+        conn.execute(
+            "INSERT INTO documents (id, knowledge_id, source_identity, filename, original_path, file_hash, "
+            "source_type, status, created_at, updated_at) VALUES "
+            "('doc-err', 'k', 'broken.md', 'broken.md', 'x', 'h', 'md', 'error', 't', 't')"
+        )
+    default = api_client.client.get("/api/v1/documents").json()
+    assert [d["document_id"] for d in default["documents"]] != ["doc-err"]
+    assert default["total"] == 1
+    everything = api_client.client.get("/api/v1/documents?all=true").json()
+    broken = next(d for d in everything["documents"] if d["document_id"] == "doc-err")
+    assert (everything["total"], broken["aggregate_status"], broken["content_hash"]) == (2, "error", None)
+    only_errors = api_client.client.get("/api/v1/documents?all=true&status=error").json()
+    assert (only_errors["total"], only_errors["returned"]) == (2, 1)
+    assert only_errors["filter"] == {"all": True, "statuses": ["error"]}
+
+
+def test_a_profile_change_makes_an_indexed_document_stale(api_client):
+    profile = api_client.tmp_path / "profiles" / "default.yaml"
+    profile.write_text(profile.read_text(encoding="utf-8").replace("chunk_size: 800", "chunk_size: 700"),
+                       encoding="utf-8")
+    [doc] = api_client.client.get("/api/v1/documents").json()["documents"]
+    assert (doc["index_status"], doc["aggregate_status"]) == ("stale", "stale")
+
+
+def test_an_exclusion_scoped_to_the_profile_is_the_one_reported(api_client):
+    import sqlite3
+
+    [doc] = api_client.client.get("/api/v1/documents").json()["documents"]
+    with sqlite3.connect(api_client.tmp_path / "mrag.db") as conn:
+        conn.execute("INSERT INTO document_exclusions (id, document_id, profile_name, created_at) "
+                     "VALUES ('global', ?, NULL, 't1')", (doc["document_id"],))
+        conn.execute("INSERT INTO document_exclusions (id, document_id, profile_name, created_at) "
+                     "VALUES ('scoped', ?, 'default', 't2')", (doc["document_id"],))
+        conn.execute("INSERT INTO document_exclusions (id, document_id, profile_name, created_at) "
+                     "VALUES ('other', ?, 'other', 't3')", (doc["document_id"],))
+    [row] = api_client.client.get("/api/v1/documents").json()["documents"]
+    assert (row["retrieval_status"], row["exclusion_id"], row["aggregate_status"]) == (
+        "excluded", "scoped", "excluded"
+    )
 
 
 def test_get_document(api_client):
     docs_resp = api_client.client.get("/api/v1/documents")
-    doc_id = docs_resp.json()[0]["id"]
+    doc_id = docs_resp.json()["documents"][0]["id"]
 
     resp = api_client.client.get(f"/api/v1/documents/{doc_id}")
     assert resp.status_code == 200

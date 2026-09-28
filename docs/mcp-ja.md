@@ -2,9 +2,12 @@
 
 `mrag mcp` は、1 つの mrag プロジェクトを read-only の Model Context Protocol server として公開します。
 
-`list_documents` は Native API の `GET /api/v1/documents` と同じ行・順序で、
-source identity と binding、抽出・索引・検索対象の状態を返します。旧データは
-元パスを推測せず `legacy_unbound` と示します。
+`list_documents` は Native API の `GET /api/v1/documents` と同じもの —
+同じ envelope（`total`、`returned`、`page`）・行・状態・並び順 — を返し、
+同じ引数 `profile`、`all`、`status`（集約状態のリスト）、`limit`（1〜500、既定 100）、
+`offset` を受け付けます。`all` を指定しなければ抽出済みの文書だけを返します。旧データは
+元パスを推測せず `legacy_unbound` と示します。各フィールドは
+[Native API](./native-api-ja.md#一覧) を参照してください。
 
 MCP 対応クライアントから `mrag search --json` を shell 実行する代わりに、MCP tools/resources として mrag を呼び出せます。
 
@@ -122,7 +125,7 @@ MVP では read-only tools のみ公開します。
 | Tool | 用途 |
 |---|---|
 | `search` | KB を検索する |
-| `list_documents` | 登録済みドキュメント一覧 |
+| `list_documents` | profile ごとの抽出・索引・検索対象の状態付きドキュメント一覧 |
 | `list_profiles` | retrieval profile 一覧 |
 | `inspect_document` | ドキュメント単位の index 状態 |
 | `inspect_chunks` | chunk metadata 一覧 |

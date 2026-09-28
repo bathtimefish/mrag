@@ -7,6 +7,83 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.2.0 — 2026-09-27
+
+**Breaking:** the Native API document list and MCP `list_documents` return a
+new envelope and, by default, only extracted documents. See *Changed*.
+
+### Fixed
+
+- **A project directory named `external/` or `legacy/` broke the document
+  list.** 1.1.0 named a source outside the project `external/<key>/<path>` and a
+  migrated row `legacy/v1/<id>`, beside project files named by their bare path,
+  so the two could not be told apart. `external/notes.md` inside a project made
+  the Native API and MCP document list fail outright, `external/sub/notes.md`
+  was listed as an external file called `notes.md`, and a project file at
+  `legacy/v1/<an existing ID>` was taken for that migrated document and added to
+  it as a new version. Identities that are not project paths now live under a
+  reserved namespace (identity scheme 2): `identities/external/<key>/<path>` and
+  `identities/legacy/v1/<id>`.
+
+### Added
+
+- **`mrag catalog migrate-identities [--dry-run] [--json]`** converts a
+  catalog's stored identities to scheme 2. It shows the plan first, lists every
+  document it cannot convert and changes nothing while any remains, rewrites in
+  one transaction, and keeps an audit log in `logs/`. Document IDs do not change
+  and nothing is reindexed. MRAG Plus has the same command.
+- **`identities/`** is reserved. `mrag init` writes `identities/README.md`
+  saying so. `mrag add` refuses a file inside it
+  (`source_identity_reserved_path`, also through a symlink); recursive add skips
+  it and refuses it as the root. A missing directory is recreated by the next
+  `add` that writes.
+
+### Changed
+
+- **The document list takes MRAG Plus's contract** (Native API
+  `GET /api/v1/documents` and MCP `list_documents`, which return the same thing).
+  The response is an envelope — `schema_version`, `status`, `profile`,
+  `filter`, `total` (visible before the status filter), `returned` (after it),
+  `page {limit, offset, count, next_offset}` and `documents` — instead of a bare
+  array. Only extracted documents are listed unless `all=true`. Parameters:
+  `profile` (default: the server's or MCP config's profile; unknown is `404
+  profile_not_found`), `all`, repeatable `status`, `limit` (1–500, default 100)
+  and `offset`; **any other parameter is refused with `400`** instead of being
+  ignored. Every status is now derived for the selected profile:
+  `index_status` is `stale` when the document or the profile's index identity
+  changed since it was indexed (1.1.0 compared only the file hash, across all
+  profiles), `fallback` comes from the chunk variants' fallback markers rather
+  than a text match, and a profile-scoped exclusion is reported for that profile
+  (1.1.0 dropped it for documents indexed by more than one profile). Rows gain
+  `aggregate_status` — the one status `status=` filters on, by the priority
+  `excluded > error > pending > indexing > stale > fallback > indexed > ready` —
+  and `ingest_ms` (always `null`); `profile` is always the resolved profile, and
+  `content_hash` is `null` for a document without a complete extraction
+  (`file_hash` keeps the stored value). The row's `status` stays the stored
+  extraction value. A batch job can now ask for exactly what a profile has not
+  caught up with: `?status=stale&status=ready`.
+
+### Compatibility
+
+**Clients of `GET /api/v1/documents` and MCP `list_documents` must read
+`documents` from the envelope, pass `all=true` to see pending or failed
+documents, and page with `limit`/`offset`.**
+
+**A project created by 1.1.0 keeps listing, searching and indexing, but refuses
+`mrag add` until `mrag catalog migrate-identities` has run** (exit 2, with the
+command named in the error). Its list reads the stored `external/...` and
+`legacy/...` values as the migration will convert them and reports them as
+stored. A project from before 1.1.0 needs no command: its rows are given
+`identities/legacy/v1/<id>` the first time the catalog is written, and a catalog
+with no documents is brought to scheme 2 when opened. A project file under
+`identities/` stops the migration; remove that document, move the file, and add
+it again. The shared identity fixture is now byte-identical to MRAG Plus's, and
+a second shared fixture — a decision table of document facts and the statuses,
+filter results, order and pages they must produce — is read by both products'
+test suites, so a rule changed in only one of them fails.
+
+---
+
 ## 1.1.0 — 2026-09-22
 
 ### Added

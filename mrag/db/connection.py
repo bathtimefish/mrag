@@ -24,19 +24,37 @@ def open_connection(db_path: Path) -> sqlite3.Connection:
 
 
 def _migrate_source_identity(conn: sqlite3.Connection) -> None:
-    """Add and backfill source identities without changing document IDs or indexes."""
-    from mrag.core.ingestion.source_identity import SCHEME_KEY, SCHEME_VERSION
+    """Add and backfill source identities without changing document IDs or indexes.
+
+    A catalog from before source identities gets its first identities here, under
+    the current scheme. A catalog that already holds identities keeps the scheme
+    it records: converting them is `mrag catalog migrate-identities`'s job, never
+    a side effect of opening the catalog (SPEC-DATA-004). The one exception is a
+    catalog holding no document, which holds no identity of any scheme and is
+    recorded as current.
+    """
+    from mrag.core.ingestion.source_identity import SCHEME_KEY, SCHEME_UNRECORDED, SCHEME_VERSION
 
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").fetchone():
         return
+
+    def has_documents() -> bool:
+        return conn.execute("SELECT 1 FROM documents LIMIT 1").fetchone() is not None
+
+    def recorded() -> str | None:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_settings'").fetchone():
+            return None
+        row = conn.execute("SELECT value FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)).fetchone()
+        return row[0] if row else None
 
     def current() -> bool:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
         if "source_identity" not in columns:
             return False
-        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_settings'").fetchone():
+        scheme = recorded()
+        if scheme is None:
             return False
-        return conn.execute("SELECT 1 FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)).fetchone() is not None
+        return scheme == str(SCHEME_VERSION) or has_documents()
 
     if current():
         return
@@ -47,19 +65,33 @@ def _migrate_source_identity(conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
         if "source_identity" not in columns:
             conn.execute("ALTER TABLE documents ADD COLUMN source_identity TEXT")
-            conn.execute("UPDATE documents SET source_identity = 'legacy/v1/' || id")
+            # First assignment, so it is made under the current scheme.
+            conn.execute("UPDATE documents SET source_identity = 'identities/legacy/v1/' || id")
+            scheme = str(SCHEME_VERSION)
+        elif has_documents():
+            # The column predates this build, so its values follow scheme 1
+            # unless the catalog says otherwise.
+            scheme = str(SCHEME_UNRECORDED)
+        else:
+            scheme = str(SCHEME_VERSION)
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_source_identity "
             "ON documents(source_identity) WHERE source_identity IS NOT NULL"
         )
         conn.execute("CREATE TABLE IF NOT EXISTS source_roots (root_key TEXT PRIMARY KEY, label TEXT NOT NULL)")
         conn.execute("CREATE TABLE IF NOT EXISTS catalog_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        # Recorded once: a later release with another scheme must migrate the
-        # catalog explicitly instead of recomputing identities on add.
+        # Recorded once for a catalog holding identities: a later release with
+        # another scheme must migrate it explicitly instead of recomputing on
+        # add. An empty catalog is brought to the current scheme.
         conn.execute(
             "INSERT OR IGNORE INTO catalog_settings (key, value) VALUES (?, ?)",
-            (SCHEME_KEY, str(SCHEME_VERSION)),
+            (SCHEME_KEY, scheme),
         )
+        if not has_documents():
+            conn.execute(
+                "UPDATE catalog_settings SET value = ? WHERE key = ?",
+                (str(SCHEME_VERSION), SCHEME_KEY),
+            )
         conn.commit()
     except Exception:
         conn.rollback()

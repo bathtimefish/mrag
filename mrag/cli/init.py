@@ -20,6 +20,7 @@ from mrag.config.kb_info import (
 )
 from mrag.config.project import load_project_config
 from mrag.core.indexing.context_prompt_template import DEFAULT_CONTEXT_PROMPT_TEMPLATE
+from mrag.core.ingestion.source_identity import IDENTITIES_NOTICE, RESERVED_NAMESPACE
 from mrag.db.connection import db_connection
 from mrag.db.migrate import apply_schema
 from mrag.db.tokenizer import (
@@ -341,6 +342,13 @@ def init(
     dump_kb_info(kb_info_config, project_dir)
     console.print("[green]✓[/green] Generated kb_information.yaml")
 
+    # The reserved identity namespace. A file rather than an empty directory,
+    # because git keeps no empty directory; an existing notice is kept.
+    notice = project_dir / RESERVED_NAMESPACE / "README.md"
+    if not notice.exists():
+        notice.write_text(IDENTITIES_NOTICE, encoding="utf-8", newline="\n")
+        console.print("[green]✓[/green] Generated identities/README.md")
+
     # -----------------------------------------------------------------------
     # Phase 5: Initialize DB
     # -----------------------------------------------------------------------
@@ -384,5 +392,6 @@ def _create_dirs(project_dir: Path) -> None:
         "logs",
         "docs",
         "cache/embeddings",
+        RESERVED_NAMESPACE,
     ]:
         (project_dir / subdir).mkdir(parents=True, exist_ok=True)

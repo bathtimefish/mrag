@@ -1,16 +1,23 @@
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from mrag.api.models import (
     ChunkResult,
     DocumentDetail,
-    DocumentItem,
+    DocumentListResponse,
     ProfileDetail,
     ProfileItem,
     RetrieveRequest,
     RetrieveResponse,
 )
 from mrag.config.profile import load_profile
-from mrag.core.ingestion.inventory import list_document_rows
+from mrag.core.ingestion.inventory import (
+    InventoryError,
+    document_inventory,
+    list_envelope,
+    parse_query,
+    resolve_profile,
+)
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import open_connection
 
@@ -90,13 +97,30 @@ async def search(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     return await retrieve(req, request)
 
 
-@router.get("/documents", response_model=list[DocumentItem])
-async def list_documents(request: Request) -> list[DocumentItem]:
+@router.get("/documents", response_model=DocumentListResponse, responses={400: {}, 404: {}})
+async def list_documents(request: Request) -> JSONResponse:
+    """List documents with their source, index and retrieval state for one profile.
+
+    Accepts only `profile`, `all`, `status` (repeatable), `limit` and `offset`;
+    anything else is refused with 400 rather than ignored. Without `profile` the
+    server's `--profile` is used; without `all` only documents with a complete
+    extraction are listed.
+    """
     state = _get_state(request)
-    conn = open_connection(state.db_path)
-    rows = list_document_rows(conn)
-    conn.close()
-    return [DocumentItem(**r) for r in rows]
+    try:
+        query = parse_query(request.query_params.multi_items())
+        profile_name = resolve_profile(state.project_dir, query.profile, state.profile_name)
+        conn = open_connection(state.db_path)
+        try:
+            inventory = document_inventory(
+                conn, state.project_dir, profile_name,
+                include_all=query.include_all, statuses=query.statuses,
+            )
+        finally:
+            conn.close()
+    except InventoryError as error:
+        return JSONResponse(error.envelope(), status_code=error.http_status)
+    return JSONResponse(list_envelope(inventory, query))
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)

@@ -110,43 +110,92 @@ all of its chunks. See [document retrieval exclusions](./document-exclusions.md)
 ### List
 
 ```http
-GET /api/v1/documents HTTP/1.1
+GET /api/v1/documents?profile=default&all=false&status=stale&status=ready&limit=100&offset=0 HTTP/1.1
 Authorization: Bearer <MRAG_API_KEY>
 ```
+
+Every parameter is optional, and **only these five are accepted** — any other
+parameter is refused with `400` rather than ignored:
+
+| Parameter | Meaning |
+|---|---|
+| `profile` | Profile whose index and exclusion state the rows report. Default: the server's `--profile`. An unknown profile is `404 profile_not_found`. |
+| `all` | `true` also lists documents without a complete extraction (`pending`, `error`). Default `false`: only extracted documents. |
+| `status` | Repeatable. Keeps rows whose `aggregate_status` is one of the values. |
+| `limit` | Page size, 1–500. Default 100. |
+| `offset` | Rows to skip. An offset past the end is an empty page, not an error. |
 
 Response:
 
 ```json
-[
-  {
-    "id": "abcdef0123456789",
-    "filename": "manual.md",
-    "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "status": "extracted",
-    "document_id": "abcdef0123456789",
-    "source_identity": "docs/manual.md",
-    "display_name": "docs/manual.md",
-    "source_binding_status": "project_relative",
-    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "source_status": "ready",
-    "index_status": "indexed",
-    "retrieval_status": "eligible",
-    "profile": "default",
-    "exclusion_id": null,
-    "created_at": "2026-05-22T10:00:00",
-    "updated_at": "2026-05-22T10:00:00"
-  }
-]
+{
+  "schema_version": 1,
+  "status": "ok",
+  "profile": "default",
+  "filter": {"all": false, "statuses": []},
+  "total": 1,
+  "returned": 1,
+  "page": {"limit": 100, "offset": 0, "count": 1, "next_offset": null},
+  "documents": [
+    {
+      "document_id": "abcdef0123456789",
+      "display_name": "docs/manual.md",
+      "source_identity": "docs/manual.md",
+      "source_binding_status": "project_relative",
+      "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "status": "extracted",
+      "aggregate_status": "indexed",
+      "source_status": "ready",
+      "index_status": "indexed",
+      "retrieval_status": "eligible",
+      "profile": "default",
+      "exclusion_id": null,
+      "created_at": "2026-05-22T10:00:00",
+      "updated_at": "2026-05-22T10:00:00",
+      "ingest_ms": null,
+      "id": "abcdef0123456789",
+      "filename": "manual.md",
+      "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "source_type": "md"
+    }
+  ]
+}
 ```
 
-Field details:
+Envelope:
 
-- **`id`** — Document ID assigned by `mrag add`
-- **`status`** — The stored extraction status `pending`, `extracted`, or `error`, as in earlier releases and in the detail response. The derived states are separate fields: `source_status` maps extraction to `building`, `ready`, or `error`; `index_status` reports `not_indexed`, `pending`, `indexing`, `indexed`, `fallback`, `stale`, or `error`.
-- **`file_hash`** / **`content_hash`** — SHA-256 of the original file as 64 hexadecimal characters, with no prefix
-- **`source_identity`** — Stable path-derived identity. External paths use an opaque root key; migrated rows use `legacy/v1/<document_id>` and `source_binding_status: legacy_unbound`. `display_name` omits the external key.
-- **`retrieval_status`** — `eligible` or `excluded`. The list row is shared with MCP `list_documents` and sorted by `(source_identity, document_id)`.
-- **`created_at`** — When the document was added via `mrag add`
+- **`total`** — documents the visibility rule admits (`all`), before the status filter.
+- **`returned`** — documents left after the status filter, across every page. `total` and `returned` tell an empty project from a filter that matched nothing.
+- **`page.count`** — rows in this response; **`page.next_offset`** — the offset to ask for next, or `null` on the last page.
+
+Row fields (the row, its statuses and its order are shared with MCP `list_documents` and with MRAG Plus):
+
+- **`status`** — The stored extraction status `pending`, `extracted`, or `error`, as in earlier releases and in the detail response.
+- **`aggregate_status`** — One status for the selected profile, the one `status=` filters on: `excluded`, `error`, `pending`, `indexing`, `stale`, `fallback`, `indexed`, or `ready`, the first that applies in that order. `ready` means extracted but not indexed by this profile.
+- **`source_status`** — `building`, `ready`, or `error`.
+- **`index_status`** — For the selected profile: `not_indexed`, `pending`, `indexing`, `indexed`, `fallback` (some chunks fell back to raw text or have no vector), `stale` (the document or the profile changed since it was indexed), or `error`.
+- **`retrieval_status`** / **`exclusion_id`** — `excluded` when an exclusion covers this profile; a rule scoped to the profile is reported over an all-profile one.
+- **`content_hash`** — SHA-256 of the extracted original (64 hexadecimal characters, no prefix), or `null` when the document has no complete extraction. **`file_hash`** always carries the stored hash.
+- **`source_identity`** — Stable path-derived identity, exactly as stored. A path inside the project is itself; a source outside it is `identities/external/<root-key>/<path>` (`external_root`); a migrated row is `identities/legacy/v1/<document_id>` (`legacy_unbound`). `display_name` omits the external key. A catalog still on identity scheme 1 (created by 1.1.0) lists its stored `external/...` and `legacy/...` values, read as `mrag catalog migrate-identities` will convert them.
+- **`ingest_ms`** — Always `null`: mrag does not record ingestion timing. The field exists so the row matches MRAG Plus's.
+- Rows are sorted by `(source_identity, document_id)`.
+
+**Batch difference example.** A job that re-indexes only what changed can ask
+for the documents this profile has not caught up with, page by page:
+
+```bash
+offset=0
+while :; do
+  page=$(curl -s -H "Authorization: Bearer $MRAG_API_KEY" \
+    "http://127.0.0.1:8000/api/v1/documents?status=stale&status=ready&limit=500&offset=$offset")
+  echo "$page" | jq -r '.documents[] | [.document_id, .aggregate_status, .display_name] | @tsv'
+  offset=$(echo "$page" | jq '.page.next_offset')
+  [ "$offset" = "null" ] && break
+done
+```
+
+Earlier releases returned a bare array of every document. 1.2.0 returns this
+envelope and lists only extracted documents unless `all=true`.
 
 ### Detail
 

@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from mrag.config.project import ProjectConfig
-from mrag.core.ingestion.source_identity import SCHEME_KEY, require_scheme, source_identity
+from mrag.core.ingestion.source_identity import (
+    SCHEME_KEY,
+    require_scheme,
+    restore_identities_notice,
+    source_identity,
+)
 from mrag.db.connection import db_connection, find_db
 from mrag.extractors import detect_source_type, get_extractor
 from mrag.extractors.base import ExtractionResult
@@ -189,6 +194,9 @@ def persist_prepared_document(
                 (document_id, config.knowledge_id, identity, *fields[:-1], now, now),
             )
 
+    # A project from before scheme 2, or one whose notice was deleted, gets the
+    # reserved directory back on the first add that writes.
+    restore_identities_notice(project_dir)
     return document_id, result.warnings
 
 
