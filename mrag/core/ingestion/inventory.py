@@ -1,9 +1,9 @@
-"""One document-list contract for the native API and MCP (SPEC-CLI-006).
+"""One document-list contract for the native API and MCP.
 
-The rows, their statuses, their visibility rules and their order are the ones
-MRAG Plus fixes for `mrag documents list`, `GET /api/v1/documents` and the MCP
-`list_documents` tool, and both OSS surfaces answer through this module, so a
-document cannot be `indexed` on one and `stale` on the other.
+The rows, their statuses, their visibility rules and their order are decided
+here once for `GET /api/v1/documents` and the MCP `list_documents` tool, and
+both surfaces answer through this module, so a document cannot be `indexed` on
+one and `stale` on the other.
 
 Every status is derived for one selected profile:
 
@@ -14,8 +14,8 @@ Every status is derived for one selected profile:
 
 and folded into ``aggregate_status`` by one priority order. The row's
 ``status`` keeps the stored extraction value (``pending``/``extracted``/
-``error``), as ``GET /documents/{id}`` and earlier releases report it — the one
-field in which the OSS row intentionally differs from MRAG Plus's.
+``error``), as ``GET /documents/{id}`` and earlier releases report it; the
+derived state is in the three statuses and ``aggregate_status``.
 """
 
 from __future__ import annotations
@@ -327,7 +327,7 @@ def document_inventory(
 
 
 def list_envelope(inventory: dict, query: InventoryQuery) -> dict:
-    """The listing envelope MRAG Plus's API and MCP answer with (SPEC-API-002)."""
+    """The listing envelope the native API and MCP answer with."""
     rows = inventory["rows"]
     start = min(query.offset, len(rows))
     page = rows[start:start + query.limit]

@@ -1,5 +1,5 @@
 {
-  "about": "Shared document-inventory status fixture (SPEC-CLI-006, 2026-09-27). MRAG Plus holds the canonical copy at quality/golden/inventory-status.json; OSS mrag keeps a byte-identical copy at tests/fixtures/inventory_status_golden.json. Facts are product-neutral: each suite builds its own inputs from them and lets its implementation decide.",
+  "about": "Document-inventory decision table (2026-09-27): document facts and the statuses, filter results, order and pages they must produce. Facts name no catalog: a suite builds its own inputs from them and lets its implementation decide.",
   "profile": "default",
   "other_profile": "other",
   "aggregate_priority": [

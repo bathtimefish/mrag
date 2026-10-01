@@ -3,8 +3,7 @@
 ``migrate-identities`` is the explicit source-identity scheme migration: the only
 command that rewrites a stored identity. The plan is shown before anything is
 written, every document that cannot be converted is listed — not only the first
-— and a blocked plan changes nothing. MRAG Plus has the same command under the
-same name, with the same report.
+— and a blocked plan changes nothing.
 """
 
 from __future__ import annotations

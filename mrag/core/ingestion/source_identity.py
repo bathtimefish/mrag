@@ -33,8 +33,8 @@ _DOCUMENT_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 MIGRATE_COMMAND = "mrag catalog migrate-identities"
 
-# What identities/README.md says. The same words as MRAG Plus's notice, so a
-# user who meets the directory in either product reads one explanation.
+# What identities/README.md says: why the directory exists and what must not be
+# put in it.
 IDENTITIES_NOTICE = """\
 # identities/ — reserved by mrag
 

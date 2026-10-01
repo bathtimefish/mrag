@@ -29,7 +29,7 @@ class RetrieveResponse(BaseModel):
 
 
 class DocumentItem(BaseModel):
-    """One row of the shared document inventory (SPEC-CLI-006).
+    """One row of the document inventory.
 
     `status` is the stored extraction value; `aggregate_status` is the status
     the `status` query parameter filters on.

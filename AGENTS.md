@@ -37,10 +37,11 @@ whole manual or repeating an environment audit before every edit.
   there; only `mrag catalog migrate-identities` rewrites a stored identity. Content identity (SHA-256) still applies across
   sources, so a re-added file matching any registered document — migrated rows
   included — is `skipped_duplicate`. Native API and MCP lists share one row and
-  envelope contract with MRAG Plus (`mrag/core/ingestion/inventory.py`); change
-  it there, never per surface. `tests/fixtures/source_identity_golden.json` and
-  `tests/fixtures/inventory_status_golden.json` are byte-identical copies of MRAG
-  Plus's `quality/golden/` fixtures: change a rule in both products and both copies.
+  envelope contract (`mrag/core/ingestion/inventory.py`); change it there, never
+  per surface. `tests/fixtures/source_identity_golden.json` and
+  `tests/fixtures/inventory_status_golden.json` are decision tables the identity
+  rules and the document list must satisfy: never edit them to make a change
+  pass — a rule changes in the table first, then in the code.
 - **Tokenizer choice is a schema decision.** `mrag.yaml.fts_tokenizer` must match
   the initialized FTS5 table and any explicit profile tokenizer. `reindex` does
   not migrate that table to another tokenizer. Preserve index/query

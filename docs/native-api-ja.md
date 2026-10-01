@@ -167,7 +167,7 @@ envelope：
 - **`returned`** — status で絞り込んだ後の文書数（全ページ合計）。`total` と `returned` で「文書が無い」と「絞り込みに一致しない」を区別できます。
 - **`page.count`** — このレスポンスの行数。**`page.next_offset`** — 次に指定する offset。最後のページでは `null`。
 
-行のフィールド（行・状態・並び順は MCP の `list_documents` および MRAG Plus と共通）：
+行のフィールド（行・状態・並び順は MCP の `list_documents` と共通）：
 
 - **`status`** — 保存されている抽出状態 `pending`、`extracted`、`error`。以前のリリースや詳細レスポンスと同じ値です。
 - **`aggregate_status`** — 選択した profile についての状態を 1 つにまとめたもので、`status=` が絞り込む対象です。`excluded`、`error`、`pending`、`indexing`、`stale`、`fallback`、`indexed`、`ready` のうち、この順で最初に当てはまるもの。`ready` は抽出済みでこの profile ではまだ index されていない状態です。
@@ -176,7 +176,7 @@ envelope：
 - **`retrieval_status`** / **`exclusion_id`** — この profile に効く除外があれば `excluded`。profile を限定した規則が全 profile の規則より優先して報告されます。
 - **`content_hash`** — 抽出済み原本の SHA-256（接頭辞なし 64 桁 hex）。抽出が完了していない文書では `null`。**`file_hash`** には常に保存値が入ります。
 - **`source_identity`** — 元ファイルのパスに基づく安定した識別子で、保存値そのものです。プロジェクト内のパスはそのまま、プロジェクト外のソースは `identities/external/<root-key>/<path>`（`external_root`）、移行した行は `identities/legacy/v1/<document_id>`（`legacy_unbound`）になります。`display_name` に root key は表示しません。identity scheme 1 のままの catalog（1.1.0 で作成）は保存済みの `external/...` や `legacy/...` をそのまま返し、`mrag catalog migrate-identities` が変換するとおりに解釈します。
-- **`ingest_ms`** — 常に `null`（mrag は取り込み時間を記録しません）。MRAG Plus と行の形を揃えるためのフィールドです。
+- **`ingest_ms`** — 常に `null`（mrag は取り込み時間を記録しません）。行の形を固定するために置いているフィールドです。
 - 並び順は `(source_identity, document_id)` です。
 
 **バッチ差分取得の例。** 変わったものだけを再 index するジョブは、この profile が追いついていない文書をページ単位で取得できます。

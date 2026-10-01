@@ -168,7 +168,7 @@ Envelope:
 - **`returned`** — documents left after the status filter, across every page. `total` and `returned` tell an empty project from a filter that matched nothing.
 - **`page.count`** — rows in this response; **`page.next_offset`** — the offset to ask for next, or `null` on the last page.
 
-Row fields (the row, its statuses and its order are shared with MCP `list_documents` and with MRAG Plus):
+Row fields (the row, its statuses and its order are shared with MCP `list_documents`):
 
 - **`status`** — The stored extraction status `pending`, `extracted`, or `error`, as in earlier releases and in the detail response.
 - **`aggregate_status`** — One status for the selected profile, the one `status=` filters on: `excluded`, `error`, `pending`, `indexing`, `stale`, `fallback`, `indexed`, or `ready`, the first that applies in that order. `ready` means extracted but not indexed by this profile.
@@ -177,7 +177,7 @@ Row fields (the row, its statuses and its order are shared with MCP `list_docume
 - **`retrieval_status`** / **`exclusion_id`** — `excluded` when an exclusion covers this profile; a rule scoped to the profile is reported over an all-profile one.
 - **`content_hash`** — SHA-256 of the extracted original (64 hexadecimal characters, no prefix), or `null` when the document has no complete extraction. **`file_hash`** always carries the stored hash.
 - **`source_identity`** — Stable path-derived identity, exactly as stored. A path inside the project is itself; a source outside it is `identities/external/<root-key>/<path>` (`external_root`); a migrated row is `identities/legacy/v1/<document_id>` (`legacy_unbound`). `display_name` omits the external key. A catalog still on identity scheme 1 (created by 1.1.0) lists its stored `external/...` and `legacy/...` values, read as `mrag catalog migrate-identities` will convert them.
-- **`ingest_ms`** — Always `null`: mrag does not record ingestion timing. The field exists so the row matches MRAG Plus's.
+- **`ingest_ms`** — Always `null`: mrag does not record ingestion timing. The field is kept so the row's shape stays fixed.
 - Rows are sorted by `(source_identity, document_id)`.
 
 **Batch difference example.** A job that re-indexes only what changed can ask

@@ -224,7 +224,7 @@ def test_list_documents(api_client):
     resp = api_client.client.get("/api/v1/documents")
     assert resp.status_code == 200
     body = resp.json()
-    # The envelope MRAG Plus answers with (SPEC-API-002).
+    # The listing envelope.
     assert (body["schema_version"], body["status"], body["profile"]) == (1, "ok", "default")
     assert body["filter"] == {"all": False, "statuses": []}
     assert (body["total"], body["returned"]) == (1, 1)

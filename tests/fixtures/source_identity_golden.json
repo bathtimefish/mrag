@@ -1,5 +1,5 @@
 {
-  "about": "Shared source-identity fixture (SPEC-DATA-004). MRAG Plus holds the canonical copy at quality/golden/source-identity.json; OSS mrag keeps a byte-identical copy at tests/fixtures/source_identity_golden.json. Both test suites read their copy, so a change here has to be made in both.",
+  "about": "Source-identity decision table: canonical paths, invalid and reserved paths, external and legacy identities, and how scheme-1 values are read. A test suite reads it and checks its implementation against every entry.",
   "scheme_version": 2,
   "reserved_namespace": "identities",
   "canonical_paths": {
