@@ -26,6 +26,10 @@ FIXTURE = json.loads(
 )
 PROFILE = FIXTURE["profile"]
 SOURCE_STATUS = {"ready": "extracted", "building": "pending", "error": "error"}
+# Freshness facts mrag cannot judge yet: document_indexes records no indexed
+# document name. The table marks them, so they are skipped here rather than
+# edited out of the fixture.
+UNSUPPORTED_FRESHNESS = frozenset(FIXTURE["unsupported"]["oss"]["freshness"])
 
 
 @pytest.fixture
@@ -95,7 +99,10 @@ def _rows(project, **query):
 
 def test_every_shared_status_case_is_decided_as_the_table_says(project):
     current_hash = _current_profile_hash(project, PROFILE)
-    cases = FIXTURE["status_cases"]
+    cases = [
+        case for case in FIXTURE["status_cases"]
+        if case.get("freshness", "current") not in UNSUPPORTED_FRESHNESS
+    ]
     with sqlite3.connect(project / "mrag.db") as conn:
         for number, case in enumerate(cases):
             _insert(conn, current_hash, f"case-{number}", f"cases/{number}.md", case)
@@ -113,6 +120,13 @@ def test_every_shared_status_case_is_decided_as_the_table_says(project):
         ), case["name"]
         # The intentional difference: the row's `status` is the stored value.
         assert row["status"] == SOURCE_STATUS[case["source"]], case["name"]
+
+
+def test_only_cases_the_table_marks_as_unsupported_are_skipped():
+    marked = {case["freshness"] for case in FIXTURE["status_cases"]} & UNSUPPORTED_FRESHNESS
+    assert marked == UNSUPPORTED_FRESHNESS, "every skip mark must name a case the table holds"
+    for document in FIXTURE["listing_cases"]["documents"]:
+        assert document.get("freshness", "current") not in UNSUPPORTED_FRESHNESS
 
 
 def test_every_shared_listing_case_filters_counts_and_orders_as_the_table_says(project):

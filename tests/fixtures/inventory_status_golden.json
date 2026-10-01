@@ -60,6 +60,15 @@
       "source_type"
     ]
   },
+  "unsupported": {
+    "oss": {
+      "freshness": [
+        "name_changed",
+        "name_unrecorded"
+      ],
+      "why": "mrag's document_indexes records no indexed document name, so a renamed file cannot be judged stale there yet; its suite skips these freshness cases."
+    }
+  },
   "status_cases": [
     {
       "name": "ready, never indexed",
@@ -148,6 +157,36 @@
         "index_status": "stale",
         "retrieval_status": "eligible",
         "aggregate": "stale",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "the file was renamed after indexing",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "name_changed",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "stale",
+        "retrieval_status": "eligible",
+        "aggregate": "stale",
+        "exclusion": null
+      }
+    },
+    {
+      "name": "a name indexed before names were recorded is not judged",
+      "source": "ready",
+      "index": "indexed",
+      "freshness": "name_unrecorded",
+      "fallback": false,
+      "exclusions": [],
+      "expect": {
+        "source_status": "ready",
+        "index_status": "indexed",
+        "retrieval_status": "eligible",
+        "aggregate": "indexed",
         "exclusion": null
       }
     },
