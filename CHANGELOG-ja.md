@@ -28,8 +28,7 @@ envelope を返し、既定では抽出済みの文書だけを返します。�
 - **`mrag catalog migrate-identities [--dry-run] [--json]`** は catalog に保存された
   identity を scheme 2 へ変換します。先に計画を示し、変換できない文書をすべて列挙して
   それが残る間は何も変更せず、1 つの transaction で書き換え、`logs/` に監査ログを
-  残します。document ID は変わらず、再 index もしません。MRAG Plus にも同じコマンドが
-  あります。
+  残します。document ID は変わらず、再 index もしません。
 - **`identities/`** を予約しました。`mrag init` がその旨の `identities/README.md` を
   作ります。`mrag add` はその中のファイルを拒否し(`source_identity_reserved_path`、
   symlink 経由でも同じ)、再帰的な追加ではこのディレクトリを読み飛ばし、root に
@@ -37,7 +36,7 @@ envelope を返し、既定では抽出済みの文書だけを返します。�
 
 ### 変更
 
-- **文書一覧を MRAG Plus と同じ contract にしました**（Native API の
+- **文書一覧を 1 つの contract にまとめました**（Native API の
   `GET /api/v1/documents` と MCP の `list_documents` は同じものを返します）。
   レスポンスは配列ではなく envelope — `schema_version`、`status`、`profile`、
   `filter`、`total`（status で絞り込む前の表示件数）、`returned`（絞り込み後）、
@@ -71,10 +70,10 @@ envelope を返し、既定では抽出済みの文書だけを返します。�
 コマンド不要で、catalog に最初に書き込むときに各行へ `identities/legacy/v1/<id>` が
 付き、文書の無い catalog は開いた時点で scheme 2 になります。`identities/` 配下の
 project ファイルがあると移行は止まるので、その文書を削除し、ファイルを移して
-追加し直してください。共有 identity fixture は MRAG Plus のものとバイト単位で
-一致させました。さらに、文書の事実と、それが生むべき状態・絞り込み結果・並び順・
-ページを並べた判定表を 2 つ目の共有 fixture とし、両製品のテストが読むので、
-片方だけで規則を変えるとテストが失敗します。
+追加し直してください。identity の規則は、パスとそれが生むべき identity を並べた
+fixture で固定しました。さらに、文書の事実と、それが生むべき状態・絞り込み結果・
+並び順・ページを並べた判定表を 2 つ目の fixture として文書一覧を固定したので、
+コードだけで規則を変えるとテストが失敗します。
 
 ---
 

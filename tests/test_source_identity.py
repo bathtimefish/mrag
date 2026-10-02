@@ -1,4 +1,4 @@
-"""The OSS side of the source-identity contract shared with Plus."""
+"""The source-identity contract: canonical paths, reserved names, external and legacy identities."""
 
 import json
 import sqlite3
@@ -21,12 +21,8 @@ from mrag.core.ingestion.source_identity import (
 from mrag.db.connection import db_connection, open_connection
 
 
-def test_plus_source_identity_golden_fixture():
-    """MRAG Plus and OSS return the same identities for one shared fixture.
-
-    MRAG Plus holds the canonical copy (quality/golden/source-identity.json);
-    this one is byte-identical, so neither side can drift without a failing test.
-    """
+def test_source_identity_golden_fixture():
+    """Every path in the fixture gets exactly the identity the fixture states."""
     fixture = json.loads((Path(__file__).parent / "fixtures" / "source_identity_golden.json").read_text())
     assert fixture["scheme_version"] == SCHEME_VERSION
     assert fixture["reserved_namespace"] == RESERVED_NAMESPACE
@@ -385,7 +381,7 @@ def _relations(project):
 
 
 def test_both_identity_migrations_keep_ids_index_records_and_exclusions(tmp_path, monkeypatch):
-    """SPEC-DATA-004: a migration rewrites identities and nothing that points at a document."""
+    """A migration rewrites identities and nothing that points at a document."""
     project, add = _project(tmp_path, monkeypatch)
     outside = tmp_path / "corpus"
     outside.mkdir()

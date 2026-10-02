@@ -9,8 +9,7 @@ nobody else's: an ordinary open or ``add`` never recomputes a stored identity.
 
 Every value is read through ``read_scheme_one``, the rule a listing of an
 unmigrated catalog also uses, so what the listing shows before the migration is
-what the migration makes true. The same command exists in MRAG Plus under the
-same name, with the same plan, blockers and report.
+what the migration makes true.
 """
 
 from __future__ import annotations

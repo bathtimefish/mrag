@@ -885,7 +885,7 @@ def test_reindex_reclaims_points_orphaned_by_earlier_runs(tmp_path: Path, sample
 
 
 def test_reindex_failure_leaves_the_existing_index_searchable(tmp_path: Path, sample_txt: Path):
-    """SPEC-INDEX-008's shape: a provider outage must not cost the index.
+    """A provider outage must not cost the index.
 
     Reindex used to empty the profile before rebuilding, so an unreachable
     Ollama left the profile with no chunks, no FTS rows and no vectors at all.

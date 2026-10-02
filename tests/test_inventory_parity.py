@@ -1,9 +1,8 @@
-"""Document-list parity with MRAG Plus through a shared decision table (SPEC-CLI-006).
+"""The document list's statuses, filter, order and pages, through a decision table.
 
-MRAG Plus holds the canonical fixture (quality/golden/inventory-status.json);
-tests/fixtures/inventory_status_golden.json is a byte-identical copy, and both
-suites read their own. The facts are product-neutral: this file only turns them
-into OSS catalog rows and lets `mrag.core.ingestion.inventory` decide.
+tests/fixtures/inventory_status_golden.json states document facts and what they
+must produce. This file only turns the facts into catalog rows and lets
+`mrag.core.ingestion.inventory` decide.
 """
 
 import json

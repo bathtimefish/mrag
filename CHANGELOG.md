@@ -31,7 +31,7 @@ new envelope and, by default, only extracted documents. See *Changed*.
   catalog's stored identities to scheme 2. It shows the plan first, lists every
   document it cannot convert and changes nothing while any remains, rewrites in
   one transaction, and keeps an audit log in `logs/`. Document IDs do not change
-  and nothing is reindexed. MRAG Plus has the same command.
+  and nothing is reindexed.
 - **`identities/`** is reserved. `mrag init` writes `identities/README.md`
   saying so. `mrag add` refuses a file inside it
   (`source_identity_reserved_path`, also through a symlink); recursive add skips
@@ -40,7 +40,7 @@ new envelope and, by default, only extracted documents. See *Changed*.
 
 ### Changed
 
-- **The document list takes MRAG Plus's contract** (Native API
+- **The document list has one contract** (Native API
   `GET /api/v1/documents` and MCP `list_documents`, which return the same thing).
   The response is an envelope — `schema_version`, `status`, `profile`,
   `filter`, `total` (visible before the status filter), `returned` (after it),
@@ -77,10 +77,10 @@ stored. A project from before 1.1.0 needs no command: its rows are given
 `identities/legacy/v1/<id>` the first time the catalog is written, and a catalog
 with no documents is brought to scheme 2 when opened. A project file under
 `identities/` stops the migration; remove that document, move the file, and add
-it again. The shared identity fixture is now byte-identical to MRAG Plus's, and
-a second shared fixture — a decision table of document facts and the statuses,
-filter results, order and pages they must produce — is read by both products'
-test suites, so a rule changed in only one of them fails.
+it again. The identity rules are pinned by a fixture of paths and the identities
+they must produce, and a second fixture — a decision table of document facts and
+the statuses, filter results, order and pages they must produce — pins the
+document list, so a rule changed in the code alone fails the tests.
 
 ---
 

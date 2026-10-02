@@ -29,7 +29,7 @@ def _migrate_source_identity(conn: sqlite3.Connection) -> None:
     A catalog from before source identities gets its first identities here, under
     the current scheme. A catalog that already holds identities keeps the scheme
     it records: converting them is `mrag catalog migrate-identities`'s job, never
-    a side effect of opening the catalog (SPEC-DATA-004). The one exception is a
+    a side effect of opening the catalog. The one exception is a
     catalog holding no document, which holds no identity of any scheme and is
     recorded as current.
     """
