@@ -75,6 +75,7 @@ Use this map to locate the affected behavior, not as a required reading order.
 | CLI entry points and options | [mrag/cli](mrag/cli) | [tests](tests), especially `test_init`, `test_add`, `test_search_json`, `test_kb_info_cli` |
 | Runtime/profile configuration | [mrag/config](mrag/config) | [Profile validation](tests/test_profile_validation.py), [KB metadata](docs/kb-information.md) |
 | Ingestion and recursive selection | [mrag/core/ingestion](mrag/core/ingestion), [extractors](mrag/extractors) | [Recursive tests](tests/test_recursive_add.py), [selection rules](docs/recursive-add.md) |
+| Document sync and rebind | [sync planner](mrag/core/ingestion/sync_plan.py), [rebind planner](mrag/core/ingestion/rebind_plan.py), [CLI](mrag/cli/documents.py) | [decision table](tests/fixtures/sync_transitions_golden.json) through [test_sync_plan](tests/test_sync_plan.py); [CLI tests](tests/test_documents_sync.py); [guide](docs/document-sync.md) |
 | SQLite, FTS5, Qdrant and migration | [mrag/db](mrag/db) | `test_schema`, `test_tokenizer`, `test_db_connection`, `test_qdrant_migrate` in [tests](tests) |
 | Chunking | [mrag/core/chunking](mrag/core/chunking) | [Chunking guide](docs/chunking-strategies.md); chunking/block/parent-child tests |
 | Indexing, embedding and fallback | [indexing](mrag/core/indexing), [embedding](mrag/core/embedding) | [Indexing tests](tests/test_indexing.py), [contextual retrieval](docs/contextual-retrieval.md); embedding/augmentation fallback tests |

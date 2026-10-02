@@ -1,0 +1,372 @@
+{
+  "about": "Source-directory sync decision table (2026-09-29): the documents, exclusions and scanned files a sync sees, and the action and reason each must yield. Facts name no catalog: a suite builds its own catalog and scan from them and lets its planner decide. Content is named by a label; two entries with the same label and converter hold the same bytes converted the same way.",
+  "actions": [
+    "add",
+    "update",
+    "move",
+    "exclude",
+    "restore",
+    "noop",
+    "duplicate",
+    "adopt_candidate",
+    "blocked"
+  ],
+  "reasons": [
+    "content_changed",
+    "never_ready",
+    "file_missing",
+    "matches_document",
+    "matches_legacy_document",
+    "conversion_not_requested",
+    "ambiguous_move",
+    "already_excluded_by_sync",
+    "excluded_by_user"
+  ],
+  "exclusion_kinds": {
+    "sync": "written by a sync, covers every profile",
+    "user_all_profiles": "written by a person, covers every profile",
+    "user_one_profile": "written by a person, limited to one profile"
+  },
+  "found_cases_legend": {
+    "document": "what the file's identity has in the catalog: none | same (latest ready holds the file's content) | different | never_ready (a document with no ready revision)",
+    "content_match": "when document is none, what else holds the file's content: none | missing_document (exactly one document under the directory whose file is gone) | other_document (a bound document elsewhere) | legacy_document (a legacy_unbound document) | other_and_legacy_document",
+    "exclusions": "active rules on the file's document (or, for missing_document, on that missing document)",
+    "conversion_permitted": "whether the run may convert this file if ingesting it needs a conversion",
+    "expect.revokes_sync_exclusions": "whether the item lifts the sync-written rules"
+  },
+  "found_cases": [
+    {
+      "name": "a new file matching nothing is added",
+      "document": "none",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "add", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a new file needing a conversion the run may not perform is blocked",
+      "document": "none",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "blocked", "reason": "conversion_not_requested", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a new file holding exactly one missing document's content is a move",
+      "document": "none",
+      "content_match": "missing_document",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "move", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a move needs no conversion, so conversion permission does not matter",
+      "document": "none",
+      "content_match": "missing_document",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "move", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a move lifts the exclusion a sync wrote when the document's file vanished",
+      "document": "none",
+      "content_match": "missing_document",
+      "exclusions": ["sync"],
+      "conversion_permitted": true,
+      "expect": { "action": "move", "reason": null, "revokes_sync_exclusions": true }
+    },
+    {
+      "name": "a move never lifts a rule a person wrote",
+      "document": "none",
+      "content_match": "missing_document",
+      "exclusions": ["user_all_profiles"],
+      "conversion_permitted": true,
+      "expect": { "action": "move", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a new file holding another document's content is a duplicate",
+      "document": "none",
+      "content_match": "other_document",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "duplicate", "reason": "matches_document", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a duplicate is reported whether or not a conversion is permitted",
+      "document": "none",
+      "content_match": "other_document",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "duplicate", "reason": "matches_document", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a new file holding a legacy document's content is an adoption candidate",
+      "document": "none",
+      "content_match": "legacy_document",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "adopt_candidate", "reason": "matches_legacy_document", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a bound duplicate outranks a legacy adoption candidate",
+      "document": "none",
+      "content_match": "other_and_legacy_document",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "duplicate", "reason": "matches_document", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "an unchanged file is a noop",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "noop", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "an unchanged file that would need a conversion is still a noop",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "noop", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "an unchanged file that came back is restored",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": ["sync"],
+      "conversion_permitted": true,
+      "expect": { "action": "restore", "reason": null, "revokes_sync_exclusions": true }
+    },
+    {
+      "name": "a person's all-profile rule is left alone when the file is unchanged",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": ["user_all_profiles"],
+      "conversion_permitted": true,
+      "expect": { "action": "noop", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a person's one-profile rule is left alone when the file is unchanged",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": ["user_one_profile"],
+      "conversion_permitted": true,
+      "expect": { "action": "noop", "reason": null, "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "restore lifts only the sync's rule beside a person's",
+      "document": "same",
+      "content_match": "none",
+      "exclusions": ["sync", "user_all_profiles"],
+      "conversion_permitted": true,
+      "expect": { "action": "restore", "reason": null, "revokes_sync_exclusions": true }
+    },
+    {
+      "name": "a changed file is an update",
+      "document": "different",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "update", "reason": "content_changed", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a changed file that came back is updated and restored",
+      "document": "different",
+      "content_match": "none",
+      "exclusions": ["sync"],
+      "conversion_permitted": true,
+      "expect": { "action": "update", "reason": "content_changed", "revokes_sync_exclusions": true }
+    },
+    {
+      "name": "a changed file under a person's rule is updated and the rule is kept",
+      "document": "different",
+      "content_match": "none",
+      "exclusions": ["user_all_profiles"],
+      "conversion_permitted": true,
+      "expect": { "action": "update", "reason": "content_changed", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a changed file needing a conversion the run may not perform is blocked",
+      "document": "different",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "blocked", "reason": "conversion_not_requested", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a blocked update lifts nothing",
+      "document": "different",
+      "content_match": "none",
+      "exclusions": ["sync"],
+      "conversion_permitted": false,
+      "expect": { "action": "blocked", "reason": "conversion_not_requested", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a file whose document was never ready is an update",
+      "document": "never_ready",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "update", "reason": "never_ready", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "a never-ready document's file needing a forbidden conversion is blocked",
+      "document": "never_ready",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "blocked", "reason": "conversion_not_requested", "revokes_sync_exclusions": false }
+    }
+  ],
+  "missing_cases_legend": {
+    "document": "ready (default) | never_ready",
+    "exclusions": "active rules on the missing document"
+  },
+  "missing_cases": [
+    {
+      "name": "a missing file is excluded for every profile",
+      "document": "ready",
+      "exclusions": [],
+      "expect": { "action": "exclude", "reason": "file_missing" }
+    },
+    {
+      "name": "a missing file a sync already excluded is a noop",
+      "document": "ready",
+      "exclusions": ["sync"],
+      "expect": { "action": "noop", "reason": "already_excluded_by_sync" }
+    },
+    {
+      "name": "a missing file a person excluded everywhere is a noop",
+      "document": "ready",
+      "exclusions": ["user_all_profiles"],
+      "expect": { "action": "noop", "reason": "excluded_by_user" }
+    },
+    {
+      "name": "a missing file a person excluded for one profile is excluded for every profile",
+      "document": "ready",
+      "exclusions": ["user_one_profile"],
+      "expect": { "action": "exclude", "reason": "file_missing" }
+    },
+    {
+      "name": "a sync's rule beside a person's one-profile rule is enough",
+      "document": "ready",
+      "exclusions": ["user_one_profile", "sync"],
+      "expect": { "action": "noop", "reason": "already_excluded_by_sync" }
+    },
+    {
+      "name": "a missing file whose document was never ready is excluded all the same",
+      "document": "never_ready",
+      "exclusions": [],
+      "expect": { "action": "exclude", "reason": "file_missing" }
+    }
+  ],
+  "move_cases_legend": {
+    "missing": "documents under the directory whose files do not exist: document id, path (its identity), content label, optional converter (default native), optional exclusions",
+    "appeared": "scanned files with no document: path, content label, optional converter",
+    "expect": "one entry per item: a file entry names its path, a document entry names only the document; document ids sort in the order written"
+  },
+  "move_cases": [
+    {
+      "name": "one missing document and one new file with the same content is a move",
+      "missing": [{ "document": "doc-1", "path": "docs/old/a.md", "content": "A" }],
+      "appeared": [{ "path": "docs/new/a.md", "content": "A" }],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "move", "document": "doc-1", "previous": "docs/old/a.md", "reason": null }
+      ]
+    },
+    {
+      "name": "two pairs move independently",
+      "missing": [
+        { "document": "doc-1", "path": "docs/old/a.md", "content": "A" },
+        { "document": "doc-2", "path": "docs/old/b.md", "content": "B" }
+      ],
+      "appeared": [
+        { "path": "docs/new/a.md", "content": "A" },
+        { "path": "docs/new/b.md", "content": "B" }
+      ],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "move", "document": "doc-1", "previous": "docs/old/a.md", "reason": null },
+        { "file": "docs/new/b.md", "action": "move", "document": "doc-2", "previous": "docs/old/b.md", "reason": null }
+      ]
+    },
+    {
+      "name": "a rename that changes only letter case is a move",
+      "missing": [{ "document": "doc-1", "path": "docs/Report.md", "content": "A" }],
+      "appeared": [{ "path": "docs/report.md", "content": "A" }],
+      "expect": [
+        { "file": "docs/report.md", "action": "move", "document": "doc-1", "previous": "docs/Report.md", "reason": null }
+      ]
+    },
+    {
+      "name": "one missing document and two new copies are not paired",
+      "missing": [{ "document": "doc-1", "path": "docs/old/a.md", "content": "A" }],
+      "appeared": [
+        { "path": "docs/new/a.md", "content": "A" },
+        { "path": "docs/new/b.md", "content": "A" }
+      ],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "duplicate", "document": "doc-1", "reason": "ambiguous_move" },
+        { "file": "docs/new/b.md", "action": "duplicate", "document": "doc-1", "reason": "ambiguous_move" },
+        { "document": "doc-1", "action": "exclude", "reason": "ambiguous_move" }
+      ]
+    },
+    {
+      "name": "two missing documents and one new file are not paired",
+      "missing": [
+        { "document": "doc-1", "path": "docs/old/a.md", "content": "A" },
+        { "document": "doc-2", "path": "docs/old/b.md", "content": "A" }
+      ],
+      "appeared": [{ "path": "docs/new/a.md", "content": "A" }],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "duplicate", "document": "doc-1", "reason": "ambiguous_move" },
+        { "document": "doc-1", "action": "exclude", "reason": "ambiguous_move" },
+        { "document": "doc-2", "action": "exclude", "reason": "ambiguous_move" }
+      ]
+    },
+    {
+      "name": "two missing documents and two new files with one content are not paired",
+      "missing": [
+        { "document": "doc-1", "path": "docs/old/a.md", "content": "A" },
+        { "document": "doc-2", "path": "docs/old/b.md", "content": "A" }
+      ],
+      "appeared": [
+        { "path": "docs/new/a.md", "content": "A" },
+        { "path": "docs/new/b.md", "content": "A" }
+      ],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "duplicate", "document": "doc-1", "reason": "ambiguous_move" },
+        { "file": "docs/new/b.md", "action": "duplicate", "document": "doc-1", "reason": "ambiguous_move" },
+        { "document": "doc-1", "action": "exclude", "reason": "ambiguous_move" },
+        { "document": "doc-2", "action": "exclude", "reason": "ambiguous_move" }
+      ]
+    },
+    {
+      "name": "a file that moved and changed is a new document and an exclusion",
+      "missing": [{ "document": "doc-1", "path": "docs/old/a.md", "content": "A" }],
+      "appeared": [{ "path": "docs/new/a.md", "content": "B" }],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "add", "reason": null },
+        { "document": "doc-1", "action": "exclude", "reason": "file_missing" }
+      ]
+    },
+    {
+      "name": "the same bytes read by a different converter are not the same content",
+      "missing": [{ "document": "doc-1", "path": "docs/old/a.pdf", "content": "A", "converter": "docling" }],
+      "appeared": [{ "path": "docs/new/a.pdf", "content": "A", "converter": "markitdown" }],
+      "expect": [
+        { "file": "docs/new/a.pdf", "action": "add", "reason": null },
+        { "document": "doc-1", "action": "exclude", "reason": "file_missing" }
+      ]
+    },
+    {
+      "name": "a moved document that a sync had excluded is moved and restored",
+      "missing": [{ "document": "doc-1", "path": "docs/old/a.md", "content": "A", "exclusions": ["sync"] }],
+      "appeared": [{ "path": "docs/new/a.md", "content": "A" }],
+      "expect": [
+        { "file": "docs/new/a.md", "action": "move", "document": "doc-1", "previous": "docs/old/a.md", "reason": null, "revokes_sync_exclusions": true }
+      ]
+    }
+  ]
+}

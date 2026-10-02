@@ -238,10 +238,12 @@ def document_inventory(
     labels = ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
               if has_roots else {})
     scheme = _recorded_scheme(conn)
+    index_columns = {row[1] for row in conn.execute("PRAGMA table_info(document_indexes)")}
+    name_column = "indexed_display_name" if "indexed_display_name" in index_columns else "NULL AS indexed_display_name"
     indexes = {
         r["document_id"]: r for r in conn.execute(
-            "SELECT document_id, status, document_file_hash, extracted_hash, profile_hash "
-            "FROM document_indexes WHERE profile_name = ?",
+            "SELECT document_id, status, document_file_hash, extracted_hash, profile_hash, "
+            f"{name_column} FROM document_indexes WHERE profile_name = ?",
             (profile_name,),
         )
     }
@@ -284,7 +286,11 @@ def document_inventory(
             index_status = record["status"]
         elif (record["document_file_hash"] != row["file_hash"]
               or record["extracted_hash"] != row["extracted_hash"]
-              or record["profile_hash"] != current_hash):
+              or record["profile_hash"] != current_hash
+              # Every chunk carries the document's name, so a renamed file is
+              # stale too; a row from before names were recorded is not judged.
+              or (record["indexed_display_name"] is not None
+                  and record["indexed_display_name"] != name)):
             # Decided by comparison only: asking whether a rebuild would change
             # anything must not become a rebuild.
             index_status = "stale"
@@ -324,6 +330,23 @@ def document_inventory(
         })
     rows.sort(key=lambda item: (item["source_identity"], item["document_id"]))
     return {"profile": profile_name, "total": total, "rows": rows}
+
+
+def current_display_name(conn: sqlite3.Connection, document_id: str) -> str | None:
+    """The name a document displays under now, as the listing derives it.
+
+    Recorded by ``mrag index`` beside each index row, so the listing can tell a
+    renamed file from one indexed under its current name.
+    """
+    row = conn.execute("SELECT id, source_identity FROM documents WHERE id = ?", (document_id,)).fetchone()
+    if row is None:
+        return None
+    has_roots = conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_roots'").fetchone()
+    labels = ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
+              if has_roots else {})
+    stored = row["source_identity"] if "source_identity" in row.keys() else None
+    _identity, _binding, name = _read_identity(_recorded_scheme(conn), stored, document_id, labels)
+    return name
 
 
 def list_envelope(inventory: dict, query: InventoryQuery) -> dict:

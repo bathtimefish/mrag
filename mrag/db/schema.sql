@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS source_roots (
   root_key TEXT PRIMARY KEY,
   label TEXT NOT NULL
 );
+
+-- One-way keys of every directory above a registered root, up to the
+-- filesystem root, so a sync of an ancestor directory can find the root
+-- without anything recording where it is. Populated by: mrag add, and backfilled
+-- by mrag add / mrag documents sync --apply when they find a root that
+-- recorded none.
+CREATE TABLE IF NOT EXISTS source_root_ancestors (
+  root_key     TEXT NOT NULL,
+  ancestor_key TEXT NOT NULL,
+  PRIMARY KEY (root_key, ancestor_key)
+);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_source_identity
   ON documents(source_identity) WHERE source_identity IS NOT NULL;
 
@@ -193,6 +204,9 @@ CREATE TABLE IF NOT EXISTS document_indexes (
                         CHECK(status IN ('pending', 'indexing', 'indexed', 'error')),
   indexed_at          TEXT,
   error_message       TEXT,
+  -- The document's display name when it was indexed; NULL for a row written
+  -- before names were recorded, which is never judged stale for its name.
+  indexed_display_name TEXT,
   UNIQUE(document_id, profile_name)
 );
 
@@ -208,7 +222,10 @@ CREATE TABLE IF NOT EXISTS document_exclusions (
   profile_name TEXT,
   reason       TEXT CHECK(reason IS NULL OR length(reason) <= 1000),
   created_at   TEXT NOT NULL,
-  revoked_at   TEXT
+  revoked_at   TEXT,
+  -- Who wrote the rule: a person ('user') or mrag documents sync ('sync').
+  -- A sync lifts only its own rules when a file comes back.
+  origin       TEXT NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'sync'))
 );
 
 -- ================================================================

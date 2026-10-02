@@ -7,6 +7,47 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.3.0 — 2026-10-02
+
+### 追加
+
+- **`mrag documents sync <DIR> [--apply] [--index [--profile NAME]...] [--json]`** は、
+  catalog がディレクトリ配下にあると記録している document とディレクトリの現在の中身を
+  比較し、差分を計画として示します: `add`、`update`、`move`、`exclude`、`restore`、`noop`、
+  `duplicate`、`adopt_candidate`。`--apply` で計画を item ごとに 1 transaction ずつ実行し、
+  `logs/` に監査ログを残し、`--index` で index 済み profile をその後に再構築します。改名した
+  ファイルは document ID を保ち、消えたファイルは戻るまで全 profile から除外され、同じ移動の
+  候補が複数あるときは推測で対応付けません。mrag が取り込まない形式のファイルは失敗ではなく
+  `unsupported` として数えます。選択オプションは `mrag add --recursive` と同じです。
+  [docs/document-sync-ja.md](docs/document-sync-ja.md) を参照してください。
+- **`mrag documents rebind <DOCUMENT_ID> <FILE> [--apply] [--json]`** は、sync が手を付けない
+  場合 — 移動かつ変更されたファイル、移行された document の候補、自分で解決できる曖昧な
+  移動 — に、1 つの document を ID を保ったまま 1 つのファイルへ手で結び付けます。別の
+  document が持つパスや内容は拒否します。
+- **除外が出所を記録します。** `document_exclusions.origin` は `mrag exclusions add` で書いた
+  ルールでは `user`、sync が書いたものでは `sync` で、`mrag exclusions list --json` に表示
+  されます。sync が解除するのは自分のルールだけです。
+- **登録された source root が祖先を記録します。** `source_root_ancestors` は `mrag add` が
+  登録した root の上位ディレクトリすべての key を保持し、親ディレクトリの sync がその root の
+  document を配置できるようにします。本リリース以前に登録された root は、`add`、sync、
+  rebind が最初に見つけたときに祖先を得ます。
+- **バッチ系コマンドが境界で止まります。** `mrag add --recursive` と適用中の
+  `mrag documents sync` は `SIGINT` または `SIGTERM` を受け取ると次のファイルまたは item で
+  止まり、到達しなかったものを `cancelled`（`status: "cancelled"`、`summary.cancelled`）と
+  して報告し、ログを書いて exit 130 で終了します。2 回目のシグナルは即座にプロセスを終了
+  します。従来は `timeout`、cron、service wrapper からの `SIGTERM` で report なしに終了して
+  いました。
+
+### 変更
+
+- **文書一覧の `name_changed` を記録済みの名前から判定します。**
+  `document_indexes.indexed_display_name` は profile が index した時点の表示名を記録し、
+  現在の名前が異なる document は `reason: name_changed` の `stale` になります。従来は
+  index 時の名前の記録がなく、この freshness は報告されませんでした。
+- 本リリースが最初に開いたときに、catalog は `source_root_ancestors` テーブルと
+  `document_exclusions.origin`、`document_indexes.indexed_display_name` の列を得ます。
+  document ID、identity、index は変わりません。
+
 ## 1.2.0 — 2026-09-27
 
 **互換性のない変更:** Native API の文書一覧と MCP の `list_documents` は新しい

@@ -7,6 +7,54 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.3.0 — 2026-10-02
+
+### Added
+
+- **`mrag documents sync <DIR> [--apply] [--index [--profile NAME]...] [--json]`**
+  compares what the catalog says lives under a directory with what the
+  directory holds now and shows the difference as a plan: `add`, `update`,
+  `move`, `exclude`, `restore`, `noop`, `duplicate`, `adopt_candidate`. With
+  `--apply` it carries the plan out, one item per transaction, keeps an audit
+  log in `logs/`, and with `--index` rebuilds the indexed profiles afterwards.
+  A renamed file keeps its document ID; a file that disappeared is excluded
+  from every profile until it returns; two files that could be the same move
+  are never paired by guessing. Files mrag does not ingest are counted as
+  `unsupported`, not failed. The selection options are those of
+  `mrag add --recursive`. See [docs/document-sync.md](docs/document-sync.md).
+- **`mrag documents rebind <DOCUMENT_ID> <FILE> [--apply] [--json]`** binds one
+  document to one file by hand, keeping its ID, for the cases the sync leaves
+  alone: a file that moved and changed, a candidate for a migrated document, an
+  ambiguous move you can resolve yourself. It refuses a path or content another
+  document holds.
+- **Exclusions record their origin.** `document_exclusions.origin` is `user`
+  for rules written with `mrag exclusions add` and `sync` for the ones the sync
+  writes; `mrag exclusions list --json` shows it. A sync lifts only its own
+  rules.
+- **Registered source roots record their ancestors.** `source_root_ancestors`
+  holds the keys of every directory above a root registered by `mrag add`, so a
+  sync of a parent directory can place the root's documents. Roots registered
+  before this release gain their ancestors the first time an `add`, a sync or
+  a rebind finds them.
+- **Batch commands stop at a boundary.** `mrag add --recursive` and an applied
+  `mrag documents sync` stop at the next file or item when they receive
+  `SIGINT` or `SIGTERM`, report what they did not reach as `cancelled`
+  (`status: "cancelled"`, `summary.cancelled`), write their log and exit 130;
+  a second signal ends the process at once. Previously a `SIGTERM` from
+  `timeout`, cron or a service wrapper ended them with no report.
+
+### Changed
+
+- **`name_changed` in the document list is now decided from the recorded
+  name.** `document_indexes.indexed_display_name` records the display name a
+  document had when its profile indexed it; a document whose name differs now
+  is `stale` with `reason: name_changed`. Before, the catalog had no record of
+  the indexed name and never reported this freshness state.
+- The catalog gains the `source_root_ancestors` table and the
+  `document_exclusions.origin` and `document_indexes.indexed_display_name`
+  columns the first time this release opens it. Document IDs, identities and
+  indexes do not change.
+
 ## 1.2.0 — 2026-09-27
 
 **Breaking:** the Native API document list and MCP `list_documents` return a

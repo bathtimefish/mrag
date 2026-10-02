@@ -133,6 +133,36 @@ def root_key(root: Path) -> str:
     return hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:32]
 
 
+def ancestor_keys(root: Path) -> list[str]:
+    """One-way keys of every directory above ``root``, up to the filesystem root.
+
+    Recorded beside a root so a later sync of an ancestor directory can find
+    the root without the catalog ever storing where it is; only hashes are kept.
+    """
+    return [root_key(ancestor) for ancestor in root.resolve().parents]
+
+
+def resolve_root(source: Path, project_dir: Path, registered_roots: set[str], preferred_root: Path | None = None) -> tuple[str, Path] | None:
+    """The root ``source`` belongs to — registered or about to be — as (key, path).
+
+    ``None`` for a source inside the project, which has no root. Decided the
+    way :func:`source_identity` decides it, so the two never disagree.
+    """
+    canonical = source.resolve(strict=True)
+    project = project_dir.resolve(strict=True)
+    if canonical.is_relative_to(project):
+        return None
+    parent = canonical.parent
+    for ancestor in (parent, *parent.parents):
+        key = root_key(ancestor)
+        if key in registered_roots:
+            return key, ancestor
+    root = preferred_root.resolve(strict=True) if preferred_root is not None else parent
+    if not canonical.is_relative_to(root):
+        root = parent
+    return root_key(root), root
+
+
 def source_identity(source: Path, project_dir: Path, registered_roots: set[str], preferred_root: Path | None = None) -> tuple[str, tuple[str, str] | None]:
     """Return (identity, optional new root key/label) without writing state."""
     canonical = source.resolve(strict=True)

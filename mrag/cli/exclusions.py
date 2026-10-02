@@ -53,6 +53,7 @@ def _exclusion_payload(exclusion: DocumentExclusion) -> dict[str, Any]:
         "created_at": exclusion.created_at,
         "revoked_at": exclusion.revoked_at,
         "active": exclusion.active,
+        "origin": exclusion.origin,
     }
 
 
@@ -327,6 +328,7 @@ def exclusions_list(
     table.add_column("Document")
     table.add_column("Scope")
     table.add_column("State")
+    table.add_column("Origin")
     table.add_column("Reason")
     for exclusion in exclusions:
         filename = filenames.get(exclusion.document_id, "(document removed)")
@@ -335,6 +337,7 @@ def exclusions_list(
             f"{filename}\n{exclusion.document_id}",
             _scope(exclusion.profile_name),
             "active" if exclusion.active else "restored",
+            exclusion.origin,
             exclusion.reason or "-",
         )
     console.print(table)

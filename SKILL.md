@@ -69,6 +69,7 @@ guidance; it is not a prerequisite to reread before each command.
 | Install mrag or diagnose missing runtime dependencies | [SETUP.md](SETUP.md); `mrag doctor` |
 | Create a KB, add files, index, or export extracted text | [Tutorial](docs/tutorial.md); `mrag show-extracted` / `mrag export-extracted --help` |
 | Add a directory with filters or recover partial ingestion | [Recursive ingestion](docs/recursive-add.md) |
+| Files were renamed, edited or deleted after they were added | [Document sync](docs/document-sync.md) |
 | Populate or validate agent-facing KB metadata | [KB information](docs/kb-information.md) |
 | Select search strategy, compare results, or diagnose misses | [Retrieval strategies](docs/retrieval-strategies.md) |
 | Change chunk boundaries, preserve tables/code, or use parent-child | [Chunking strategies](docs/chunking-strategies.md) |

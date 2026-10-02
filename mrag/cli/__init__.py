@@ -34,6 +34,7 @@ from mrag.cli.doctor import doctor
 from mrag.cli.eval import eval_cmd
 from mrag.cli.exclusions import exclusions_app
 from mrag.cli.catalog import catalog_app
+from mrag.cli.documents import documents_app
 
 app = typer.Typer(
     name="mrag",
@@ -76,3 +77,4 @@ app.add_typer(registry_app, name="registry")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(exclusions_app, name="exclusions")
 app.add_typer(catalog_app, name="catalog")
+app.add_typer(documents_app, name="documents")

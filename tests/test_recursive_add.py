@@ -94,7 +94,7 @@ def test_recursive_dry_run_requires_opt_in_and_does_not_mutate_catalog(tmp_path:
         assert result.exit_code == 0, result.output
         report = json.loads(result.stdout)
         assert report["dry_run"] is True
-        assert report["summary"] == {"added": 0, "skipped": 0, "failed": 0}
+        assert report["summary"] == {"added": 0, "skipped": 0, "failed": 0, "cancelled": 0}
         assert [(item["source"], item["status"]) for item in report["items"]] == [("alpha.md", "planned")]
         assert _document_count(project) == 0
 
@@ -113,7 +113,7 @@ def test_recursive_partial_and_strict_exit_codes_preserve_successes(tmp_path: Pa
         assert partial.exit_code == 3
         report = json.loads(partial.stdout)
         assert report["status"] == "partial"
-        assert report["summary"] == {"added": 1, "skipped": 0, "failed": 1}
+        assert report["summary"] == {"added": 1, "skipped": 0, "failed": 1, "cancelled": 0}
         assert [item["source"] for item in report["items"]] == ["good.txt", "unsupported.bin"]
         assert _document_count(project) == 1
 
@@ -124,7 +124,7 @@ def test_recursive_partial_and_strict_exit_codes_preserve_successes(tmp_path: Pa
         )
         assert strict.exit_code == 1
         strict_report = json.loads(strict.stdout)
-        assert strict_report["summary"] == {"added": 0, "skipped": 1, "failed": 1}
+        assert strict_report["summary"] == {"added": 0, "skipped": 1, "failed": 1, "cancelled": 0}
         assert _document_count(project) == 1
 
 
@@ -174,7 +174,7 @@ def test_recursive_rejects_conversion_required_sources_without_blocking_plain_te
 
         assert result.exit_code == 3, result.output
         report = json.loads(result.stdout)
-        assert report["summary"] == {"added": 1, "skipped": 0, "failed": 1}
+        assert report["summary"] == {"added": 1, "skipped": 0, "failed": 1, "cancelled": 0}
         items = {item["source"]: item for item in report["items"]}
         assert items["notes.md"]["status"] == "added"
         assert items["manual.pdf"]["status"] == "failed"

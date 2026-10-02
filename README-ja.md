@@ -106,6 +106,7 @@ mrag search "クエリ"
 | `mrag mcp` | プロジェクトを read-only MCP server として公開する |
 | `mrag remove <doc-id>` | ドキュメントを削除する |
 | `mrag exclusions add \| list \| restore` | 正本を保持したまま検索対象から除外する |
+| `mrag documents sync <dir> \| rebind <doc-id> <file>` | 移動・変更・消失したファイルと document の対応を保つ |
 | `mrag profiles list \| show <name>` | プロファイルの一覧 / 詳細を表示する |
 | `mrag kb-info show \| validate \| schema` | ナレッジベース自己記述メタデータを扱う |
 | `mrag inspect document \| chunks \| chunk \| sections` | インデックスの内部構造を調査する |
@@ -122,6 +123,10 @@ mrag search "クエリ"
 duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
 を参照してください。
 
+追加後にディレクトリ配下のファイルが移動・変更・消失したときは、`mrag documents sync <dir>`
+が catalog の対応を計画として示し、`--apply` で実行します。改名しても document ID は保たれます。
+[document とファイルの同期](./docs/document-sync-ja.md)を参照してください。
+
 正本を保持したままナレッジへの寄与を止める場合は、`mrag remove`ではなくdry-runから始める
 `mrag exclusions`を使用します。cleanup、復帰、障害時挙動の詳細は
 [ドキュメントの検索除外](./docs/document-exclusions-ja.md)を参照してください。
@@ -135,6 +140,7 @@ duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰�
 
 - [tutorial-ja.md](./docs/tutorial-ja.md) — はじめての mrag（init → add → index → search の最短フロー）
 - [recursive-add-ja.md](./docs/recursive-add-ja.md) — filterと決定的reportを備えた安全な一括投入
+- [document-sync-ja.md](./docs/document-sync-ja.md) — 移動・変更・消失したファイルと catalog の対応を取り直す
 
 ### 検索 (Retrieval)
 

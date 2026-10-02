@@ -105,6 +105,7 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | `mrag mcp` | Expose the project as a read-only MCP server |
 | `mrag remove <doc-id>` | Remove a document |
 | `mrag exclusions add \| list \| restore` | Retain a document while excluding it from retrieval |
+| `mrag documents sync <dir> \| rebind <doc-id> <file>` | Keep documents in step with files that moved, changed or disappeared |
 | `mrag profiles list \| show <name>` | List or show profile details |
 | `mrag kb-info show \| validate \| schema` | Manage the knowledge-base self-description |
 | `mrag inspect document \| chunks \| chunk \| sections` | Inspect the index internals |
@@ -121,6 +122,11 @@ For directory ingestion, preview with `mrag add <dir> --recursive --dry-run
 directory ingestion](./docs/recursive-add.md) for filtering, symlink, duplicate,
 concurrency, and partial-success behavior.
 
+When files under a directory move, change or disappear after they were added,
+`mrag documents sync <dir>` shows what the catalog would do about it and
+`--apply` does it, keeping document IDs across renames. See [keeping documents
+in step with their files](./docs/document-sync.md).
+
 To stop a retained document from contributing knowledge, use the dry-run-first
 `mrag exclusions` workflow instead of `mrag remove`. See [document retrieval
 exclusions](./docs/document-exclusions.md) for cleanup, restoration, and failure
@@ -135,6 +141,7 @@ Per-feature details live under `./docs/`.
 
 - [tutorial.md](./docs/tutorial.md) — Your first mrag session (init → add → index → search)
 - [recursive-add.md](./docs/recursive-add.md) — Safe bulk ingestion with filters and deterministic reporting
+- [document-sync.md](./docs/document-sync.md) — Reconcile the catalog with files that moved, changed or disappeared
 
 ### Retrieval
 

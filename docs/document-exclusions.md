@@ -99,6 +99,11 @@ restore the exclusion merely because cleanup returned exit `3`.
 
 ## Audit exclusions
 
+Each rule records who wrote it: `origin: user` for `mrag exclusions add`, and
+`origin: sync` for the rule `mrag documents sync` writes when a document's
+file has disappeared. A sync lifts only its own rules, never yours; see
+[keeping documents in step with their files](document-sync.md).
+
 ```bash
 # Active policies only
 mrag exclusions list

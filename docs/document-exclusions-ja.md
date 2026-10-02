@@ -90,6 +90,11 @@ mrag exclusions add --document-id <DOCUMENT_ID> \
 
 ## exclusionを監査する
 
+各ルールは誰が書いたかを記録します。`mrag exclusions add` によるものは `origin: user`、
+document のファイルが消えたときに `mrag documents sync` が書くものは `origin: sync` です。
+sync が解除するのは自分のルールだけで、あなたのルールには触れません。
+[document とファイルの同期](document-sync-ja.md)を参照してください。
+
 ```bash
 # active policyだけ
 mrag exclusions list

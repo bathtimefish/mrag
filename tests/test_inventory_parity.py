@@ -25,10 +25,6 @@ FIXTURE = json.loads(
 )
 PROFILE = FIXTURE["profile"]
 SOURCE_STATUS = {"ready": "extracted", "building": "pending", "error": "error"}
-# Freshness facts mrag cannot judge yet: document_indexes records no indexed
-# document name. The table marks them, so they are skipped here rather than
-# edited out of the fixture.
-UNSUPPORTED_FRESHNESS = frozenset(FIXTURE["unsupported"]["oss"]["freshness"])
 
 
 @pytest.fixture
@@ -60,9 +56,15 @@ def _insert(conn, current_hash, document_id, identity, facts):
     )
     if facts["index"] != "none":
         freshness = facts.get("freshness", "current")
+        # The name recorded at index time: the current one, a different one for
+        # a file renamed since, or none for a row from before names were kept.
+        indexed_name = {
+            "name_changed": "cases/before-the-rename.md",
+            "name_unrecorded": None,
+        }.get(freshness, identity.rsplit("/", 1)[-1] if "/" not in identity else identity)
         conn.execute(
             "INSERT INTO document_indexes (id, knowledge_id, document_id, profile_name, document_file_hash, "
-            "extracted_hash, profile_hash, status) VALUES (?, 'kb', ?, ?, ?, 'e1', ?, ?)",
+            "extracted_hash, profile_hash, status, indexed_display_name) VALUES (?, 'kb', ?, ?, ?, 'e1', ?, ?, ?)",
             (
                 f"index-{document_id}",
                 document_id,
@@ -70,6 +72,7 @@ def _insert(conn, current_hash, document_id, identity, facts):
                 "h0" if freshness == "document_changed" else "h1",
                 "an older profile" if freshness == "profile_changed" else current_hash,
                 facts["index"],
+                indexed_name,
             ),
         )
     if facts.get("fallback"):
@@ -98,10 +101,7 @@ def _rows(project, **query):
 
 def test_every_shared_status_case_is_decided_as_the_table_says(project):
     current_hash = _current_profile_hash(project, PROFILE)
-    cases = [
-        case for case in FIXTURE["status_cases"]
-        if case.get("freshness", "current") not in UNSUPPORTED_FRESHNESS
-    ]
+    cases = FIXTURE["status_cases"]
     with sqlite3.connect(project / "mrag.db") as conn:
         for number, case in enumerate(cases):
             _insert(conn, current_hash, f"case-{number}", f"cases/{number}.md", case)
@@ -120,12 +120,6 @@ def test_every_shared_status_case_is_decided_as_the_table_says(project):
         # The intentional difference: the row's `status` is the stored value.
         assert row["status"] == SOURCE_STATUS[case["source"]], case["name"]
 
-
-def test_only_cases_the_table_marks_as_unsupported_are_skipped():
-    marked = {case["freshness"] for case in FIXTURE["status_cases"]} & UNSUPPORTED_FRESHNESS
-    assert marked == UNSUPPORTED_FRESHNESS, "every skip mark must name a case the table holds"
-    for document in FIXTURE["listing_cases"]["documents"]:
-        assert document.get("freshness", "current") not in UNSUPPORTED_FRESHNESS
 
 
 def test_every_shared_listing_case_filters_counts_and_orders_as_the_table_says(project):

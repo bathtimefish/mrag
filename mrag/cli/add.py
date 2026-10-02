@@ -8,7 +8,8 @@ import typer
 from rich.console import Console
 
 from mrag.config.project import ProjectConfig, load_project_config
-from mrag.core.ingestion.directory import scan_directory
+from mrag.core.ingestion.directory import DirectoryCandidate, scan_directory
+from mrag.core.interrupt import CANCELLED_EXIT, Interrupt
 from mrag.core.ingestion.source_identity import ReservedPathError, SchemeUnsupportedError
 from mrag.core.ingestion.document import (
     DuplicateDocumentError,
@@ -66,6 +67,8 @@ def add(
             dry_run,
         )
         _render_report(report, json_output, dry_run)
+        if report["status"] == "cancelled":
+            raise typer.Exit(CANCELLED_EXIT)
         if report["summary"]["failed"]:
             successful = len(report["items"]) - report["summary"]["failed"]
             raise typer.Exit(1 if strict or successful == 0 else 3)
@@ -150,42 +153,67 @@ def _add_directory(
         except (OSError, ValueError) as error:
             items[candidate.relative_path] = _failed(candidate.relative_path, "prepare_failed", str(error))
 
-    for candidate in scan.candidates:
-        if candidate.relative_path in items:
-            continue
-        document = prepared.get(candidate.relative_path)
-        if document is None:
-            items[candidate.relative_path] = _failed(candidate.relative_path, "prepare_failed", "Source was not prepared")
-            continue
-        try:
-            document_id, warnings = persist_prepared_document(
-                document,
-                project_dir,
-                config,
-                force=force,
-                source_root=source_root,
-            )
-            items[candidate.relative_path] = _item(
-                candidate.relative_path,
-                "added",
-                document_id=document_id,
-                original_sha256=document.file_hash,
-                warnings=warnings,
-            )
-        except DuplicateDocumentError as error:
-            items[candidate.relative_path] = _item(
-                candidate.relative_path,
-                "skipped_duplicate",
-                document_id=error.document_id,
-                original_sha256=document.file_hash,
-            )
-        except ReservedPathError as error:
-            items[candidate.relative_path] = _failed(
-                candidate.relative_path, "source_identity_reserved_path", str(error)
-            )
-        except (OSError, ValueError) as error:
-            items[candidate.relative_path] = _failed(candidate.relative_path, "persist_failed", str(error))
-    return _report(_ordered_items(items), True, False)
+    # Installed after the scan and before the first write: a SIGTERM from a
+    # supervisor ends the run at the next file boundary, and the files not
+    # reached are reported as cancelled instead of silently left out. Each
+    # file is its own transaction, so nothing is half-written.
+    interrupt = Interrupt().install()
+    cancelled = False
+    try:
+        for candidate in scan.candidates:
+            if candidate.relative_path in items:
+                continue
+            if cancelled or interrupt.is_cancelled():
+                cancelled = True
+                items[candidate.relative_path] = _item(candidate.relative_path, "cancelled")
+                continue
+            _persist_candidate(candidate, prepared, items, project_dir, config, force, source_root)
+    finally:
+        interrupt.restore()
+    return _report(_ordered_items(items), True, False, cancelled=cancelled)
+
+
+def _persist_candidate(
+    candidate: DirectoryCandidate,
+    prepared: dict[str, PreparedDocument],
+    items: dict[str, dict[str, Any]],
+    project_dir: Path,
+    config: ProjectConfig,
+    force: bool,
+    source_root: Path,
+) -> None:
+    document = prepared.get(candidate.relative_path)
+    if document is None:
+        items[candidate.relative_path] = _failed(candidate.relative_path, "prepare_failed", "Source was not prepared")
+        return
+    try:
+        document_id, warnings = persist_prepared_document(
+            document,
+            project_dir,
+            config,
+            force=force,
+            source_root=source_root,
+        )
+        items[candidate.relative_path] = _item(
+            candidate.relative_path,
+            "added",
+            document_id=document_id,
+            original_sha256=document.file_hash,
+            warnings=warnings,
+        )
+    except DuplicateDocumentError as error:
+        items[candidate.relative_path] = _item(
+            candidate.relative_path,
+            "skipped_duplicate",
+            document_id=error.document_id,
+            original_sha256=document.file_hash,
+        )
+    except ReservedPathError as error:
+        items[candidate.relative_path] = _failed(
+            candidate.relative_path, "source_identity_reserved_path", str(error)
+        )
+    except (OSError, ValueError) as error:
+        items[candidate.relative_path] = _failed(candidate.relative_path, "persist_failed", str(error))
 
 
 def _item(
@@ -216,16 +244,20 @@ def _ordered_items(items: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return [items[source] for source in sorted(items)]
 
 
-def _report(items: list[dict[str, Any]], recursive: bool, dry_run: bool) -> dict[str, Any]:
+def _report(items: list[dict[str, Any]], recursive: bool, dry_run: bool, *, cancelled: bool = False) -> dict[str, Any]:
     added = sum(item["status"] == "added" for item in items)
     skipped = sum(item["status"] == "skipped_duplicate" for item in items)
     failed = sum(item["status"] == "failed" for item in items)
-    status = "success" if failed == 0 else ("error" if failed == len(items) else "partial")
+    not_reached = sum(item["status"] == "cancelled" for item in items)
+    if cancelled:
+        status = "cancelled"
+    else:
+        status = "success" if failed == 0 else ("error" if failed == len(items) else "partial")
     return {
         "schema_version": 1,
         "command": "add",
         "status": status,
-        "summary": {"added": added, "skipped": skipped, "failed": failed},
+        "summary": {"added": added, "skipped": skipped, "failed": failed, "cancelled": not_reached},
         "items": items,
         "index_started": False,
         "recursive": recursive,
@@ -244,6 +276,8 @@ def _render_report(report: dict[str, Any], json_output: bool, dry_run: bool) -> 
             console.print(f"[yellow]Skipped:[/yellow] {item['source']} already exists")
         elif item["status"] == "planned":
             console.print(f"Would add [cyan]{item['source']}[/cyan]")
+        elif item["status"] == "cancelled":
+            console.print(f"[yellow]Cancelled:[/yellow] {item['source']} was not reached")
         else:
             console.print(f"[red]Failed:[/red] {item['source']}: {item['error']['message']}")
         if item["document_id"]:
@@ -251,7 +285,12 @@ def _render_report(report: dict[str, Any], json_output: bool, dry_run: bool) -> 
         for warning in item["warnings"]:
             console.print(f"[yellow]Warning:[/yellow] {warning}")
     summary = report["summary"]
-    console.print(f"Summary: {summary['added']} added, {summary['skipped']} skipped, {summary['failed']} failed")
+    console.print(
+        f"Summary: {summary['added']} added, {summary['skipped']} skipped, {summary['failed']} failed, "
+        f"{summary['cancelled']} cancelled"
+    )
+    if report["status"] == "cancelled":
+        console.print("[yellow]Interrupted:[/yellow] files already added were kept; run the command again for the rest.")
     if summary["added"] and not dry_run:
         console.print("  Run [bold]mrag index[/bold] to build the retrieval index.")
 

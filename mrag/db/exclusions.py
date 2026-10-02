@@ -22,6 +22,10 @@ class DocumentExclusion:
     reason: str | None
     created_at: str
     revoked_at: str | None
+    # Who wrote the rule: "user" (a person, through `mrag exclusions add`,
+    # `mrag remove`, or an older release) or "sync" (`mrag documents sync`,
+    # which lifts only its own rules when a file comes back).
+    origin: str = "user"
 
     @property
     def active(self) -> bool:
@@ -42,7 +46,8 @@ def ensure_exclusions_schema(conn: sqlite3.Connection) -> None:
           profile_name TEXT,
           reason       TEXT CHECK(reason IS NULL OR length(reason) <= 1000),
           created_at   TEXT NOT NULL,
-          revoked_at   TEXT
+          revoked_at   TEXT,
+          origin       TEXT NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'sync'))
         );
 
         CREATE INDEX IF NOT EXISTS idx_document_exclusions_document
@@ -58,6 +63,13 @@ def ensure_exclusions_schema(conn: sqlite3.Connection) -> None:
           WHERE profile_name IS NOT NULL AND revoked_at IS NULL;
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(document_exclusions)")}
+    if "origin" not in columns:
+        # A table from before 1.3 holds only rules a person wrote.
+        conn.execute(
+            "ALTER TABLE document_exclusions ADD COLUMN origin TEXT NOT NULL DEFAULT 'user' "
+            "CHECK(origin IN ('user', 'sync'))"
+        )
 
 
 def exclusions_schema_exists(conn: sqlite3.Connection) -> bool:
@@ -75,6 +87,8 @@ def _from_row(row: sqlite3.Row) -> DocumentExclusion:
         reason=row["reason"],
         created_at=row["created_at"],
         revoked_at=row["revoked_at"],
+        # Selected by the sync; an older query leaves it at the default.
+        origin=row["origin"] if "origin" in row.keys() else "user",
     )
 
 
@@ -181,10 +195,14 @@ def create_exclusion(
     document_id: str,
     profile_name: str | None,
     reason: str | None,
+    *,
+    origin: str = "user",
 ) -> DocumentExclusion:
     normalized_reason = reason.strip() if reason and reason.strip() else None
     if normalized_reason and len(normalized_reason) > 1000:
         raise ValueError("exclusion reason must be at most 1000 characters")
+    if origin not in ("user", "sync"):
+        raise ValueError("exclusion origin must be 'user' or 'sync'")
     exclusion = DocumentExclusion(
         id=str(uuid.uuid4()),
         document_id=document_id,
@@ -192,19 +210,21 @@ def create_exclusion(
         reason=normalized_reason,
         created_at=_now_iso(),
         revoked_at=None,
+        origin=origin,
     )
     with db_connection(db_path) as conn:
         ensure_exclusions_schema(conn)
         conn.execute(
             """INSERT INTO document_exclusions
-               (id, document_id, profile_name, reason, created_at, revoked_at)
-               VALUES (?, ?, ?, ?, ?, NULL)""",
+               (id, document_id, profile_name, reason, created_at, revoked_at, origin)
+               VALUES (?, ?, ?, ?, ?, NULL, ?)""",
             (
                 exclusion.id,
                 exclusion.document_id,
                 exclusion.profile_name,
                 exclusion.reason,
                 exclusion.created_at,
+                exclusion.origin,
             ),
         )
     return exclusion
@@ -250,3 +270,32 @@ __all__ = [
     "list_exclusions",
     "revoke_exclusion",
 ]
+
+
+def active_exclusions_by_document(conn: sqlite3.Connection) -> dict[str, list[DocumentExclusion]]:
+    """Every active rule, grouped by document, with who wrote it.
+
+    Read through an open connection so the sync sees the catalog it is about to
+    plan against, not a second snapshot.
+    """
+    if not exclusions_schema_exists(conn):
+        return {}
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(document_exclusions)")}
+    origin = "origin" if "origin" in columns else "'user' AS origin"
+    grouped: dict[str, list[DocumentExclusion]] = {}
+    for row in conn.execute(
+        f"""SELECT id, document_id, profile_name, reason, created_at, revoked_at, {origin}
+            FROM document_exclusions WHERE revoked_at IS NULL ORDER BY created_at, id"""
+    ):
+        grouped.setdefault(row["document_id"], []).append(_from_row(row))
+    return grouped
+
+
+def revoke_exclusions(conn: sqlite3.Connection, exclusion_ids: list[str]) -> None:
+    """Revoke the named rules in the caller's transaction; a revoked one stays as it is."""
+    revoked_at = _now_iso()
+    for exclusion_id in exclusion_ids:
+        conn.execute(
+            "UPDATE document_exclusions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (revoked_at, exclusion_id),
+        )
