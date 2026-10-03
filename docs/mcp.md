@@ -108,6 +108,10 @@ Common variables:
 | `MRAG_MCP_API_KEY` | HTTP bearer token |
 | `MRAG_MCP_API_KEY_FILE` | File containing the HTTP bearer token |
 
+The token file is read before `MRAG_MCP_API_KEY`. An empty file supplies no token,
+so the variables decide; a file that holds only whitespace stops the HTTP server
+and `mrag mcp validate` with an error rather than serving without authentication.
+
 ## Helper commands
 
 ```bash

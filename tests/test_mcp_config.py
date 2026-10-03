@@ -11,6 +11,7 @@ from mrag.config.mcp import (
     effective_config_dict,
     load_mcp_config,
     mcp_json_schema,
+    resolve_auth_token,
     resolve_mcp_config,
 )
 
@@ -107,6 +108,54 @@ def test_effective_config_masks_secret(tmp_path: Path, monkeypatch):
 
     assert data["auth"]["bearer_token_resolved"] == "***"
     assert "secret" not in json.dumps(data)
+
+
+def _http_config(tmp_path: Path, monkeypatch):
+    project_dir = _init_project(tmp_path, monkeypatch)
+    return load_mcp_config(
+        env={"MRAG_PROJECT_DIR": str(project_dir), "MRAG_MCP_TRANSPORT": "streamable-http"}
+    )
+
+
+def test_an_empty_token_file_leaves_the_token_to_the_variables(tmp_path: Path, monkeypatch):
+    # An empty file used to resolve to an empty token and stop there, so a
+    # MRAG_MCP_API_KEY set beside it was ignored and the server ran without
+    # authentication.
+    cfg = _http_config(tmp_path, monkeypatch)
+    token_file = tmp_path / "token"
+    token_file.write_text("", encoding="utf-8")
+    env = {"MRAG_MCP_API_KEY_FILE": str(token_file), "MRAG_MCP_API_KEY": "direct-secret"}
+
+    assert resolve_auth_token(cfg, env=env) == "direct-secret"
+
+
+def test_a_token_file_of_whitespace_refuses_the_http_server(tmp_path: Path, monkeypatch):
+    cfg = _http_config(tmp_path, monkeypatch)
+    token_file = tmp_path / "token"
+    token_file.write_text(" \n\t\n", encoding="utf-8")
+    env = {"MRAG_MCP_API_KEY_FILE": str(token_file), "MRAG_MCP_API_KEY": "direct-secret"}
+
+    with pytest.raises(ValueError, match="MRAG_MCP_API_KEY_FILE"):
+        resolve_auth_token(cfg, env=env)
+
+
+def test_a_token_file_of_whitespace_does_not_stop_a_stdio_server(tmp_path: Path, monkeypatch):
+    # Over stdio nothing authenticates, so the token is never used.
+    project_dir = _init_project(tmp_path, monkeypatch)
+    cfg = load_mcp_config(env={"MRAG_PROJECT_DIR": str(project_dir)})
+    token_file = tmp_path / "token"
+    token_file.write_text(" \n", encoding="utf-8")
+
+    assert resolve_auth_token(cfg, env={"MRAG_MCP_API_KEY_FILE": str(token_file)}) is None
+
+
+def test_a_token_file_with_a_token_outranks_the_variables(tmp_path: Path, monkeypatch):
+    cfg = _http_config(tmp_path, monkeypatch)
+    token_file = tmp_path / "token"
+    token_file.write_text("file-secret\n", encoding="utf-8")
+    env = {"MRAG_MCP_API_KEY_FILE": str(token_file), "MRAG_MCP_API_KEY": "direct-secret"}
+
+    assert resolve_auth_token(cfg, env=env) == "file-secret"
 
 
 def test_top_k_default_must_not_exceed_max(tmp_path: Path, monkeypatch):
