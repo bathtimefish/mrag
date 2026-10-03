@@ -115,7 +115,7 @@ candidate or scan issue:
   "schema_version": 1,
   "command": "add",
   "status": "partial",
-  "summary": {"added": 4, "skipped": 2, "failed": 1},
+  "summary": {"added": 4, "skipped": 2, "failed": 1, "cancelled": 0},
   "items": [
     {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
     {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
@@ -135,10 +135,21 @@ candidate or scan issue:
 | `3` | Partial success in the default best-effort mode. Successful documents remain registered. |
 | `1` | Every item failed, or at least one item failed with `--strict`. |
 | `2` | Invalid CLI usage. |
+| `130` | Interrupted: the run stopped at a file boundary. See below. |
 
 `--strict` changes the exit code; it does not make ingestion atomic and does not
 roll back earlier successes. After correcting failed items, rerun the command:
 previous successes safely become `skipped_duplicate` unless `--force` is used.
+
+## Stopping a run
+
+A recursive add stops at the next file boundary when it receives `SIGINT`
+(Ctrl-C) or `SIGTERM` — what `timeout`, cron, systemd and service wrappers
+send. Files already added are kept, the files not reached are reported as
+`cancelled` (counted in `summary.cancelled`), the report says
+`status: "cancelled"` and the exit code is 130. Running the command again
+finishes the work: earlier successes become `skipped_duplicate`. A second
+signal ends the process at once, with no report.
 
 Run `mrag index` only after the ingestion report is acceptable. See the
 [tutorial](./tutorial.md) for the full add → index → search lifecycle.

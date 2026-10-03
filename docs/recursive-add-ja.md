@@ -105,7 +105,7 @@ mragは既存document IDを維持して抽出recordを置換します。
   "schema_version": 1,
   "command": "add",
   "status": "partial",
-  "summary": {"added": 4, "skipped": 2, "failed": 1},
+  "summary": {"added": 4, "skipped": 2, "failed": 1, "cancelled": 0},
   "items": [
     {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
     {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
@@ -125,10 +125,20 @@ mragは既存document IDを維持して抽出recordを置換します。
 | `3` | defaultのbest-effort modeで部分成功。成功したdocumentは登録済みのまま。 |
 | `1` | 全itemが失敗、または`--strict`指定中に1件以上失敗。 |
 | `2` | CLIの使用方法が不正。 |
+| `130` | 中断された。実行はファイルの境界で止まった。下記参照。 |
 
 `--strict`が変更するのはexit codeであり、投入をatomicにはせず、先に成功したdocumentを
 rollbackしません。失敗原因の修正後に再実行すると、`--force`を指定しない限り以前の成功分は
 安全に`skipped_duplicate`になります。
+
+## 実行を止める
+
+再帰追加は `SIGINT`（Ctrl-C）または `SIGTERM` — `timeout`、cron、systemd、service wrapper
+が送るもの — を受け取ると、次のファイルの境界で止まります。追加済みのファイルは保たれ、
+到達しなかったファイルは `cancelled` として報告され（`summary.cancelled` に数えます）、
+report は `status: "cancelled"`、exit code は 130 です。もう一度実行すれば残りが完了し、
+先の成功分は `skipped_duplicate` になります。2 回目のシグナルは report なしで即座に
+プロセスを終了します。
 
 ingestion reportを確認してから`mrag index`を実行してください。add → index → searchの全体像は
 [チュートリアル](./tutorial-ja.md)を参照してください。

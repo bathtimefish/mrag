@@ -9,7 +9,9 @@ from pathlib import Path
 from mrag.config.project import ProjectConfig
 from mrag.core.ingestion.source_identity import (
     SCHEME_KEY,
+    ancestor_keys,
     require_scheme,
+    resolve_root,
     restore_identities_notice,
     source_identity,
 )
@@ -110,6 +112,10 @@ def persist_prepared_document(
         require_scheme(scheme["value"] if scheme else None)
         roots = {r["root_key"] for r in conn.execute("SELECT root_key FROM source_roots")}
         identity, new_root = source_identity(file_path, project_dir, roots, source_root)
+        # The root this file uses, new or registered: its ancestors are recorded
+        # either way, which is how a root registered before ancestors were
+        # recorded gains them the next time a command finds its directory.
+        located_root = resolve_root(file_path, project_dir, roots, source_root)
         existing = conn.execute(
             "SELECT id, filename, file_hash FROM documents WHERE source_identity = ?",
             (identity,),
@@ -169,6 +175,8 @@ def persist_prepared_document(
     with db_connection(db_path) as conn:
         if new_root is not None:
             conn.execute("INSERT OR IGNORE INTO source_roots (root_key, label) VALUES (?, ?)", new_root)
+        if located_root is not None:
+            record_root_ancestors(conn, located_root[0], located_root[1])
         # A content match under another source keeps that document's identity
         # and name: --force re-extracts it and never rebinds it to this path.
         filename = existing["filename"] if existing and not same_source else file_path.name
@@ -198,6 +206,17 @@ def persist_prepared_document(
     # reserved directory back on the first add that writes.
     restore_identities_notice(project_dir)
     return document_id, result.warnings
+
+
+def record_root_ancestors(conn, key: str, root: Path) -> None:
+    """Record every directory above ``root`` for the root ``key``; additive and idempotent."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_root_ancestors'").fetchone():
+        return
+    for ancestor in ancestor_keys(root):
+        conn.execute(
+            "INSERT OR IGNORE INTO source_root_ancestors (root_key, ancestor_key) VALUES (?, ?)",
+            (key, ancestor),
+        )
 
 
 def get_document(document_id: str, db_path: Path) -> dict | None:

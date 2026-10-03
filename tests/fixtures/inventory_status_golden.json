@@ -60,15 +60,6 @@
       "source_type"
     ]
   },
-  "unsupported": {
-    "oss": {
-      "freshness": [
-        "name_changed",
-        "name_unrecorded"
-      ],
-      "why": "mrag's document_indexes records no indexed document name, so a renamed file cannot be judged stale there yet; its suite skips these freshness cases."
-    }
-  },
   "status_cases": [
     {
       "name": "ready, never indexed",

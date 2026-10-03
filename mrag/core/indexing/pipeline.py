@@ -23,6 +23,7 @@ from mrag.core.indexing.context_prompt_template import (
 )
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
+from mrag.core.ingestion.inventory import current_display_name
 from mrag.db.exclusions import active_document_ids
 from mrag.db.qdrant import (
     delete_points,
@@ -200,20 +201,25 @@ def _set_indexing_status(db_path: Path, document_id: str, profile_name: str, kno
     now = _now_iso()
     row_id = str(uuid.uuid4())
     with db_connection(db_path) as conn:
+        # The name the chunks are built under, so the listing can tell a file
+        # renamed after indexing from one indexed under its current name.
+        indexed_name = current_display_name(conn, document_id)
         conn.execute(
             """INSERT INTO document_indexes
                (id, knowledge_id, document_id, profile_name,
-                document_file_hash, extracted_hash, profile_hash, status, indexed_at, error_message)
-               VALUES (?,?,?,?,?,?,?,'indexing',NULL,NULL)
+                document_file_hash, extracted_hash, profile_hash, status, indexed_at, error_message,
+                indexed_display_name)
+               VALUES (?,?,?,?,?,?,?,'indexing',NULL,NULL,?)
                ON CONFLICT(document_id, profile_name) DO UPDATE SET
                  document_file_hash=excluded.document_file_hash,
                  extracted_hash=excluded.extracted_hash,
                  profile_hash=excluded.profile_hash,
                  status='indexing',
                  indexed_at=NULL,
-                 error_message=NULL""",
+                 error_message=NULL,
+                 indexed_display_name=excluded.indexed_display_name""",
             (row_id, knowledge_id, document_id, profile_name,
-             file_hash, extracted_hash, profile_hash),
+             file_hash, extracted_hash, profile_hash, indexed_name),
         )
 
 

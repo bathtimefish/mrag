@@ -98,11 +98,54 @@ def _migrate_source_identity(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_sync_schema(conn: sqlite3.Connection) -> None:
+    """Add what `mrag documents sync` reads and writes, without touching any row.
+
+    Three additive pieces: the ancestors of each source root, who wrote each
+    exclusion, and the name a document had when it was indexed. Existing rows
+    keep their meaning — an exclusion from before this release was a person's,
+    an index row from before it recorded no name and is not judged for one, and
+    a root registered before ancestors were recorded gains them when a command
+    next finds its directory.
+    """
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "documents" not in tables:
+        return
+    statements = []
+    if "source_roots" in tables and "source_root_ancestors" not in tables:
+        statements.append(
+            "CREATE TABLE IF NOT EXISTS source_root_ancestors "
+            "(root_key TEXT NOT NULL, ancestor_key TEXT NOT NULL, PRIMARY KEY (root_key, ancestor_key))"
+        )
+    if "document_exclusions" in tables:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(document_exclusions)")}
+        if "origin" not in columns:
+            statements.append(
+                "ALTER TABLE document_exclusions ADD COLUMN origin TEXT NOT NULL DEFAULT 'user' "
+                "CHECK(origin IN ('user', 'sync'))"
+            )
+    if "document_indexes" in tables:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(document_indexes)")}
+        if "indexed_display_name" not in columns:
+            statements.append("ALTER TABLE document_indexes ADD COLUMN indexed_display_name TEXT")
+    if not statements:
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for statement in statements:
+            conn.execute(statement)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 @contextmanager
 def db_connection(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
     conn = open_connection(db_path)
     try:
         _migrate_source_identity(conn)
+        _migrate_sync_schema(conn)
         yield conn
         conn.commit()
     except Exception:
