@@ -52,6 +52,7 @@ REASONS = (
     "matches_document",
     "matches_legacy_document",
     "conversion_not_requested",
+    "converter_differs",
     "ambiguous_move",
     "already_excluded_by_sync",
     "excluded_by_user",
@@ -364,9 +365,20 @@ def _decide_found(source: ScannedSource, document: SyncDocument) -> SyncPlanItem
         else:
             action, reason, revoke = "noop", None, []
     else:
-        changed = "content_changed" if document.content is not None else "never_ready"
+        if document.content is None:
+            changed = "never_ready"
+        elif document.content.content_hash == source.content.content_hash:
+            # The same bytes read by another converter, or with other options:
+            # said so whether or not the run may convert. mrag stores sources
+            # as given, so its own converter never differs; the rule is the
+            # shared table's, read whole.
+            changed = "converter_differs"
+        else:
+            changed = "content_changed"
         if source.conversion_permitted:
             action, reason, revoke = "update", changed, sync_exclusions
+        elif changed == "converter_differs":
+            action, reason, revoke = "blocked", changed, []
         else:
             action, reason, revoke = "blocked", "conversion_not_requested", []
     return SyncPlanItem(

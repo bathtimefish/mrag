@@ -27,6 +27,15 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   に追加された PDF は blob として。新設の `limits.artifact_max_bytes`（既定 1 MiB）を
   超えるものは切り詰めずに拒否します。
 
+### 変更
+
+- **sync の計画器が理由 `converter_differs` を扱う:** バイト列は保存済み
+  revision と同じで、今回の実行が別の converter か別のオプションで読むファイルは、
+  `content_changed` / `conversion_not_requested` ではなくこの理由で `update` または
+  `blocked` になります。mrag は source を受け取ったまま保存するので、mrag 自身の
+  sync がこれを報告することはありません。計画器を検証する判定表が、変換を伴う
+  source も記述しているためです。
+
 ### 互換性
 
 追加のみです。既存のフィールドは変わらず、Dify の `/retrieval` endpoint にも影響

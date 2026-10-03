@@ -28,6 +28,15 @@ kept; the repository history is the record for those releases.
   PDF added before 1.0.0 as a blob — and refuses one larger than the new
   `limits.artifact_max_bytes` (1 MiB by default) rather than cutting it.
 
+### Changed
+
+- **The sync planner knows the reason `converter_differs`:** a file whose bytes
+  are the stored revision's but that the run would read with another converter,
+  or with other options, is an `update` or a `blocked` item for that reason
+  rather than for `content_changed` / `conversion_not_requested`. mrag stores
+  its sources as given, so its own syncs never report it; the decision table
+  the planner is checked against describes converted sources too.
+
 ### Compatibility
 
 Additive: existing fields are unchanged, and the Dify `/retrieval` endpoint is
