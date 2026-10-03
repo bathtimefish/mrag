@@ -18,6 +18,7 @@
     "matches_document",
     "matches_legacy_document",
     "conversion_not_requested",
+    "converter_differs",
     "ambiguous_move",
     "already_excluded_by_sync",
     "excluded_by_user"
@@ -28,7 +29,7 @@
     "user_one_profile": "written by a person, limited to one profile"
   },
   "found_cases_legend": {
-    "document": "what the file's identity has in the catalog: none | same (latest ready holds the file's content) | different | never_ready (a document with no ready revision)",
+    "document": "what the file's identity has in the catalog: none | same (latest ready holds the file's content) | different | same_bytes_other_converter (latest ready holds the file's bytes, read by a converter this run would not use or with other options) | never_ready (a document with no ready revision)",
     "content_match": "when document is none, what else holds the file's content: none | missing_document (exactly one document under the directory whose file is gone) | other_document (a bound document elsewhere) | legacy_document (a legacy_unbound document) | other_and_legacy_document",
     "exclusions": "active rules on the file's document (or, for missing_document, on that missing document)",
     "conversion_permitted": "whether the run may convert this file if ingesting it needs a conversion",
@@ -202,6 +203,22 @@
       "exclusions": ["sync"],
       "conversion_permitted": false,
       "expect": { "action": "blocked", "reason": "conversion_not_requested", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "unchanged bytes the run would read with another converter are an update that says so",
+      "document": "same_bytes_other_converter",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": true,
+      "expect": { "action": "update", "reason": "converter_differs", "revokes_sync_exclusions": false }
+    },
+    {
+      "name": "unchanged bytes the run would read with another converter, without permission to convert, are blocked for that reason",
+      "document": "same_bytes_other_converter",
+      "content_match": "none",
+      "exclusions": [],
+      "conversion_permitted": false,
+      "expect": { "action": "blocked", "reason": "converter_differs", "revokes_sync_exclusions": false }
     },
     {
       "name": "a file whose document was never ready is an update",

@@ -85,6 +85,16 @@ Field semantics:
       "metadata": {
         "chunk_index": 12,
         "retrieval_score": 0.42
+      },
+      "reference": {
+        "display_name": "manuals/manual.md",
+        "source_binding_status": "project_relative",
+        "source_path": "manuals/manual.md",
+        "original": "data/documents/<document_id>/original.md",
+        "extracted_markdown": "data/documents/<document_id>/extracted.md",
+        "resource": "mrag://documents/<document_id>/original",
+        "revision_id": null,
+        "location": { "source_format": "markdown", "source_start": null, "source_end": null }
       }
     }
   ]
@@ -98,6 +108,18 @@ Field semantics:
 - **`results[].chunk_id`** — The chunk's DB primary key. You can pass it directly to [mrag inspect chunk](./inspect.md) for further inspection.
 - **`results[].score`** — The retrieval strategy's native score (when reranking is enabled, this is replaced by the CrossEncoder output. **No `[0, 1]` normalization is applied here, unlike the Dify API**).
 - **`results[].metadata.retrieval_score`** — Present only when reranking is enabled. The score before reranking (→ [reranking.md](./reranking.md)).
+- **`results[].reference`** — Where the result's text came from, in a form a citation can use. `mrag search --json` and the MCP `search` tool return the same object. Every field is always present; a value that does not apply is `null`, and every path is project-relative:
+  - `display_name`, `source_binding_status` — the document's name and how its source is bound, exactly as `GET /api/v1/documents` reports them.
+  - `source_path` — the source file when it lives in the project; `null` for an external root (the catalog does not record where one is on disk) and for a `legacy_unbound` row.
+  - `original`, `extracted_markdown` — the stored original and the Markdown extraction.
+  - `resource` — the MCP resource that serves the stored original.
+  - `revision_id` — always `null`: a document keeps one extraction.
+  - `location.source_format` — which extraction the chunk was cut from (`markdown` or `text`); `source_start` and `source_end` are `null`, because chunks do not record their character range.
+
+The extraction a reference names is the document's current one. After a source
+file is updated and before `mrag index` runs again, it may no longer contain the
+result's text — `GET /api/v1/documents` reports that document as `stale`
+meanwhile. Run `mrag index` before citing it.
 
 Active document exclusions are enforced for every strategy before results are
 returned. Because an exclusion retains the source document, the same document

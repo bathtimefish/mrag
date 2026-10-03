@@ -132,6 +132,12 @@ MVP では read-only tools のみ公開します。
 | `inspect_chunk` | 1 chunk の本文/context を確認 |
 | `inspect_sections` | heading / parent-child 構造を確認 |
 
+`search` の各結果は `reference` を持ちます — document の名前、保存された原本と
+抽出物（project root からの相対パス）、`mrag://documents/{document_id}/original`
+リソース。agent は読んだものを引用できます。`mrag search --json` と
+`POST /api/v1/retrieve` が返すのと同じオブジェクトで、各フィールドは
+[ネイティブ API](./native-api-ja.md) を参照してください。
+
 `search` toolはactiveなdocument exclusionを適用します。sourceは保持されるため、除外documentも
 `list_documents`には引き続き現れます。exclusion管理は意図的にCLI限定です。詳細は
 [ドキュメントの検索除外](./document-exclusions-ja.md)を参照してください。
@@ -151,10 +157,17 @@ mrag://documents
 mrag://documents/{document_id}
 mrag://documents/{document_id}/extracted.txt
 mrag://documents/{document_id}/extracted.md
+mrag://documents/{document_id}/original
 mrag://chunks/{chunk_id}
 ```
 
 大きな本文は `limits.content_max_chars` に従って切り詰められます。
+
+`.../original` は保存された原本を、追加時に記録された種類で返します。Markdown や
+text のファイルは text として、1.0.0 より前に追加された PDF は blob として返します。
+text か blob かはこの種類で決まり、バイト列がたまたま decode できるかどうかでは
+決まりません。`limits.artifact_max_bytes`（既定 1 MiB）を超える原本は切り詰めずに
+拒否します。その場合は project から直接読んでください。
 
 ## Streamable HTTP
 

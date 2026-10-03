@@ -70,8 +70,14 @@ def test_every_shared_found_case_is_decided_as_the_table_says():
         kinds = case["exclusions"]
         documents, scope = [], []
         fact = case["document"]
-        if fact in ("same", "different", "never_ready"):
-            held = {"same": file_content, "different": content("G"), "never_ready": None}[fact]
+        if fact in ("same", "different", "same_bytes_other_converter", "never_ready"):
+            held = {
+                "same": file_content,
+                "different": content("G"),
+                # The file's bytes, read by a converter this run would not use.
+                "same_bytes_other_converter": content("F", "markitdown"),
+                "never_ready": None,
+            }[fact]
             documents.append(SyncDocument("found", FOUND, held, exclusions(kinds)))
             scope.append("found")
         elif fact != "none":

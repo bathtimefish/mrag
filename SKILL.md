@@ -129,7 +129,12 @@ Context prompt templates must retain `{document}` and `{chunk}` placeholders.
 ## Retrieval and evidence
 
 Use `mrag search "<query>" --json` for machine-readable results. Omit `--top-k`
-to respect the profile's configured count. Use `eval` when duplicate detection
+to respect the profile's configured count. Cite a result through its
+`reference`: the document's `display_name`, the project-relative `original` and
+`extracted_markdown`, and the `mrag://documents/<id>/original` MCP resource. The
+extraction named is the document's current one; when the document list
+(`GET /api/v1/documents`, MCP `list_documents`) reports it `stale`, re-index
+before citing. Use `eval` when duplicate detection
 or profile comparison is needed, and `inspect` for selected chunks rather than
 loading every chunk body. Multi-profile chunk/section inspection needs an
 explicit `--profile`.

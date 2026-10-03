@@ -1,6 +1,7 @@
 """FastMCP adapter for mrag."""
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 from mrag.config.mcp import EffectiveMcpConfig
@@ -10,6 +11,9 @@ from mrag.mcp.resources import (
     documents_resource,
     extracted_resource,
     kb_info_resource,
+    original_document_id,
+    original_mime_type,
+    original_resource,
     profile_resource,
     profiles_resource,
 )
@@ -82,7 +86,22 @@ def build_fastmcp(effective: EffectiveMcpConfig):
     raw = effective.raw
     ctx = McpToolContext(effective)
 
-    server = FastMCP(
+    class _Server(FastMCP):
+        """Serves a stored original in the MIME type of its own document.
+
+        A resource template carries one MIME type for every URI it matches,
+        and an original is Markdown for one document and a PDF for another.
+        """
+
+        async def read_resource(self, uri):
+            contents = await super().read_resource(uri)
+            document_id = original_document_id(str(uri))
+            if document_id is None:
+                return contents
+            mime_type = original_mime_type(ctx, document_id)
+            return [dataclasses.replace(item, mime_type=mime_type) for item in contents]
+
+    server = _Server(
         "mrag",
         instructions=(
             "Read-only MCP server for an mrag knowledge base. "
@@ -199,6 +218,16 @@ def build_fastmcp(effective: EffectiveMcpConfig):
         @server.resource("mrag://documents/{document_id}/extracted.md", mime_type="text/markdown")
         def extracted_md(document_id: str) -> str:
             return extracted_resource(ctx, document_id, "md")
+
+        # Each read answers in its document's own type; this one only describes
+        # the template.
+        @server.resource(
+            "mrag://documents/{document_id}/original",
+            mime_type="application/octet-stream",
+            description="A document's stored original, as text or as a blob by its recorded type.",
+        )
+        def original(document_id: str) -> str | bytes:
+            return original_resource(ctx, document_id)
 
         @server.resource("mrag://chunks/{chunk_id}", mime_type="application/json")
         def chunk(chunk_id: str) -> str:
