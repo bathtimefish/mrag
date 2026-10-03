@@ -7,6 +7,21 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.4.1 — 2026-10-04
+
+### Fixed
+
+- **An empty token file no longer turns HTTP authentication off.** When
+  `MRAG_MCP_API_KEY_FILE` named an empty file, the token resolved to an empty
+  string and resolution stopped there, so a `MRAG_MCP_API_KEY` set beside it was
+  ignored and `mrag mcp` served over streamable HTTP without authentication. An
+  empty file now supplies no token and the variables decide, as an exported but
+  empty variable does.
+- **A token file that holds only whitespace is refused.** It was meant to carry a
+  token, so the HTTP server and `mrag mcp validate` now stop with an error that
+  names the variable, instead of serving without one. Over stdio, where nothing
+  authenticates, it is ignored.
+
 ## 1.4.0 — 2026-10-03
 
 ### Added
