@@ -133,6 +133,13 @@ The MVP server exposes read-only tools:
 | `inspect_chunk` | Inspect one chunk with content/context |
 | `inspect_sections` | Inspect heading or parent-child structure |
 
+Each `search` result carries a `reference` — the document's name, its stored
+original and extraction (project-relative paths), and the
+`mrag://documents/{document_id}/original` resource — so an agent can cite what
+it read. It is the object `mrag search --json` and `POST /api/v1/retrieve`
+return; see [the native API](./native-api.md#post-apiv1retrieve--retrieval) for
+every field.
+
 The `search` tool honors active document exclusions. `list_documents` still
 lists an excluded document because its source is retained. Exclusion management
 is intentionally CLI-only; see [document retrieval exclusions](./document-exclusions.md).
@@ -152,10 +159,17 @@ mrag://documents
 mrag://documents/{document_id}
 mrag://documents/{document_id}/extracted.txt
 mrag://documents/{document_id}/extracted.md
+mrag://documents/{document_id}/original
 mrag://chunks/{chunk_id}
 ```
 
 Large content is truncated according to `limits.content_max_chars`.
+
+`.../original` serves the stored original in the type recorded when it was
+added: a Markdown or text file as text, a PDF added before 1.0.0 as a blob.
+Text or blob follows from that type, not from whether the bytes happen to
+decode. An original larger than `limits.artifact_max_bytes` (1 MiB by default)
+is refused rather than cut — read it from the project instead.
 
 ## Streamable HTTP
 

@@ -36,33 +36,63 @@ from mrag.core.ingestion.source_identity import (
 )
 
 
-def _recorded_scheme(conn: sqlite3.Connection) -> int:
+def recorded_scheme(conn: sqlite3.Connection) -> int:
+    """The source-identity scheme the catalog records, or the unrecorded marker."""
     has_settings = conn.execute("SELECT 1 FROM sqlite_master WHERE name='catalog_settings'").fetchone()
     row = (conn.execute("SELECT value FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)).fetchone()
            if has_settings else None)
     return int(row[0]) if row else SCHEME_UNRECORDED
 
 
-def _read_identity(scheme: int, stored: str | None, document_id: str, labels: dict[str, str]) -> tuple[str, str, str]:
-    """Return (listed identity, binding, display name) for one stored value.
+def root_labels(conn: sqlite3.Connection) -> dict[str, str]:
+    """Every registered source root's label, by root key."""
+    has_roots = conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_roots'").fetchone()
+    return ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
+            if has_roots else {})
+
+
+@dataclass(frozen=True)
+class IdentityReading:
+    """One stored source identity, read the way every surface reads it.
+
+    ``listed`` is what is stored (or the legacy spelling a missing value stands
+    for); ``binding`` and ``name`` are what it is read as. ``path`` is where the
+    source lives inside the project, project-relative, and ``None`` otherwise:
+    the catalog does not record where an external root is on disk, and a legacy
+    row no longer names a file at all.
+    """
+
+    listed: str
+    binding: str
+    name: str
+    path: str | None
+
+
+def read_identity(scheme: int, stored: str | None, document_id: str, labels: dict[str, str]) -> IdentityReading:
+    """Read one stored value: the document list and a search result's reference
+    both call this, so the two cannot name one document differently.
 
     A catalog nobody has migrated is read through the rule the explicit
     migration applies, so what a listing shows before `mrag catalog
-    migrate-identities` is what the migration makes true. The listed identity is
-    what is stored; the binding and the name are what it is read as.
+    migrate-identities` is what the migration makes true.
     """
     if stored is None:
         # Written by a release from before source identities, after the
         # catalog was migrated: an unrecoverable path, named as one.
         identity = legacy_identity(document_id)
-        return identity, "legacy_unbound", identity
+        return IdentityReading(identity, "legacy_unbound", identity, None)
     if scheme == SCHEME_VERSION:
-        return stored, binding_status(stored), display_name(stored, labels)
+        binding = binding_status(stored)
+        return IdentityReading(stored, binding, display_name(stored, labels),
+                               stored if binding == "project_relative" else None)
     if scheme == SCHEME_UNRECORDED:
         reading = read_scheme_one(stored, document_id, set(labels))
         if reading.identity is None:
-            return stored, reading.binding, stored
-        return stored, reading.binding, display_name(reading.identity, labels)
+            # A project path scheme 2 has no spelling for: it is still a path
+            # in the project, named as stored.
+            return IdentityReading(stored, reading.binding, stored, stored)
+        return IdentityReading(stored, reading.binding, display_name(reading.identity, labels),
+                               reading.identity if reading.binding == "project_relative" else None)
     raise ValueError(
         f"This project's source identities follow scheme {scheme}, which this mrag "
         f"(scheme {SCHEME_VERSION}) cannot read; use the mrag release that created it."
@@ -234,10 +264,8 @@ def document_inventory(
     """
     statuses = statuses or set()
     current_hash = _current_profile_hash(project_dir, profile_name)
-    has_roots = conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_roots'").fetchone()
-    labels = ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
-              if has_roots else {})
-    scheme = _recorded_scheme(conn)
+    labels = root_labels(conn)
+    scheme = recorded_scheme(conn)
     index_columns = {row[1] for row in conn.execute("PRAGMA table_info(document_indexes)")}
     name_column = "indexed_display_name" if "indexed_display_name" in index_columns else "NULL AS indexed_display_name"
     indexes = {
@@ -277,7 +305,8 @@ def document_inventory(
         total += 1
         document_id = row["id"]
         stored = row["source_identity"] if "source_identity" in row.keys() else None
-        identity, binding, name = _read_identity(scheme, stored, document_id, labels)
+        reading = read_identity(scheme, stored, document_id, labels)
+        identity, binding, name = reading.listed, reading.binding, reading.name
         source_status = {"pending": "building", "extracted": "ready", "error": "error"}[row["status"]]
         record = indexes.get(document_id)
         if record is None:
@@ -341,12 +370,8 @@ def current_display_name(conn: sqlite3.Connection, document_id: str) -> str | No
     row = conn.execute("SELECT id, source_identity FROM documents WHERE id = ?", (document_id,)).fetchone()
     if row is None:
         return None
-    has_roots = conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_roots'").fetchone()
-    labels = ({r["root_key"]: r["label"] for r in conn.execute("SELECT root_key, label FROM source_roots")}
-              if has_roots else {})
     stored = row["source_identity"] if "source_identity" in row.keys() else None
-    _identity, _binding, name = _read_identity(_recorded_scheme(conn), stored, document_id, labels)
-    return name
+    return read_identity(recorded_scheme(conn), stored, document_id, root_labels(conn)).name
 
 
 def list_envelope(inventory: dict, query: InventoryQuery) -> dict:

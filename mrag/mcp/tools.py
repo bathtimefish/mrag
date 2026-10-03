@@ -19,6 +19,7 @@ from mrag.core.ingestion.inventory import (
     validate_limit,
     validate_offset,
 )
+from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
@@ -70,7 +71,9 @@ def _result_payload(
     results: list,
     filename_map: dict[str, str],
     content_max_chars: int,
+    references: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    references = references or {}
     entries = []
     for i, r in enumerate(results, 1):
         content, trunc = _truncate_text(r.content, content_max_chars)
@@ -82,6 +85,7 @@ def _result_payload(
             "score": float(r.score),
             "content": content,
             "metadata": dict(r.metadata) if r.metadata else {},
+            "reference": references.get(r.chunk_id),
             **trunc,
         }
         if "retrieval_score" in entry["metadata"]:
@@ -157,6 +161,7 @@ def search_tool(
         results=run.results,
         filename_map=filename_map,
         content_max_chars=cfg.limits.content_max_chars,
+        references=fetch_references(ctx.db_path, run.results),
     )
 
 

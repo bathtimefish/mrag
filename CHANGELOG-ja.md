@@ -7,6 +7,35 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.4.0 — 2026-10-03
+
+### 追加
+
+- **検索結果が `reference` を持つ。** `mrag search --json`、
+  `POST /api/v1/retrieve`（と `/api/v1/search`）、MCP の `search` ツールの各結果が、
+  本文の出どころを示す同じオブジェクトを持ちます。document の `display_name` と
+  `source_binding_status`（document 一覧と全く同じ読み方）、source が project 内に
+  ある場合の `source_path`、保存された `original` と `extracted_markdown`（project
+  root からの相対パス）、原本を返す MCP の `resource`、`location.source_format`。
+  document は抽出物を 1 つだけ持ち、chunk は文字範囲を記録しないため、
+  `revision_id`・`location.source_start`・`location.source_end` は `null` です。
+  全フィールドが常に存在します。人向けの `mrag search` 出力は各結果に
+  `source: … original: …` の行を加えます。
+  [docs/native-api-ja.md](docs/native-api-ja.md) を参照してください。
+- **MCP リソース `mrag://documents/{document_id}/original`** は保存された原本を、
+  追加時に記録された種類で返します — Markdown と text は text として、1.0.0 より前
+  に追加された PDF は blob として。新設の `limits.artifact_max_bytes`（既定 1 MiB）を
+  超えるものは切り詰めずに拒否します。
+
+### 互換性
+
+追加のみです。既存のフィールドは変わらず、Dify の `/retrieval` endpoint にも影響
+しません。reference が指す抽出物はその document の現在の抽出物です。source
+ファイルを更新してから次の `mrag index` までの間は結果の本文を含まないことがあり、
+その間 document 一覧はその document を `stale` と報告します。
+
+---
+
 ## 1.3.0 — 2026-10-02
 
 ### 追加

@@ -85,6 +85,16 @@ Content-Type: application/json
       "metadata": {
         "chunk_index": 12,
         "retrieval_score": 0.42
+      },
+      "reference": {
+        "display_name": "manuals/manual.md",
+        "source_binding_status": "project_relative",
+        "source_path": "manuals/manual.md",
+        "original": "data/documents/<document_id>/original.md",
+        "extracted_markdown": "data/documents/<document_id>/extracted.md",
+        "resource": "mrag://documents/<document_id>/original",
+        "revision_id": null,
+        "location": { "source_format": "markdown", "source_start": null, "source_end": null }
       }
     }
   ]
@@ -98,6 +108,18 @@ Content-Type: application/json
 - **`results[].chunk_id`** — チャンクの DB プライマリキー。後続で [mrag inspect chunk](./inspect-ja.md) に渡せます
 - **`results[].score`** — 検索戦略本来のスコア（リランキング有効時は CrossEncoder のスコアに置き換わります。**Dify API のような `[0, 1]` 正規化は適用されません**）
 - **`results[].metadata.retrieval_score`** — リランキング有効時のみ。リランキング前のスコア（→ [reranking-ja.md](./reranking-ja.md)）
+- **`results[].reference`** — 結果の本文がどこから来たかを、引用に使える形で示します。`mrag search --json` と MCP の `search` ツールも同じオブジェクトを返します。全フィールドが常に存在し、当てはまらない値は `null`、パスは全て project root からの相対パスです
+  - `display_name`・`source_binding_status` — document の名前と source の紐付け方。`GET /api/v1/documents` の報告と同じです
+  - `source_path` — source が project 内にある場合、そのファイル。外部 root（catalog はその場所を記録しません）と `legacy_unbound` の行では `null`
+  - `original`・`extracted_markdown` — 保存された原本と Markdown の抽出物
+  - `resource` — 保存された原本を返す MCP リソース
+  - `revision_id` — 常に `null`。document は抽出物を 1 つだけ持ちます
+  - `location.source_format` — chunk を切り出した抽出物（`markdown` か `text`）。chunk は文字範囲を記録しないため、`source_start` と `source_end` は `null` です
+
+reference が指す抽出物は、その document の現在の抽出物です。source ファイルを
+更新してから次に `mrag index` を実行するまでの間は、結果の本文を含まないことが
+あります。その間 `GET /api/v1/documents` はその document を `stale` と報告します。
+引用する前に `mrag index` を実行してください。
 
 activeなdocument exclusionは、結果を返す前にすべてのstrategyへ適用されます。exclusionは
 source documentを保持するため、検索結果から全chunkが除外されても同じdocumentは

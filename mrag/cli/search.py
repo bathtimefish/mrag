@@ -5,9 +5,11 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from mrag.config.profile import load_profile
 from mrag.config.project import load_project_config
+from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.cli.eval import print_score_stats_and_distribution
 from mrag.db.connection import find_db
@@ -24,8 +26,10 @@ def _build_json_payload(
     reranked: bool,
     results: list,
     filename_map: dict,
+    references: dict | None = None,
 ) -> dict:
     """Build the structured JSON payload emitted by `mrag search --json`."""
+    references = references or {}
     result_entries = []
     for i, r in enumerate(results, 1):
         entry = {
@@ -36,6 +40,7 @@ def _build_json_payload(
             "score": float(r.score),
             "content": r.content,
             "metadata": dict(r.metadata) if r.metadata else {},
+            "reference": references.get(r.chunk_id),
         }
         # retrieval_score is preserved by the reranker in metadata
         if "retrieval_score" in entry["metadata"]:
@@ -126,8 +131,9 @@ def search(
     results = run.results
     reranked = run.reranked
 
-    # Look up filenames for display / JSON
+    # Look up filenames and references for display / JSON
     filename_map = fetch_filename_map(db_path, results)
+    references = fetch_references(db_path, results)
 
     # -----------------------------------------------------------------------
     # Output
@@ -140,6 +146,7 @@ def search(
             reranked=reranked,
             results=results,
             filename_map=filename_map,
+            references=references,
         )
         # Emit JSON to stdout (plain print, no rich formatting)
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -166,6 +173,12 @@ def search(
             console.print(
                 f"[bold]\\[{i}][/bold] score=[cyan]{r.score:.4f}[/cyan]  "
                 f"doc=[green]{filename}[/green]  chunk=[dim]{r.chunk_id[:8]}...[/dim]"
+            )
+        reference = references.get(r.chunk_id)
+        if reference is not None:
+            console.print(
+                f"    [dim]source:[/dim] {escape(reference['display_name'])}  "
+                f"[dim]original:[/dim] {escape(reference['original'] or '-')}"
             )
         if section_text:
             console.print(f"    [dim]section:[/dim] {section_text}")

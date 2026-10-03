@@ -64,6 +64,9 @@ class McpLimitsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content_max_chars: int = Field(default=20000, ge=0)
+    # A stored original is refused above this size rather than cut: half a PDF
+    # is not a PDF. Text that fits is then held to content_max_chars too.
+    artifact_max_bytes: int = Field(default=1048576, ge=1)
     request_timeout_seconds: int = Field(default=60, ge=1)
 
 
@@ -321,6 +324,7 @@ def default_mcp_config_yaml() -> str:
         },
         "limits": {
             "content_max_chars": 20000,
+            "artifact_max_bytes": 1048576,
             "request_timeout_seconds": 60,
         },
         "logging": {

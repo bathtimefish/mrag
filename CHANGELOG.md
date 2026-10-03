@@ -7,6 +7,36 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.4.0 — 2026-10-03
+
+### Added
+
+- **Search results carry a `reference`.** Every result of `mrag search --json`,
+  `POST /api/v1/retrieve` (and `/api/v1/search`) and the MCP `search` tool has
+  the same object saying where its text came from: the document's
+  `display_name` and `source_binding_status` (read exactly as the document list
+  reads them), `source_path` when the source lives in the project, the stored
+  `original` and `extracted_markdown` (project-relative), the MCP `resource`
+  serving the original, and `location.source_format`. `revision_id`,
+  `location.source_start` and `location.source_end` are `null`: a document
+  keeps one extraction, and chunks do not record their character range. Every
+  field is always present. The human `mrag search` output adds a
+  `source: … original: …` line to each result. See
+  [docs/native-api.md](docs/native-api.md#post-apiv1retrieve--retrieval).
+- **MCP resource `mrag://documents/{document_id}/original`** serves the stored
+  original in the type recorded when it was added — Markdown and text as text, a
+  PDF added before 1.0.0 as a blob — and refuses one larger than the new
+  `limits.artifact_max_bytes` (1 MiB by default) rather than cutting it.
+
+### Compatibility
+
+Additive: existing fields are unchanged, and the Dify `/retrieval` endpoint is
+not affected. The extraction a reference names is the document's current one;
+between updating a source file and the next `mrag index`, it may not contain the
+result's text, and the document list reports the document as `stale` meanwhile.
+
+---
+
 ## 1.3.0 — 2026-10-02
 
 ### Added

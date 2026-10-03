@@ -18,6 +18,7 @@ from mrag.core.ingestion.inventory import (
     parse_query,
     resolve_profile,
 )
+from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import open_connection
 
@@ -70,6 +71,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
 
     results = run.results
     filename_map = fetch_filename_map(db_path, results)
+    references = fetch_references(db_path, results)
 
     chunk_results = [
         ChunkResult(
@@ -79,6 +81,7 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
             score=r.score,
             content=r.content,
             metadata=r.metadata,
+            reference=references[r.chunk_id],
         )
         for r in results
     ]
