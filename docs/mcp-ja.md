@@ -107,6 +107,10 @@ mrag mcp
 | `MRAG_MCP_API_KEY` | HTTP bearer token |
 | `MRAG_MCP_API_KEY_FILE` | HTTP bearer token を格納したファイル |
 
+token ファイルは `MRAG_MCP_API_KEY` より先に読まれます。空のファイルは token を
+供給しないので、判断は環境変数に委ねられます。空白だけのファイルの場合、HTTP
+server と `mrag mcp validate` は認証なしで動かずにエラーで止まります。
+
 ## 補助コマンド
 
 ```bash

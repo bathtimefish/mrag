@@ -227,7 +227,20 @@ def resolve_auth_token(
     if cfg.auth.bearer_token_file_env:
         file_path = env.get(cfg.auth.bearer_token_file_env)
         if file_path:
-            return Path(file_path).read_text(encoding="utf-8").strip()
+            content = Path(file_path).read_text(encoding="utf-8")
+            token = content.strip()
+            if token:
+                return token
+            # A file that holds only whitespace was meant to carry a token, and
+            # a listener that starts without one would expose the knowledge base
+            # unauthenticated, so the HTTP server refuses it. An empty file names
+            # no token at all and leaves the decision to the variables below,
+            # which is what an exported-but-empty variable does too.
+            if content and cfg.transport == "streamable-http":
+                raise ValueError(
+                    f"{cfg.auth.bearer_token_file_env} names a file that holds only "
+                    "whitespace; write the token into it or unset the variable"
+                )
 
     direct = env.get("MRAG_MCP_API_KEY")
     if direct:
