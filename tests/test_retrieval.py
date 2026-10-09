@@ -742,3 +742,82 @@ def test_search_command_without_init_exits_nonzero(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["search", "query"])
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# 1.5.0: vaporetto queries are segmented, function words dropped, segments ANDed
+# ---------------------------------------------------------------------------
+
+def _fake_segmenter(text: str) -> list[str]:
+    """Stands in for vaporetto_split: cuts on spaces and on a fixed set of
+    Japanese boundaries so the shape of the expression can be asserted."""
+    segmented = (
+        text.replace("熱電対", "熱電 対 ").replace("モジュール", "モジュール ")
+        .replace("の", " の ").replace("測定範囲", "測定 範囲").replace("は何ですか", " は 何 です か")
+    )
+    return segmented.split()
+
+
+def test_segmented_query_ands_content_segments_of_an_unspaced_question():
+    from mrag.core.retrieval.keyword import _prepare_segmented_query
+
+    assert (
+        _prepare_segmented_query("熱電対モジュールの測定範囲は何ですか", _fake_segmenter)
+        == '"熱電" AND "対" AND "モジュール" AND "測定" AND "範囲"'
+    )
+
+
+def test_segmented_query_of_only_function_words_builds_nothing():
+    from mrag.core.retrieval.keyword import _prepare_segmented_query
+
+    assert _prepare_segmented_query("のは何ですか", _fake_segmenter) is None
+    assert _prepare_segmented_query("", _fake_segmenter) is None
+
+
+def test_segmented_query_keeps_operators_inert_and_strips_quotes():
+    from mrag.core.retrieval.keyword import _prepare_segmented_query
+
+    assert _prepare_segmented_query('"a*b" c:d', lambda t: t.split()) == '"a*b" AND "c:d"'
+
+
+def test_vaporetto_keyword_search_binds_the_segmented_expression(tmp_path, monkeypatch):
+    # The real table is built with trigram so this runs without the extension;
+    # the segmenter is faked, and the search must bind "Hello" AND "test" —
+    # the row carrying only one of them must not come back.
+    import mrag.core.retrieval.keyword as keyword
+    from mrag.db.migrate import apply_schema
+
+    db_path = tmp_path / "mrag.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    apply_schema(conn, tokenizer="trigram")
+    conn.execute(
+        "INSERT INTO fts_chunks (content, knowledge_id, profile_name, chunk_id, document_id) "
+        "VALUES ('Hello world, a test document', 'kb', 'default', 'chunk-both', 'doc-1'), "
+        "('Hello world only', 'kb', 'default', 'chunk-one', 'doc-1')"
+    )
+    conn.commit()
+    def open_trigram(_path, _tokenizer):
+        opened = sqlite3.connect(str(db_path))
+        opened.row_factory = sqlite3.Row
+        return opened
+
+    monkeypatch.setattr(keyword, "open_fts_connection", open_trigram)
+    monkeypatch.setattr(keyword, "_vaporetto_segments", lambda _conn, text: ["Hello", "test"])
+    monkeypatch.setattr(keyword, "fetch_chunks", lambda _db, ids: {i: {"content": i} for i in ids})
+    monkeypatch.setattr(keyword, "fetch_chunk_metadata", lambda _db, ids: {})
+
+    results = keyword.keyword_search("Hello test", "kb", "default", db_path, top_k=10, tokenizer="vaporetto")
+
+    assert [r.chunk_id for r in results] == ["chunk-both"]
+
+
+def test_vaporetto_keyword_search_answers_a_function_word_question_with_nothing(tmp_path, monkeypatch):
+    import mrag.core.retrieval.keyword as keyword
+
+    opened = []
+    monkeypatch.setattr(keyword, "open_fts_connection", lambda _path, _tokenizer: opened.append(1) or MagicMock())
+    monkeypatch.setattr(keyword, "_vaporetto_segments", lambda _conn, text: ["の", "は", "何", "です", "か"])
+
+    assert keyword.keyword_search("のは何ですか", "kb", "default", tmp_path / "x.db", tokenizer="vaporetto") == []
+    assert opened == [1], "the connection is opened once and closed; no MATCH is run"

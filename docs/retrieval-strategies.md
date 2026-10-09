@@ -47,7 +47,7 @@ Strengths and weaknesses:
 - **Strong at**: lookups against vocabulary with fixed spelling — proper nouns, part numbers, command names, and the like
 - **Weak at**: paraphrases and synonyms (e.g. "memory" vs. "RAM"). If the literal token does not appear in the chunk, it cannot be hit.
 
-> When the vaporetto tokenizer is active, a run of Japanese text containing no whitespace (e.g. `温度センサの基本仕様`) is interpreted as a single phrase match over the morpheme sequence. Throwing a long natural-language sentence at it makes the whole thing one phrase, and almost nothing will hit. The trick is to **separate your tokens with whitespace** — for example `温度 センサ 仕様`. In most cases, AI agents already produce well-formed queries based on `AGENTS.md` and `SKILL.md`.
+> With the vaporetto tokenizer, the query is segmented by the same tokenizer that indexed the chunks, Japanese function words (particles such as `の` and `は`, auxiliaries such as `です`, interrogatives such as `何`) are dropped, and every remaining segment must appear in the chunk (AND). `温度センサの基本仕様は何ですか` therefore searches for `温度`, `センサ`, `基本`, `仕様` and needs no whitespace; a question made only of function words returns zero hits. Before 1.5.0 such a run of text was one phrase, and a natural-language question matched almost nothing. With the trigram and porter tokenizers each whitespace-delimited run is still one phrase.
 
 
 ## `vector` — semantic search via embedding vectors

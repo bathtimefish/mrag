@@ -7,6 +7,22 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.0 — 2026-10-09
+
+### Changed
+
+- **Keyword search understands a Japanese question written without spaces.**
+  With the vaporetto tokenizer, the query is now segmented by the tokenizer that
+  indexed the chunks, function words (particles, auxiliaries, interrogatives)
+  are dropped, and the remaining segments are ANDed. Until now each
+  whitespace-delimited run of the query was one FTS5 phrase, so
+  `熱電対モジュールの測定範囲` matched only a chunk containing those six
+  morphemes in that order — over twelve real specifications, every such
+  question returned nothing, and only the vector arm of `hybrid` answered. A
+  question made only of function words returns zero keyword hits rather than
+  searching for its grammar. Whitespace in the query still separates terms, and
+  FTS5 operators stay inert. The trigram and porter tokenizers are unchanged.
+
 ## 1.4.3 — 2026-10-09
 
 ### Fixed
