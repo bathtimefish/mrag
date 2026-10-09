@@ -223,6 +223,37 @@ def _catalog(*args):
     return CliRunner().invoke(app, ["catalog", "migrate-identities", *args])
 
 
+def test_migrate_identities_prints_its_report_without_json(tmp_path, monkeypatch):
+    # Before 1.4.3 the summary line was written with an option typer.echo does
+    # not take, so every run without --json stopped with a TypeError after the
+    # catalog had already been changed.
+    project, add = _project(tmp_path, monkeypatch)
+    outside = tmp_path / "corpus"
+    outside.mkdir()
+    (outside / "out.md").write_text("# out", encoding="utf-8")
+    (project / "external").mkdir()
+    (project / "external" / "in.md").write_text("# in", encoding="utf-8")
+    add(outside / "out.md")
+    add(project / "external" / "in.md")
+    _to_scheme_one(project)
+
+    # The outside file is respelled under identities/external/; the
+    # project-relative one already reads the same under both schemes.
+    planned = _catalog("--dry-run")
+    assert planned.exit_code == 0, planned.output
+    assert "Source identities: scheme 1 -> 2" in planned.output
+    assert "Summary: 1 respelled, 1 unchanged, 0 blocked" in planned.output
+    assert "Dry run: nothing was changed." in planned.output
+
+    applied = _catalog()
+    assert applied.exit_code == 0, applied.output
+    assert "Summary: 1 respelled, 1 unchanged, 0 blocked" in applied.output
+
+    again = _catalog()
+    assert again.exit_code == 0, again.output
+    assert "nothing was changed" in again.output
+
+
 def test_init_announces_the_reserved_namespace(tmp_path, monkeypatch):
     project, _ = _project(tmp_path, monkeypatch)
     notice = (project / "identities" / "README.md").read_text(encoding="utf-8")

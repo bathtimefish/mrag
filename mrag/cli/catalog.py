@@ -169,9 +169,10 @@ def _render(report: dict[str, Any], json_output: bool) -> None:
         for blocker in report["blockers"]:
             typer.echo(f"  {blocker['document_id']}  {blocker['source_identity']}  ({blocker['reason']})")
     summary = report["summary"]
+    # typer.echo never interprets markup, so no option is needed to keep the
+    # numbers literal; passing one made every non-JSON run stop here.
     typer.echo(
-        f"Summary: {summary['respelled']} respelled, {summary['unchanged']} unchanged, {summary['blocked']} blocked",
-        markup=False,
+        f"Summary: {summary['respelled']} respelled, {summary['unchanged']} unchanged, {summary['blocked']} blocked"
     )
     closing = {
         "planned": "Dry run: nothing was changed.",
