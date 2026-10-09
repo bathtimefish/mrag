@@ -7,6 +7,23 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.4.2 — 2026-10-09
+
+### Fixed
+
+- **A project initialized with vaporetto installed can be indexed again.** Since
+  1.3.0, `mrag init` on a machine with `sqlite-vaporetto` created the catalog
+  without its `document_indexes` table, and the first `mrag index` stopped with
+  `no such table: document_indexes`. The vaporetto path applied the schema by
+  splitting it on every semicolon — including two inside comments — and
+  discarded the errors that caused, so `embedding_cache` was missing too (since
+  the first release). The schema is now run as SQLite parses it, and an error
+  stops `mrag init` instead of passing unnoticed.
+- **A project created that way repairs itself.** Opening the catalog — any
+  command that reads it, `mrag index` included — creates each table the schema
+  defines and the catalog lacks, with its indexes. Nothing that exists is
+  changed, and no document needs to be added again.
+
 ## 1.4.1 — 2026-10-04
 
 ### Fixed

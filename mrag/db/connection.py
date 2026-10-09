@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -140,12 +141,60 @@ def _migrate_sync_schema(conn: sqlite3.Connection) -> None:
         raise
 
 
+_CREATE_TABLE = re.compile(r"CREATE TABLE IF NOT EXISTS (\w+)", re.IGNORECASE)
+_CREATE_INDEX = re.compile(
+    r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS \w+\s+ON\s+(\w+)", re.IGNORECASE
+)
+
+
+def _restore_missing_tables(conn: sqlite3.Connection) -> None:
+    """Create the tables the packaged schema defines and this catalog lacks.
+
+    Before 1.4.2, `mrag init` with vaporetto installed applied the schema
+    through apsw split on every semicolon, comments included, and discarded the
+    errors that caused. `embedding_cache` and `document_indexes` were never
+    created that way, and the project's first `mrag index` failed with "no such
+    table: document_indexes". Each missing table is created as the schema
+    defines it now, with its indexes; nothing that exists is touched, and the
+    FTS5 table — whose tokenizer this connection may not have loaded — is never
+    among them.
+    """
+    from mrag.db.migrate import schema_statements
+
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "documents" not in tables:
+        return
+    statements = schema_statements()
+    created = []
+    missing = set()
+    for statement in statements:
+        match = _CREATE_TABLE.match(statement)
+        if match and match.group(1) not in tables:
+            created.append(statement)
+            missing.add(match.group(1))
+    if not missing:
+        return
+    for statement in statements:
+        match = _CREATE_INDEX.match(statement)
+        if match and match.group(1) in missing:
+            created.append(statement)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for statement in created:
+            conn.execute(statement)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 @contextmanager
 def db_connection(db_path: Path) -> Generator[sqlite3.Connection, None, None]:
     conn = open_connection(db_path)
     try:
         _migrate_source_identity(conn)
         _migrate_sync_schema(conn)
+        _restore_missing_tables(conn)
         yield conn
         conn.commit()
     except Exception:
