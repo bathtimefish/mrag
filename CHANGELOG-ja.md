@@ -7,6 +7,23 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.4.2 — 2026-10-09
+
+### 修正
+
+- **vaporetto が入った環境で初期化した project を index できるようになりました。**
+  1.3.0 以降、`sqlite-vaporetto` のある環境で `mrag init` を実行すると catalog が
+  `document_indexes` table なしで作られ、最初の `mrag index` が
+  `no such table: document_indexes` で止まっていました。vaporetto の経路は schema を
+  すべてのセミコロンで分割して適用しており — コメント内の 2 か所も含めて — その結果の
+  エラーを捨てていたため、`embedding_cache` も(最初のリリースから)欠けていました。
+  schema は SQLite が解釈するとおりに実行するようにし、エラーが出れば見過ごさずに
+  `mrag init` を止めます。
+- **そのように作られた project は自分で修復します。** catalog を開いたとき —
+  `mrag index` を含め、catalog を読むどのコマンドでも — schema が定義していて
+  catalog に無い table を、その index とともに作ります。既にあるものは変えず、
+  文書を追加し直す必要もありません。
+
 ## 1.4.1 — 2026-10-04
 
 ### 修正

@@ -26,6 +26,28 @@ def _read_schema_sql() -> str:
         return (Path(__file__).parent / _SCHEMA_FILENAME).read_text(encoding="utf-8")
 
 
+def schema_statements() -> list[str]:
+    """The packaged schema, one statement per entry, without the comments between them.
+
+    Split where SQLite itself would end each statement
+    (`sqlite3.complete_statement`), so a semicolon inside a comment or a
+    string literal does not end one.
+    """
+    statements: list[str] = []
+    pending = ""
+    for line in _read_schema_sql().splitlines(keepends=True):
+        stripped = line.strip()
+        if not pending and (not stripped or stripped.startswith("--")):
+            continue
+        pending += line
+        if sqlite3.complete_statement(pending):
+            statements.append(pending.strip())
+            pending = ""
+    if pending.strip():
+        statements.append(pending.strip())
+    return statements
+
+
 def apply_schema(
     conn: Union[sqlite3.Connection, "ApswConnection"],
     tokenizer: str = TOKENIZER_TRIGRAM,

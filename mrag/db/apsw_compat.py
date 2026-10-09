@@ -108,15 +108,20 @@ class ApswConnection:
         return _Cursor(rows)
 
     def executescript(self, sql: str) -> None:
-        """Execute a multi-statement SQL script (apsw processes them sequentially)."""
-        import apsw
+        """Execute a multi-statement SQL script in one transaction.
+
+        apsw prepares a script one statement at a time and finds where each ends
+        itself, so a semicolon inside a comment or a string literal is never
+        taken for the end of a statement. A statement that returns rows (a
+        PRAGMA, say) pauses execution until its rows are read, which is why the
+        cursor is drained. An error is raised, not swallowed: before 1.4.2 this
+        split the script on every semicolon and ignored the errors that caused,
+        so a project initialized with vaporetto silently lacked the
+        `embedding_cache` and `document_indexes` tables.
+        """
         with self._conn:
-            for stmt in _split_statements(sql):
-                if stmt.strip():
-                    try:
-                        self._conn.execute(stmt)
-                    except apsw.SQLError:
-                        pass  # ignore "no such table" etc. from IF NOT EXISTS patterns
+            for _row in self._conn.execute(sql):
+                pass
 
     def commit(self) -> None:
         self._conn.execute("COMMIT")
@@ -143,8 +148,3 @@ class ApswConnection:
                 self._conn.execute("ROLLBACK")
             except Exception:
                 pass
-
-
-def _split_statements(sql: str) -> list[str]:
-    """Split a SQL script into individual statements on ';'."""
-    return [s.strip() for s in sql.split(";") if s.strip()]
