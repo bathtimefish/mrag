@@ -7,6 +7,15 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.4.3 — 2026-10-09
+
+### 修正
+
+- **`mrag catalog migrate-identities` が報告を表示するようになりました。** `--json`
+  なしでは、dry run も実行も、変換そのものは済んだ後に
+  `TypeError: echo() got an unexpected keyword argument 'markup'` で止まり、要約と
+  締めの案内が表示されませんでした(1.2.0 以降)。`--json` 付きの実行には影響ありません。
+
 ## 1.4.2 — 2026-10-09
 
 ### 修正

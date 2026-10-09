@@ -797,7 +797,7 @@ wheels = [
 
 [[package]]
 name = "mrag"
-version = "1.4.2"
+version = "1.4.3"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

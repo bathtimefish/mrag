@@ -7,6 +7,16 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.4.3 — 2026-10-09
+
+### Fixed
+
+- **`mrag catalog migrate-identities` prints its report again.** Without
+  `--json`, every run — dry or real — stopped with
+  `TypeError: echo() got an unexpected keyword argument 'markup'` after the
+  conversion itself had already been applied, so the summary and the closing
+  advice were never shown (since 1.2.0). The `--json` form was unaffected.
+
 ## 1.4.2 — 2026-10-09
 
 ### Fixed
