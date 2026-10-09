@@ -139,9 +139,12 @@ or profile comparison is needed, and `inspect` for selected chunks rather than
 loading every chunk body. Multi-profile chunk/section inspection needs an
 explicit `--profile`.
 
-For vaporetto keyword search, whitespace-separated terms are ANDed; continuous
-Japanese text becomes a phrase. Rewrite natural-language questions as keywords
-for that branch, or use vector/hybrid retrieval for semantic matching. To
+For vaporetto keyword search, the query is segmented by the same tokenizer that
+indexed the rows, Japanese function words (particles, auxiliaries,
+interrogatives) are dropped, and the remaining segments are ANDed, so a
+natural-language question works without spaces; a question of only function
+words returns zero hits. Whitespace in the query still separates terms. Use
+vector/hybrid retrieval for semantic matching. To
 investigate literal matches, use `--strategy keyword --no-rerank --json` and
 inspect full content. Zero hits do not alone prove a topic is absent: check
 index state, query form, profile, and exclusions as relevant.
