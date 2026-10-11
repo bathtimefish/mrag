@@ -176,7 +176,12 @@ def _walk(
             canonical = Path(entry.path).resolve(strict=False)
             if _within(canonical, project_data) or _in_reserved_namespace(canonical, project):
                 continue
-            identity = (metadata.st_dev, metadata.st_ino)
+            identity = _directory_identity(entry, metadata)
+            if identity is None:
+                scan.issues.append(
+                    DirectoryScanIssue(relative, "directory_entry_metadata_failed", "Entry metadata cannot be read")
+                )
+                continue
             if identity in ancestors:
                 scan.issues.append(
                     DirectoryScanIssue(relative, "directory_symlink_cycle", "Symbolic-link cycle detected")
@@ -215,6 +220,23 @@ def _walk(
             continue
         seen_files.add(canonical)
         scan.candidates.append(DirectoryCandidate(canonical, relative))
+
+
+def _directory_identity(entry: os.DirEntry, metadata: os.stat_result) -> tuple[int, int] | None:
+    """The (device, inode) pair that tells one directory from another.
+
+    On Windows ``DirEntry.stat()`` leaves ``st_dev`` and ``st_ino`` at zero, so
+    every directory there looked like the same one: the walk passed over each
+    directory after the first as already visited and reported a nested one as
+    a symlink cycle. ``os.stat`` fills them in on every platform.
+    """
+    if metadata.st_ino:
+        return (metadata.st_dev, metadata.st_ino)
+    try:
+        full = os.stat(entry.path)
+    except OSError:
+        return None
+    return (full.st_dev, full.st_ino)
 
 
 def _in_reserved_namespace(canonical: Path, project: Path) -> bool:

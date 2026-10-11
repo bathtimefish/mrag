@@ -413,7 +413,7 @@ def test_a_stop_signal_ends_the_apply_at_an_item_boundary(tmp_path: Path, monkey
         report = real_apply_one(item, *args, **kwargs)
         if not stopped["sent"]:
             stopped["sent"] = True
-            os.kill(os.getpid(), signal.SIGTERM)
+            signal.raise_signal(signal.SIGTERM)
         return report
 
     monkeypatch.setattr(documents, "_apply_one", apply_then_signal)
@@ -448,7 +448,7 @@ def test_add_recursive_stops_at_a_file_boundary(tmp_path: Path, monkeypatch):
         real_persist(*args, **kwargs)
         if not stopped["sent"]:
             stopped["sent"] = True
-            os.kill(os.getpid(), signal.SIGTERM)
+            signal.raise_signal(signal.SIGTERM)
 
     monkeypatch.setattr(add, "_persist_candidate", persist_then_signal)
 

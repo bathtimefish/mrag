@@ -6,6 +6,7 @@ from rich.console import Console
 
 from mrag.config.project import load_project_config
 from mrag.core.ingestion.document import get_document
+from mrag.core.stored_path import resolve_stored
 from mrag.db.connection import find_db
 
 console = Console()
@@ -51,7 +52,7 @@ def _read_extracted(document_id: str, project_dir: Path, format: str) -> str:
         console.print(f"[red]Error:[/red] Extracted file path not recorded for document {document_id}")
         raise typer.Exit(1)
 
-    full_path = project_dir / rel_path
+    full_path = resolve_stored(project_dir, rel_path)
     if not full_path.exists():
         console.print(f"[red]Error:[/red] Extracted file not found: {full_path}")
         raise typer.Exit(1)

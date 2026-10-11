@@ -33,6 +33,7 @@ from typing import Any
 
 from mrag.core.ingestion.inventory import read_identity, recorded_scheme, root_labels
 from mrag.core.retrieval.base import RetrievalResult
+from mrag.core.stored_path import normalize_stored
 
 
 def original_resource(document_id: str) -> str:
@@ -91,8 +92,8 @@ def _reference(
         stored = row["source_identity"] if "source_identity" in row.keys() else None
         reading = read_identity(scheme, stored, result.document_id, labels)
         name, binding, path = reading.name, reading.binding, reading.path
-        original = row["original_path"]
-        extracted = row["extracted_markdown_path"]
+        original = normalize_stored(row["original_path"])
+        extracted = normalize_stored(row["extracted_markdown_path"])
     return {
         "display_name": name,
         "source_binding_status": binding,

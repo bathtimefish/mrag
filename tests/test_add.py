@@ -293,6 +293,50 @@ def test_show_extracted_prints_content(tmp_path: Path, sample_txt: Path):
         assert "Hello, world!" in result.output
 
 
+def test_add_stores_artifact_paths_with_forward_slashes(tmp_path: Path, sample_txt: Path):
+    """The catalog's paths are the same on every OS; Windows used to store '\\'."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        runner.invoke(app, ["add", str(sample_txt)], catch_exceptions=False)
+
+        conn = open_connection(find_db(project_dir))
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+
+        for column in ("original_path", "extracted_markdown_path", "extracted_text_path", "extraction_meta_path"):
+            assert "\\" not in row[column] and row[column].startswith(f"data/documents/{row['id']}/"), column
+
+
+def test_a_catalog_written_on_windows_with_backslash_paths_still_reads(tmp_path: Path, sample_txt: Path):
+    """A project an older mrag made on Windows stored data\\documents\\<id>\\…; it reads on any OS."""
+    from mrag.core.stored_path import normalize_stored, resolve_stored
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        runner.invoke(app, ["add", str(sample_txt)], catch_exceptions=False)
+        conn = open_connection(find_db(project_dir))
+        conn.execute(
+            "UPDATE documents SET original_path = replace(original_path, '/', '\\'), "
+            "extracted_markdown_path = replace(extracted_markdown_path, '/', '\\'), "
+            "extracted_text_path = replace(extracted_text_path, '/', '\\'), "
+            "extraction_meta_path = replace(extraction_meta_path, '/', '\\')"
+        )
+        conn.commit()
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+        assert "\\" in row["extracted_text_path"]
+
+        result = runner.invoke(app, ["show-extracted", row["id"]], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        assert "Hello, world!" in result.output
+        assert resolve_stored(project_dir, row["original_path"]).is_file()
+        assert normalize_stored(row["original_path"]) == f"data/documents/{row['id']}/original.txt"
+
+
 def test_export_extracted_writes_file(tmp_path: Path, sample_txt: Path):
     out_file = tmp_path / "exported.txt"
     with pytest.MonkeyPatch.context() as mp:

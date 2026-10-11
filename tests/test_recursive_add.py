@@ -26,6 +26,47 @@ def _document_count(project: Path) -> int:
         connection.close()
 
 
+class _EntryWithoutInode:
+    """A DirEntry as Windows gives one: its stat() leaves st_dev and st_ino at zero."""
+
+    def __init__(self, entry: os.DirEntry):
+        self._entry = entry
+        self.name = entry.name
+        self.path = entry.path
+
+    def is_symlink(self) -> bool:
+        return self._entry.is_symlink()
+
+    def stat(self, *, follow_symlinks: bool = True) -> os.stat_result:
+        fields = list(self._entry.stat(follow_symlinks=follow_symlinks)[:10])
+        fields[1] = fields[2] = 0  # st_ino, st_dev
+        return os.stat_result(fields)
+
+
+def test_directories_are_told_apart_when_scandir_reports_no_inode(tmp_path: Path, monkeypatch):
+    """Every sibling and nested directory is walked, as on Windows it was not.
+
+    With every DirEntry reporting inode 0, each directory after the first was
+    passed over as already visited and a nested one reported as a symlink cycle.
+    """
+    project = tmp_path / "project"
+    source = project / "source"
+    (project / "data").mkdir(parents=True)
+    for relative in ("a/1.md", "b/2.md", "b/nested/3.md", "c/4.md"):
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative, encoding="utf-8")
+    real_scandir = os.scandir
+    monkeypatch.setattr(os, "scandir", lambda path: [_EntryWithoutInode(e) for e in real_scandir(path)])
+
+    scan = scan_directory(project, source, include=["**/*.md"])
+
+    assert [candidate.relative_path for candidate in scan.candidates] == [
+        "a/1.md", "b/2.md", "b/nested/3.md", "c/4.md",
+    ]
+    assert scan.issues == []
+
+
 def test_scan_filters_hidden_ignore_unicode_and_windows_separator(tmp_path: Path):
     project = tmp_path / "project"
     source = project / "source"

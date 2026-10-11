@@ -39,6 +39,26 @@ kept; the repository history is the record for those releases.
   and need nothing: mrag reads them as before, and MRAG Plus accepts a file
   whose CRLF-to-LF fold matches the record.
 
+- **On Windows, `mrag add --recursive` and `mrag documents sync` walk the whole
+  directory tree.** Windows reports no inode for a directory entry, so every
+  directory looked like the same one: each directory after the first was passed
+  over as already visited, without a word, and a nested one was reported as a
+  symbolic-link cycle (`directory_symlink_cycle`, as on `cache/embeddings` when
+  a project root was added). On a tree of seven files in sibling and nested
+  directories, 1.5.0 added two and exited 0. Directories are now told apart by
+  their full metadata on every platform. **If you ran a recursive add or a sync
+  on Windows with 1.5.0 or earlier, run it again**: what was passed over is added
+  now, and what is already registered is skipped.
+- **Artifact paths are stored with `/` on every platform.** On Windows the
+  catalog stored `data\documents\<id>\…`, which search results, `show-extracted`
+  and the API reported as is, and which no other platform could open. Catalogs
+  already written that way need nothing: their paths are read with either
+  separator and reported with `/`.
+- The test suite passes on Windows: the two tests that stop a run with SIGTERM
+  raise it through the signal handler instead of `os.kill` (which ends the
+  process on Windows), and the identity fixture's root key, a POSIX path, is
+  checked on POSIX only.
+
 ## 1.5.0 — 2026-10-09
 
 ### Changed
