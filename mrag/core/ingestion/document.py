@@ -143,8 +143,10 @@ def persist_prepared_document(
     # Save extracted files — always both
     md_path = doc_dir / "extracted.md"
     txt_path = doc_dir / "extracted.txt"
-    md_path.write_text(result.markdown, encoding="utf-8")
-    txt_path.write_text(result.text, encoding="utf-8")
+    # newline="\n": the files must be the bytes extracted_hash names. Without
+    # it Windows writes CRLF while the hash below is taken over the LF text.
+    md_path.write_text(result.markdown, encoding="utf-8", newline="\n")
+    txt_path.write_text(result.text, encoding="utf-8", newline="\n")
 
     # extracted_hash = SHA256 of text content (canonical for diff detection)
     extracted_hash = _sha256(result.text)

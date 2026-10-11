@@ -28,6 +28,17 @@ kept; the repository history is the record for those releases.
   Profiles without the window send the same request as before; the index
   identity does not change.
 
+- **On Windows, a document's extracted text is stored as the bytes its
+  `extracted_hash` names.** `extracted.md` and `extracted.txt` were written with
+  the platform's line endings, so on Windows every line ended in CRLF while
+  `extracted_hash` was taken over the LF text. mrag read the files back as the
+  same text and indexed them correctly, but the stored artifacts disagreed with
+  their own record, and MRAG Plus's `mrag migrate` refused every such document
+  as corrupt (`migration_artifact_hash_mismatch`). They are now written with LF
+  on every platform. Projects already written on Windows keep their CRLF files
+  and need nothing: mrag reads them as before, and MRAG Plus accepts a file
+  whose CRLF-to-LF fold matches the record.
+
 ## 1.5.0 — 2026-10-09
 
 ### Changed

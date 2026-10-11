@@ -114,6 +114,34 @@ def test_add_extracted_paths_recorded_in_db(tmp_path: Path, sample_txt: Path):
         assert "extracted.md" in row["extracted_markdown_path"]
 
 
+def test_add_extracted_files_are_the_bytes_extracted_hash_names(tmp_path: Path):
+    """On every OS the stored text is what extracted_hash was taken over.
+
+    Without an explicit newline, Windows wrote extracted.md/.txt with CRLF while
+    the hash was taken over the LF text: the project read back fine, but its
+    artifacts disagreed with their own record, and MRAG Plus's migration
+    refuses such a document as corrupt.
+    """
+    source = tmp_path / "lines.md"
+    source.write_bytes(b"# Valves\n\nA relief valve opens.\n\n## Testing\n\nOnce a year.\n")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+
+        result = runner.invoke(app, ["add", str(source)], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+
+        conn = open_connection(find_db(project_dir))
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+
+        text = (project_dir / row["extracted_text_path"]).read_bytes()
+        markdown = (project_dir / row["extracted_markdown_path"]).read_bytes()
+        assert b"\r" not in text and b"\r" not in markdown
+        assert _sha256(text) == row["extracted_hash"]
+
+
 def test_add_extraction_meta_json_structure(tmp_path: Path, sample_txt: Path):
     """extraction_meta.json must contain expected keys."""
     with pytest.MonkeyPatch.context() as mp:
