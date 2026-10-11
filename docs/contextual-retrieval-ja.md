@@ -13,6 +13,15 @@ mrag では、プロファイルの `augmentation.strategy: contextual` を有�
 プロファイルで値を変えると差分索引の再構築が必要です。大きな context window は
 モデルのメモリを多く使うので、モデルと実行環境の上限を確認してください。
 
+窓を設定すると、要求に `truncate: false` も付きます。付けないと Ollama は長い
+prompt の末尾を残して HTTP 200 を返し、冒頭にある文書の抜粋が失われます。付けた
+場合はサーバーが拒否し(Ollama 0.34.4 では HTTP 400 `exceed_context_size_error`)、
+そのチャンクは `3009-token prompt exceeds augmentation.context_window_tokens (2048)`
+のような理由とともに `failure_policy` に従います。抜粋は短くしません。この
+fallback が出たら、窓をその長さと `max_context_tokens` の和より大きくしてください。
+prompt は最大で 8,000 文字の抜粋・チャンク・テンプレートの合計です。表は行の途中
+では切られないため、長い行が 1 つあるとチャンクが `chunk_size` より長くなります。
+
 新規の `bge-m3` プロファイルは `embedding.max_input_tokens: 8192` も設定し、
 `/api/embed` に `options.num_ctx` と `options.num_batch` の両方として送ります。
 `num_ctx` だけでは埋め込みの物理 batch は広がりません。旧プロファイルには送らず、

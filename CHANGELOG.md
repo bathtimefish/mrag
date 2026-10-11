@@ -7,6 +7,27 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.1 — 2026-10-11
+
+### Fixed
+
+- **A context prompt longer than `augmentation.context_window_tokens` is no
+  longer cut without a word.** Ollama kept the end of such a prompt and answered
+  HTTP 200, so the document excerpt — the prompt's opening — was dropped and the
+  context was written from the chunk alone, while the run counted it a success.
+  Profiles that set the window now send `truncate: false` to `/api/generate`;
+  the server refuses the prompt (Ollama 0.34.4: HTTP 400
+  `exceed_context_size_error`, after tokenizing alone), and the chunk follows
+  `augmentation.failure_policy` — by default it is kept without a context and
+  counted as an augmentation fallback whose reason gives the prompt's length
+  in tokens. The excerpt is not shortened for this refusal. At the new-project
+  defaults (`chunk_size` 800, window 16,384) the longest prompt measured over
+  9,688 chunks of Japanese business documents was 6,957 tokens, so default
+  projects are unaffected; a lowered window, a larger `chunk_size`, or a table
+  row longer than `chunk_size` (a table is never cut inside a row) can pass it.
+  Profiles without the window send the same request as before; the index
+  identity does not change.
+
 ## 1.5.0 — 2026-10-09
 
 ### Changed
