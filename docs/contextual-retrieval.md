@@ -13,6 +13,17 @@ without the fields keep their prior request and index identity. Changing either
 setting for a contextual profile requires differential reindexing. A larger
 window uses more model memory; ensure it fits the chosen model and host.
 
+With a window set, the request also carries `truncate: false`. Ollama would
+otherwise keep the end of a longer prompt and answer HTTP 200, losing the
+document excerpt at its opening. Instead the server refuses it (HTTP 400
+`exceed_context_size_error` on Ollama 0.34.4), and the chunk follows
+`failure_policy` with a reason such as `3009-token prompt exceeds
+augmentation.context_window_tokens (2048)`; the excerpt is not shortened. If
+such fallbacks appear, raise the window above that length plus
+`max_context_tokens`. A prompt is at most the 8,000-character excerpt, the
+chunk, and the template; a table is never cut inside a row, so one long row can
+make a chunk longer than `chunk_size`.
+
 New `bge-m3` profiles also set `embedding.max_input_tokens: 8192`, sent as
 both `options.num_ctx` and `options.num_batch` to `/api/embed`. Sending only
 `num_ctx` does not enlarge Ollama's physical embedding batch. Existing profiles
