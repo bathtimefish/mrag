@@ -7,6 +7,58 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.1 — 2026-10-11
+
+### Fixed
+
+- **A context prompt longer than `augmentation.context_window_tokens` is no
+  longer cut without a word.** Ollama kept the end of such a prompt and answered
+  HTTP 200, so the document excerpt — the prompt's opening — was dropped and the
+  context was written from the chunk alone, while the run counted it a success.
+  Profiles that set the window now send `truncate: false` to `/api/generate`;
+  the server refuses the prompt (Ollama 0.34.4: HTTP 400
+  `exceed_context_size_error`, after tokenizing alone), and the chunk follows
+  `augmentation.failure_policy` — by default it is kept without a context and
+  counted as an augmentation fallback whose reason gives the prompt's length
+  in tokens. The excerpt is not shortened for this refusal. At the new-project
+  defaults (`chunk_size` 800, window 16,384) the longest prompt measured over
+  9,688 chunks of Japanese business documents was 6,957 tokens, so default
+  projects are unaffected; a lowered window, a larger `chunk_size`, or a table
+  row longer than `chunk_size` (a table is never cut inside a row) can pass it.
+  Profiles without the window send the same request as before; the index
+  identity does not change.
+
+- **On Windows, a document's extracted text is stored as the bytes its
+  `extracted_hash` names.** `extracted.md` and `extracted.txt` were written with
+  the platform's line endings, so on Windows every line ended in CRLF while
+  `extracted_hash` was taken over the LF text. mrag read the files back as the
+  same text and indexed them correctly, but the stored artifacts disagreed with
+  their own record, and MRAG Plus's `mrag migrate` refused every such document
+  as corrupt (`migration_artifact_hash_mismatch`). They are now written with LF
+  on every platform. Projects already written on Windows keep their CRLF files
+  and need nothing: mrag reads them as before, and MRAG Plus accepts a file
+  whose CRLF-to-LF fold matches the record.
+
+- **On Windows, `mrag add --recursive` and `mrag documents sync` walk the whole
+  directory tree.** Windows reports no inode for a directory entry, so every
+  directory looked like the same one: each directory after the first was passed
+  over as already visited, without a word, and a nested one was reported as a
+  symbolic-link cycle (`directory_symlink_cycle`, as on `cache/embeddings` when
+  a project root was added). On a tree of seven files in sibling and nested
+  directories, 1.5.0 added two and exited 0. Directories are now told apart by
+  their full metadata on every platform. **If you ran a recursive add or a sync
+  on Windows with 1.5.0 or earlier, run it again**: what was passed over is added
+  now, and what is already registered is skipped.
+- **Artifact paths are stored with `/` on every platform.** On Windows the
+  catalog stored `data\documents\<id>\…`, which search results, `show-extracted`
+  and the API reported as is, and which no other platform could open. Catalogs
+  already written that way need nothing: their paths are read with either
+  separator and reported with `/`.
+- The test suite passes on Windows: the two tests that stop a run with SIGTERM
+  raise it through the signal handler instead of `os.kill` (which ends the
+  process on Windows), and the identity fixture's root key, a POSIX path, is
+  checked on POSIX only.
+
 ## 1.5.0 — 2026-10-09
 
 ### Changed

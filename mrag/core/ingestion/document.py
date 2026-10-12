@@ -15,6 +15,7 @@ from mrag.core.ingestion.source_identity import (
     restore_identities_notice,
     source_identity,
 )
+from mrag.core.stored_path import to_stored
 from mrag.db.connection import db_connection, find_db
 from mrag.extractors import detect_source_type, get_extractor
 from mrag.extractors.base import ExtractionResult
@@ -143,8 +144,10 @@ def persist_prepared_document(
     # Save extracted files — always both
     md_path = doc_dir / "extracted.md"
     txt_path = doc_dir / "extracted.txt"
-    md_path.write_text(result.markdown, encoding="utf-8")
-    txt_path.write_text(result.text, encoding="utf-8")
+    # newline="\n": the files must be the bytes extracted_hash names. Without
+    # it Windows writes CRLF while the hash below is taken over the LF text.
+    md_path.write_text(result.markdown, encoding="utf-8", newline="\n")
+    txt_path.write_text(result.text, encoding="utf-8", newline="\n")
 
     # extracted_hash = SHA256 of text content (canonical for diff detection)
     extracted_hash = _sha256(result.text)
@@ -169,7 +172,7 @@ def persist_prepared_document(
 
     # Relative paths stored in SQLite (relative to project_dir)
     def rel(p: Path) -> str:
-        return str(p.relative_to(project_dir))
+        return to_stored(p, project_dir)
 
     now = _now_iso()
     with db_connection(db_path) as conn:

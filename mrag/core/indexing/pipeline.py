@@ -24,6 +24,7 @@ from mrag.core.indexing.context_prompt_template import (
 from mrag.db import fts as fts_db
 from mrag.db.connection import db_connection, fts_db_connection, find_db, open_connection
 from mrag.core.ingestion.inventory import current_display_name
+from mrag.core.stored_path import normalize_stored, resolve_stored
 from mrag.db.exclusions import active_document_ids
 from mrag.db.qdrant import (
     delete_points,
@@ -94,7 +95,7 @@ def _read_extraction_meta(project_dir: Path, doc: dict) -> dict:
     meta_rel = doc.get("extraction_meta_path")
     if not meta_rel:
         return {}
-    meta_path = project_dir / meta_rel
+    meta_path = resolve_stored(project_dir, meta_rel)
     if not meta_path.exists():
         return {}
     try:
@@ -347,7 +348,7 @@ def _index_document(
     rel_path = doc.get(path_key)
     if not rel_path:
         raise ValueError(f"Extracted file path not recorded for document {doc['id']}")
-    text = unicodedata.normalize("NFKC", (project_dir / rel_path).read_text(encoding="utf-8"))
+    text = unicodedata.normalize("NFKC", resolve_stored(project_dir, rel_path).read_text(encoding="utf-8"))
 
     # 2. Chunk
     chunker = get_chunker(
@@ -813,7 +814,7 @@ def run_index(
             result.failed_docs.append(FailedDocEntry(
                 document_id=doc["id"],
                 filename=doc.get("filename", doc["id"]),
-                source_path=doc.get("original_path", ""),
+                source_path=normalize_stored(doc.get("original_path", "")),
                 source_type=doc.get("source_type", ""),
                 added_at=doc.get("created_at", ""),
                 failure_reason=msg,

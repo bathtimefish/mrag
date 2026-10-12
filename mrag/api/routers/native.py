@@ -20,6 +20,7 @@ from mrag.core.ingestion.inventory import (
 )
 from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
+from mrag.core.stored_path import normalize_stored
 from mrag.db.connection import open_connection
 
 router = APIRouter(prefix="/api/v1")
@@ -149,7 +150,7 @@ async def get_document(document_id: str, request: Request) -> DocumentDetail:
         file_hash=row["file_hash"],
         status=row["status"],
         created_at=row["created_at"],
-        extracted_text_path=row["extracted_text_path"],
+        extracted_text_path=normalize_stored(row["extracted_text_path"]),
         chunk_count=chunk_count,
     )
 

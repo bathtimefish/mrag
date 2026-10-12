@@ -215,7 +215,7 @@ def list_profiles_tool(ctx: McpToolContext) -> dict[str, Any]:
         profiles.append(
             {
                 "name": prof.name,
-                "path": str(path.relative_to(ctx.project_dir)),
+                "path": path.relative_to(ctx.project_dir).as_posix(),
                 "retrieval_strategy": prof.retrieval.strategy,
                 "chunking_strategy": prof.chunking.strategy,
                 "embedding_model": prof.embedding.model,

@@ -13,6 +13,7 @@ from mrag.core.indexing.context_prompt_template import (
 )
 from mrag.core.ollama_client import (
     OllamaInputTooLargeError,
+    OllamaPromptExceedsWindowError,
     model_capabilities,
     ollama_post,
 )
@@ -56,7 +57,13 @@ def generate_context(
     on_retry(attempt, max_attempts, exc) is called before each retry sleep, and
     before each retry with a shorter document excerpt after the server refused
     the prompt as too large. A server that accepts the first prompt receives
-    exactly the request earlier releases sent.
+    exactly the request earlier releases sent, plus `truncate: false` when a
+    context window is configured.
+
+    A prompt longer than the configured window raises
+    OllamaPromptExceedsWindowError with the excerpt left whole: the server is
+    asked to refuse it rather than drop its opening, and the chunk then follows
+    the failure policy like any other unanswered chunk.
     """
     template = (
         DEFAULT_CONTEXT_PROMPT_TEMPLATE
@@ -84,6 +91,12 @@ def generate_context(
             options["num_ctx"] = config.context_window_tokens
         if options:
             payload["options"] = options
+        # Without this Ollama keeps the end of a prompt longer than num_ctx and
+        # answers HTTP 200, so the excerpt — the prompt's opening — is lost and
+        # the context is written from the chunk alone. Older profiles without a
+        # window keep their request unchanged.
+        if config.context_window_tokens is not None:
+            payload["truncate"] = False
         # `think` is only accepted by models that report the capability; sending
         # it to any other model is an error, so it is omitted rather than
         # assumed. Probed after the first render, so a bad template is still
@@ -105,6 +118,15 @@ def generate_context(
                 validate=_validate,
                 on_retry=on_retry,
             )
+        except OllamaPromptExceedsWindowError as exc:
+            # The explanation leads, as below, so the fallback log can show it.
+            size = f"{exc.prompt_tokens}-token" if exc.prompt_tokens else "the"
+            raise OllamaPromptExceedsWindowError(
+                f"{size} prompt exceeds augmentation.context_window_tokens "
+                f"({config.context_window_tokens}); no context generated: {exc}",
+                prompt_tokens=exc.prompt_tokens,
+                window_tokens=exc.window_tokens,
+            ) from exc
         except OllamaInputTooLargeError as exc:
             if step == len(lengths):
                 # The explanation leads because the fallback log shows 120

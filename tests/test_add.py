@@ -114,6 +114,34 @@ def test_add_extracted_paths_recorded_in_db(tmp_path: Path, sample_txt: Path):
         assert "extracted.md" in row["extracted_markdown_path"]
 
 
+def test_add_extracted_files_are_the_bytes_extracted_hash_names(tmp_path: Path):
+    """On every OS the stored text is what extracted_hash was taken over.
+
+    Without an explicit newline, Windows wrote extracted.md/.txt with CRLF while
+    the hash was taken over the LF text: the project read back fine, but its
+    artifacts disagreed with their own record, and MRAG Plus's migration
+    refuses such a document as corrupt.
+    """
+    source = tmp_path / "lines.md"
+    source.write_bytes(b"# Valves\n\nA relief valve opens.\n\n## Testing\n\nOnce a year.\n")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+
+        result = runner.invoke(app, ["add", str(source)], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+
+        conn = open_connection(find_db(project_dir))
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+
+        text = (project_dir / row["extracted_text_path"]).read_bytes()
+        markdown = (project_dir / row["extracted_markdown_path"]).read_bytes()
+        assert b"\r" not in text and b"\r" not in markdown
+        assert _sha256(text) == row["extracted_hash"]
+
+
 def test_add_extraction_meta_json_structure(tmp_path: Path, sample_txt: Path):
     """extraction_meta.json must contain expected keys."""
     with pytest.MonkeyPatch.context() as mp:
@@ -263,6 +291,50 @@ def test_show_extracted_prints_content(tmp_path: Path, sample_txt: Path):
         result = runner.invoke(app, ["show-extracted", doc_id], catch_exceptions=False)
         assert result.exit_code == 0
         assert "Hello, world!" in result.output
+
+
+def test_add_stores_artifact_paths_with_forward_slashes(tmp_path: Path, sample_txt: Path):
+    """The catalog's paths are the same on every OS; Windows used to store '\\'."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        runner.invoke(app, ["add", str(sample_txt)], catch_exceptions=False)
+
+        conn = open_connection(find_db(project_dir))
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+
+        for column in ("original_path", "extracted_markdown_path", "extracted_text_path", "extraction_meta_path"):
+            assert "\\" not in row[column] and row[column].startswith(f"data/documents/{row['id']}/"), column
+
+
+def test_a_catalog_written_on_windows_with_backslash_paths_still_reads(tmp_path: Path, sample_txt: Path):
+    """A project an older mrag made on Windows stored data\\documents\\<id>\\…; it reads on any OS."""
+    from mrag.core.stored_path import normalize_stored, resolve_stored
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        runner.invoke(app, ["add", str(sample_txt)], catch_exceptions=False)
+        conn = open_connection(find_db(project_dir))
+        conn.execute(
+            "UPDATE documents SET original_path = replace(original_path, '/', '\\'), "
+            "extracted_markdown_path = replace(extracted_markdown_path, '/', '\\'), "
+            "extracted_text_path = replace(extracted_text_path, '/', '\\'), "
+            "extraction_meta_path = replace(extraction_meta_path, '/', '\\')"
+        )
+        conn.commit()
+        row = dict(conn.execute("SELECT * FROM documents").fetchone())
+        conn.close()
+        assert "\\" in row["extracted_text_path"]
+
+        result = runner.invoke(app, ["show-extracted", row["id"]], catch_exceptions=False)
+        assert result.exit_code == 0, result.output
+        assert "Hello, world!" in result.output
+        assert resolve_stored(project_dir, row["original_path"]).is_file()
+        assert normalize_stored(row["original_path"]) == f"data/documents/{row['id']}/original.txt"
 
 
 def test_export_extracted_writes_file(tmp_path: Path, sample_txt: Path):

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from mrag.core.stored_path import normalize_stored, resolve_stored
 from mrag.mcp.tools import (
     McpToolContext,
     find_document_row,
@@ -71,9 +72,9 @@ def extracted_resource(ctx: McpToolContext, document_id: str, suffix: str) -> st
     rel = row["extracted_text_path"] if suffix == "txt" else row["extracted_markdown_path"]
     if not rel:
         raise FileNotFoundError(f"document '{document_id}' has no extracted.{suffix}")
-    path = ctx.project_dir / rel
+    path = resolve_stored(ctx.project_dir, rel)
     if not path.exists():
-        raise FileNotFoundError(f"extracted file not found: {rel}")
+        raise FileNotFoundError(f"extracted file not found: {normalize_stored(rel)}")
     return _read_limited(path, ctx.effective.raw.limits.content_max_chars)
 
 
@@ -126,9 +127,9 @@ def original_resource(ctx: McpToolContext, document_id: str) -> str | bytes:
     """
     row = _original_row(ctx, document_id)
     rel = row["original_path"]
-    path = ctx.project_dir / rel
+    path = resolve_stored(ctx.project_dir, rel)
     if not path.is_file():
-        raise FileNotFoundError(f"original file not found: {rel}")
+        raise FileNotFoundError(f"original file not found: {normalize_stored(rel)}")
     limits = ctx.effective.raw.limits
     size = path.stat().st_size
     if size > limits.artifact_max_bytes:

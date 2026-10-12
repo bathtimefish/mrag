@@ -12,9 +12,12 @@ Retry policy:
   - HTTP 4xx                → NOT retried; raised as RuntimeError immediately
   - "too large to process"  → NOT retried, whatever the status; raised as
                               OllamaInputTooLargeError immediately
+  - "exceed_context_size_error" → NOT retried, whatever the status; raised as
+                              OllamaPromptExceedsWindowError immediately
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Callable
 
@@ -37,6 +40,40 @@ class OllamaInputTooLargeError(RuntimeError):
     only spends the backoff. A caller that can send less catches this, and
     every other caller still sees a RuntimeError.
     """
+
+
+# Asked with `truncate: false`, Ollama refuses a prompt longer than its context
+# window instead of keeping the prompt's end and answering HTTP 200, which
+# silently drops the opening. Observed from Ollama 0.34.4: HTTP 400 with
+# `"type":"exceed_context_size_error","n_prompt_tokens":N,"n_ctx":W` inside
+# the error text, after tokenizing alone (about 3 ms).
+_PROMPT_EXCEEDS_WINDOW_MARKER = "exceed_context_size_error"
+
+
+def _count_after(text: str, field: str) -> int | None:
+    """The number following `field` in a refusal body, which nests JSON as text."""
+    match = re.search(rf'{field}\\?"?\s*:\s*(\d+)', text)
+    return int(match.group(1)) if match else None
+
+
+class OllamaPromptExceedsWindowError(RuntimeError):
+    """The server refused the prompt as longer than its context window.
+
+    Never retried: the same prompt fails the same way every time. Unlike
+    OllamaInputTooLargeError it is not a reason to send less: shortening the
+    excerpt would buy a context written from less of the document. The token
+    counts are the server's, or None when its message does not carry them.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        prompt_tokens: int | None = None,
+        window_tokens: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.prompt_tokens = prompt_tokens
+        self.window_tokens = window_tokens
 
 # Model capabilities never change while a process runs, and augmentation asks
 # once per chunk, so the answer is cached per (endpoint, model) rather than
@@ -129,6 +166,8 @@ def ollama_post(
         ConnectionError: Ollama is not reachable (ConnectError — not retried).
         OllamaInputTooLargeError: The server refused the prompt as too large
                         (not retried).
+        OllamaPromptExceedsWindowError: The server refused the prompt as
+                        longer than its context window (not retried).
         RuntimeError:   Non-retryable HTTP error or retry exhaustion.
     """
     url = f"{endpoint.rstrip('/')}{path}"
@@ -150,6 +189,13 @@ def ollama_post(
             ) from exc
 
         except httpx.HTTPStatusError as exc:
+            if _PROMPT_EXCEEDS_WINDOW_MARKER in exc.response.text:
+                raise OllamaPromptExceedsWindowError(
+                    f"Ollama returned HTTP {exc.response.status_code}: "
+                    f"{exc.response.text}",
+                    prompt_tokens=_count_after(exc.response.text, "n_prompt_tokens"),
+                    window_tokens=_count_after(exc.response.text, "n_ctx"),
+                ) from exc
             if _INPUT_TOO_LARGE_MARKER in exc.response.text.lower():
                 raise OllamaInputTooLargeError(
                     f"Ollama returned HTTP {exc.response.status_code}: "
