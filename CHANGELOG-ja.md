@@ -31,12 +31,11 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   保存されるようになりました。** `extracted.md` と `extracted.txt` は OS の改行で
   書かれていたため、Windows では各行が CRLF で終わる一方、`extracted_hash` は LF
   のテキストから計算されていました。mrag 自身は同じテキストとして読み戻して正しく
-  インデックスしていましたが、保存された成果物が自身の記録と食い違い、MRAG Plus
-  の `mrag migrate` はそうした文書をすべて破損として拒否していました
-  (`migration_artifact_hash_mismatch`)。今後はどの OS でも LF で書きます。
-  すでに Windows で書かれたプロジェクトは CRLF のファイルを持ったままですが、
-  対応は不要です。mrag はこれまでどおり読み、MRAG Plus は CRLF を LF に戻すと
-  記録と一致するファイルを受け入れます。
+  インデックスしていましたが、保存された成果物が自身の記録と食い違っていたため、
+  成果物を hash と照合する読み手には、そうした文書がすべて破損に見えていました。
+  今後はどの OS でも LF で書きます。すでに Windows で書かれたプロジェクトは CRLF
+  のファイルを持ったままですが、対応は不要です。mrag はこれまでどおり読み、CRLF を
+  LF として読めばテキストは記録と一致します。
 
 - **Windows で、`mrag add --recursive` と `mrag documents sync` がディレクトリ
   ツリー全体をたどるようになりました。** Windows はディレクトリ項目の inode を

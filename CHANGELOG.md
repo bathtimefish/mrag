@@ -33,11 +33,11 @@ kept; the repository history is the record for those releases.
   the platform's line endings, so on Windows every line ended in CRLF while
   `extracted_hash` was taken over the LF text. mrag read the files back as the
   same text and indexed them correctly, but the stored artifacts disagreed with
-  their own record, and MRAG Plus's `mrag migrate` refused every such document
-  as corrupt (`migration_artifact_hash_mismatch`). They are now written with LF
-  on every platform. Projects already written on Windows keep their CRLF files
-  and need nothing: mrag reads them as before, and MRAG Plus accepts a file
-  whose CRLF-to-LF fold matches the record.
+  their own record, so anything that checks an artifact against its hash found
+  every such document corrupt. They are now written with LF on every platform.
+  Projects already written on Windows keep their CRLF files and need nothing:
+  mrag reads them as before, and their text matches the record once CRLF is
+  read as LF.
 
 - **On Windows, `mrag add --recursive` and `mrag documents sync` walk the whole
   directory tree.** Windows reports no inode for a directory entry, so every

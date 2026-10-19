@@ -119,8 +119,8 @@ def test_add_extracted_files_are_the_bytes_extracted_hash_names(tmp_path: Path):
 
     Without an explicit newline, Windows wrote extracted.md/.txt with CRLF while
     the hash was taken over the LF text: the project read back fine, but its
-    artifacts disagreed with their own record, and MRAG Plus's migration
-    refuses such a document as corrupt.
+    artifacts disagreed with their own record, so anything that checks an
+    artifact against its hash finds such a document corrupt.
     """
     source = tmp_path / "lines.md"
     source.write_bytes(b"# Valves\n\nA relief valve opens.\n\n## Testing\n\nOnce a year.\n")
