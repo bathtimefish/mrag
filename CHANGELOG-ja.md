@@ -7,6 +7,25 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.5.2 — 2026-10-19
+
+### 修正
+
+- **止められた `mrag catalog migrate-identities` が、他のエラー出力と同じく
+  `error` を返すようになりました。** 変換できない文書があるとき、レポートは
+  `status: "error"` と妨げている文書の一覧を返しますが、`error` オブジェクトを
+  持たなかったため、`status` が `"error"` のときに `error.code` を読む呼び出し側は
+  何も得られませんでした。dry run と本番のどちらのレポートにも、
+  `error: {code: "identity_migration_blocked", message}` が載るようになりました。
+  それ以外は変わりません。`action` は `refused` のまま、妨げている文書は従来どおり
+  列挙され、何も書き込まれず、終了コードは 1 のままです。
+- **`mrag catalog migrate-identities` のエラー出力が、コマンド名を正しく示すように
+  なりました。** プロジェクトの外で実行したときなどに `command: "catalog"` と
+  示していましたが、同じコマンドのレポートはすべて `"catalog migrate-identities"`
+  です。これに揃えました。
+
+---
+
 ## 1.5.1 — 2026-10-11
 
 ### 修正

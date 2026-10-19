@@ -7,6 +7,25 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.2 — 2026-10-19
+
+### Fixed
+
+- **A blocked `mrag catalog migrate-identities` reports an `error` like every
+  other error output.** When a document cannot be converted, the report said
+  `status: "error"` and listed the blockers, but carried no `error` object, so
+  a caller that reads `error.code` whenever `status` is `"error"` found
+  nothing. The report — of the dry run and of the real run alike — now also
+  carries `error: {code: "identity_migration_blocked", message}`. Nothing else
+  in it changes: `action` is still `refused`, the blockers are listed as before,
+  nothing is written, and the exit code is still 1.
+- **The error output of `mrag catalog migrate-identities` names the command.**
+  It said `command: "catalog"` — when run outside a project, for example — while
+  every report of the same command says `"catalog migrate-identities"`. It now
+  says the same.
+
+---
+
 ## 1.5.1 — 2026-10-11
 
 ### Fixed
