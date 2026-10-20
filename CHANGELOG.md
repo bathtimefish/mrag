@@ -7,6 +7,28 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.3 — 2026-10-20
+
+### Fixed
+
+- **The Dify endpoint compares `score_threshold` with the score a record
+  shows.** The threshold was compared with the normalized score before it was
+  rounded to six places for the record, so a record whose `score` read the
+  same as the threshold could be dropped — `0.4999996` showed as `0.5` and fell
+  below a threshold of `0.5`. The comparison now uses the rounded score, so a
+  record that reads the same as the threshold is kept and one that reads lower
+  is dropped. Scores themselves do not change.
+
+### Documentation
+
+- **`docs/dify-api.md` explains why common words score near zero under
+  `keyword`.** SQLite's BM25 gives a word found in half of the indexed chunks
+  or more its smallest weight, so such a search returns records scored about
+  `0.000001` and any threshold above `0` drops them, though their order still
+  holds.
+
+---
+
 ## 1.5.2 — 2026-10-19
 
 ### Fixed

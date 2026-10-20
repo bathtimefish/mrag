@@ -115,6 +115,8 @@ Different retrieval strategies produce scores with different characteristics, so
 | `parent_child` | Hybrid + parent-resolution score | Pass-through, clamped to `[0, 1]` |
 
 > Important: `retrieval_setting.score_threshold` is checked against this **normalized value**. For example, a BM25 score of `5.0` under the `keyword` strategy compresses to roughly `0.83`, so the raw and normalized scales are different. Tune the threshold against a live server.
+>
+> The comparison uses the score exactly as the record carries it — rounded to six decimal places — so a record whose `score` reads the same as the threshold is kept, and one that reads lower is dropped (since 1.5.3; before, a record showing `0.5` could be dropped by a threshold of `0.5`).
 
 > Note: when a profile has `rerank.enabled: true`, `score` is replaced by the CrossEncoder output. CrossEncoder score ranges are model-dependent and not guaranteed to land in `[0, 1]` — for `vector` / `hybrid` / `parent_child` the clamp still applies, and for `keyword` the `score/(1+score)` compression still applies on top. **Lower the threshold by a notch when reranking is on** (→ [reranking.md](./reranking.md)).
 
@@ -167,5 +169,6 @@ Once the connection test passes, you can reference this knowledge from Dify's ch
 ## Tips
 
 - **Picking `score_threshold`** — Start at `0.0` and walk it up in 0.05 increments while watching the Dify-side retrieval results. Raw BM25 varies widely under the `keyword` strategy, so the reasonable threshold range is dataset-dependent.
+- **Common words under `keyword` score near zero** — SQLite's BM25 gives a word that appears in half of the indexed chunks or more the smallest weight it allows, so a search for such a word returns records scored about `0.000001`, and any threshold above `0` drops all of them. The order of the records is still meaningful (it follows how often the word appears in each chunk); only the scale is lost. This happens in small knowledge bases, or ones about a single subject, where an ordinary content word can be in half of the chunks; keep the threshold at `0.0` there, or use `hybrid`, whose scores do not depend on BM25's scale.
 - **Debug with curl** — Hitting the endpoint directly with `curl -X POST http://localhost:8000/retrieval -H 'Authorization: Bearer ...' -H 'Content-Type: application/json' -d '{...}'` helps separate Dify Studio misconfiguration from mrag-side issues.
 - **Latency in production** — With reranking enabled, CrossEncoder inference adds noticeable cost. Consider lowering `rerank.top_n`, or starting the server with `--no-rerank`, while keeping Dify's request timeout in mind.

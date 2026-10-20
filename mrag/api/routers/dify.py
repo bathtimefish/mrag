@@ -163,13 +163,16 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
         }
         if not _filter_admits(compiled_filter, metadata):
             continue
-        normalized = _normalize_score(r.score, strategy)
-        if normalized < score_threshold:
+        # The threshold is compared with the score the record carries, rounded
+        # to six places, so a record whose score reads the same as the
+        # threshold is kept and one that reads lower is dropped.
+        score = round(_normalize_score(r.score, strategy), 6)
+        if score < score_threshold:
             continue
         records.append(
             DifyRecord(
                 content=r.content,
-                score=round(normalized, 6),
+                score=score,
                 title=source,
                 metadata=metadata,
             )

@@ -158,6 +158,32 @@ def test_dify_retrieve_score_threshold_filters(dify_client):
     assert resp.json()["records"] == []
 
 
+def test_dify_threshold_is_compared_with_the_score_the_record_shows(dify_client, monkeypatch):
+    # A record that shows 0.5 is kept by a threshold of 0.5, though its score
+    # before rounding is a little lower; one that shows 0.499999 is dropped.
+    import mrag.api.routers.dify as router
+    results = [
+        SimpleNamespace(document_id="d1", chunk_id="c1", content="shows 0.5", score=0.4999996, metadata={}),
+        SimpleNamespace(document_id="d2", chunk_id="c2", content="shows 0.499999", score=0.4999994, metadata={}),
+    ]
+    monkeypatch.setattr(router, "run_retrieval", lambda **_: SimpleNamespace(results=results))
+    monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
+    monkeypatch.setattr(router, "_normalize_score", lambda score, strategy: score)
+
+    def retrieve(threshold):
+        resp = dify_client.client.post("/retrieval", json={
+            "knowledge_id": dify_client.config.knowledge_id,
+            "query": "Hello",
+            "retrieval_setting": {"top_k": 10, "score_threshold": threshold},
+        })
+        assert resp.status_code == 200
+        return [(r["content"], r["score"]) for r in resp.json()["records"]]
+
+    assert retrieve(0.5) == [("shows 0.5", 0.5)]
+    assert retrieve(0.499999) == [("shows 0.5", 0.5), ("shows 0.499999", 0.499999)]
+    assert retrieve(0.500001) == []
+
+
 def test_dify_retrieve_metadata_condition_accepted(dify_client):
     # An unmatched condition must be applied, not silently ignored.
     resp = dify_client.client.post(
