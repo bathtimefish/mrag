@@ -51,7 +51,13 @@ class DifyRetrieveResponse(BaseModel):
 # Score normalization: map all strategies to [0, 1]
 # ---------------------------------------------------------------------------
 
-def _normalize_score(score: float, strategy: str) -> float:
+def _normalize_score(score: float, strategy: str, reranked: bool = False) -> float:
+    if reranked:
+        # A reranked score is the CrossEncoder's own, which sentence-transformers
+        # already maps into [0, 1] with a sigmoid for a single-label reranker.
+        # It is no longer a BM25 score whatever the strategy, so compressing it
+        # again would push every reranked keyword record below 0.5.
+        return max(0.0, min(1.0, score))
     if strategy == "keyword":
         # BM25 scores are positive and unbounded; map to (0, 1) via score/(1+score)
         return score / (1.0 + score)
@@ -166,7 +172,7 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
         # The threshold is compared with the score the record carries, rounded
         # to six places, so a record whose score reads the same as the
         # threshold is kept and one that reads lower is dropped.
-        score = round(_normalize_score(r.score, strategy), 6)
+        score = round(_normalize_score(r.score, strategy, run.reranked), 6)
         if score < score_threshold:
             continue
         records.append(
