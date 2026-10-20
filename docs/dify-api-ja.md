@@ -114,6 +114,8 @@ activeなdocument exclusionは、すべての検索strategyでresponse構築前�
 | `parent_child` | hybrid + 親解決後のスコア | そのまま、`[0, 1]` にクランプ |
 
 > 重要：`retrieval_setting.score_threshold` はこの**正規化後の値**に対する閾値です。`keyword` 戦略では BM25 の `5.0` がおおむね `0.83` に圧縮されるなど、素値とは尺度が異なります。閾値はサーバーを動かしながら実測で調整してください。
+>
+> 比較に使うのはレコードに載る `score` そのもの（小数第 6 位に丸めた値）です。表示された `score` が閾値と同じレコードは残り、閾値より小さいレコードは除外されます（1.5.3 から。それ以前は `0.5` と表示されるレコードが閾値 `0.5` で除外されることがありました）。
 
 > 注意：プロファイルで `rerank.enabled: true` の場合、`score` は CrossEncoder の出力に置き換わります。CrossEncoder のスコアレンジはモデル依存で、必ずしも `[0, 1]` には収まらないため、`vector` / `hybrid` / `parent_child` ではクランプ、`keyword` では `score/(1+score)` 圧縮が追加で掛かります。**リランキングを使う場合は閾値を一段下げる**ことを想定してください（→ [reranking-ja.md](./reranking-ja.md)）。
 
@@ -166,5 +168,6 @@ Dify で **「外部ナレッジ（External Knowledge）」** として mrag を
 ## Tips
 
 - **`score_threshold` の決め方**：まず `0.0` で動かし、Dify 側のナレッジ取得結果を見ながら 0.05 刻みで上げていくのが安全です。`keyword` 戦略は素の BM25 が大きく変動するので、閾値の妥当な範囲もデータセット依存です
+- **`keyword` 戦略ではありふれた語の score がほぼ 0 になる**：SQLite の BM25 は、index された chunk の半数以上に現れる語に最小の重みしか与えません。そのためそうした語の検索結果は `0.000001` 前後の score になり、`0` より大きい閾値ではすべて除外されます。並び順は意味を保っています（各 chunk にその語が何回現れるかの順）。失われるのは尺度だけです。小さなナレッジベースや、1 つの話題に偏ったナレッジベースでは、普通の内容語でも chunk の半数以上に現れることがあります。その場合は閾値を `0.0` のままにするか、score が BM25 の尺度に依存しない `hybrid` を使ってください
 - **デバッグ時は curl で叩く**：`curl -X POST http://localhost:8000/retrieval -H 'Authorization: Bearer ...' -H 'Content-Type: application/json' -d '{...}'` で動作を確認すると、Dify Studio 側の設定ミスと mrag 側の問題を切り分けやすいです
 - **本番運用時のレイテンシ**：リランキング有効時は CrossEncoder の推論コストが乗ります。Dify のタイムアウト設定とあわせて、`rerank.top_n` を絞るか `--no-rerank` でサーバーを起動する選択肢を検討してください

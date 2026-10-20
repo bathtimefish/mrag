@@ -368,12 +368,13 @@ def test_a_scheme_one_catalog_lists_is_refused_by_add_and_migrates_explicitly(tm
     assert planned.exit_code == 0
     plan = json.loads(planned.output)
     assert (plan["action"], plan["summary"]) == ("planned", {"respelled": 1, "unchanged": 1, "blocked": 0})
+    assert (plan["status"], "error" in plan) == ("success", False)
     assert {d["source_identity"] for d in _documents(project)} >= {"external/in.md"}
 
     applied = _catalog("--json")
     assert applied.exit_code == 0
     report = json.loads(applied.output)
-    assert report["action"] == "migrated"
+    assert (report["status"], report["action"], "error" in report) == ("success", "migrated", False)
     assert (project / report["audit_log"]).is_file()
     after = _documents(project)
     assert {d["id"] for d in after} == ids
@@ -400,15 +401,36 @@ def test_a_blocked_migration_lists_every_blocker_and_changes_nothing(tmp_path, m
         conn.execute("UPDATE documents SET source_identity = 'Identities/b.md' WHERE source_identity = 'b.md'")
     before = _documents(project)
 
-    result = _catalog("--json")
-    assert result.exit_code == 1
-    report = json.loads(result.output)
-    assert (report["status"], report["action"]) == ("error", "refused")
-    assert sorted(b["source_identity"] for b in report["blockers"]) == ["Identities/b.md", "identities/a.md"]
-    assert {b["reason"] for b in report["blockers"]} == {"reserved_path"}
+    # A blocked report is an error report: `status: "error"` carries an `error`
+    # object, as every other error output does, beside the blockers it lists.
+    # The dry run and the real run refuse alike (1.5.2).
+    for args, dry_run in ((("--dry-run", "--json"), True), (("--json",), False)):
+        result = _catalog(*args)
+        assert result.exit_code == 1
+        report = json.loads(result.output)
+        assert (report["status"], report["action"], report["dry_run"]) == ("error", "refused", dry_run)
+        assert report["command"] == "catalog migrate-identities"
+        assert report["error"] == {
+            "code": "identity_migration_blocked",
+            "message": "some documents cannot be converted to the current identity scheme; nothing was changed",
+        }
+        assert sorted(b["source_identity"] for b in report["blockers"]) == ["Identities/b.md", "identities/a.md"]
+        assert {b["reason"] for b in report["blockers"]} == {"reserved_path"}
+        assert report["summary"]["blocked"] == 2
     assert _documents(project) == before
     with sqlite3.connect(project / "mrag.db") as conn:
         assert conn.execute("SELECT value FROM catalog_settings").fetchone()[0] == "1"
+
+
+def test_a_failed_migrate_identities_names_the_command_its_report_names(tmp_path, monkeypatch):
+    # Before 1.5.2 the error output said `command: "catalog"` while every
+    # report of the same command says "catalog migrate-identities".
+    monkeypatch.chdir(tmp_path)
+    result = _catalog("--json")
+    assert result.exit_code == 1
+    envelope = json.loads(result.output)
+    assert (envelope["command"], envelope["status"]) == ("catalog migrate-identities", "error")
+    assert envelope["error"]["code"] == "project_not_initialized"
 
 
 def _relations(project):

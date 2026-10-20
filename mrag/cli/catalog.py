@@ -30,6 +30,14 @@ catalog_app = typer.Typer(help="Maintain the project catalog itself.", no_args_i
 
 COMMAND = "catalog migrate-identities"
 
+# What a blocked plan reports beside its blockers. `status: "error"` always
+# carries an `error` object, so a caller that reads `error.code` on an error
+# finds one here too.
+BLOCKED_ERROR = {
+    "code": "identity_migration_blocked",
+    "message": "some documents cannot be converted to the current identity scheme; nothing was changed",
+}
+
 
 @catalog_app.command("migrate-identities")
 def migrate_identities(
@@ -91,7 +99,7 @@ def migrate_identities(
 def _report(
     plan: MigrationPlan, action: str, dry_run: bool, audit_log: str | None, notice_restored: bool
 ) -> dict[str, Any]:
-    return {
+    report = {
         "schema_version": 1,
         "command": COMMAND,
         "status": "error" if plan.is_blocked else "success",
@@ -130,6 +138,9 @@ def _report(
         "audit_log": audit_log,
         "notice_restored": notice_restored,
     }
+    if plan.is_blocked:
+        report["error"] = dict(BLOCKED_ERROR)
+    return report
 
 
 def _write_audit_log(project_dir: Path, report: dict[str, Any], started: datetime) -> str:
@@ -196,7 +207,7 @@ def _fatal(message: str, json_output: bool, code: str, exit_code: int = 1) -> No
     if json_output:
         typer.echo(
             json.dumps(
-                {"schema_version": 1, "command": "catalog", "status": "error", "error": {"code": code, "message": message}},
+                {"schema_version": 1, "command": COMMAND, "status": "error", "error": {"code": code, "message": message}},
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
