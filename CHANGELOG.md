@@ -7,6 +7,23 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.4 — 2026-10-20
+
+### Fixed
+
+- **A reranked record's score on the Dify endpoint is the reranker's, under
+  every strategy.** With reranking on, a result's score is the CrossEncoder's
+  output, which sentence-transformers already maps into `[0, 1]` for a
+  single-output reranker. The `keyword` strategy still compressed it with
+  `score / (1 + score)` as if it were BM25, so every reranked record scored
+  below `0.5` — a record the reranker rated `0.74` showed `0.42` — and any
+  threshold of `0.5` or more dropped all of them. A reranked score is now
+  passed through, clamped to `[0, 1]`, whatever the strategy; `vector`,
+  `hybrid` and `parent_child`, which only clamped, read the same as before.
+  `docs/dify-api.md` drops its advice to lower the threshold when reranking.
+
+---
+
 ## 1.5.3 — 2026-10-20
 
 ### Fixed

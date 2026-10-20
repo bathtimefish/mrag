@@ -118,7 +118,7 @@ Different retrieval strategies produce scores with different characteristics, so
 >
 > The comparison uses the score exactly as the record carries it — rounded to six decimal places — so a record whose `score` reads the same as the threshold is kept, and one that reads lower is dropped (since 1.5.3; before, a record showing `0.5` could be dropped by a threshold of `0.5`).
 
-> Note: when a profile has `rerank.enabled: true`, `score` is replaced by the CrossEncoder output. CrossEncoder score ranges are model-dependent and not guaranteed to land in `[0, 1]` — for `vector` / `hybrid` / `parent_child` the clamp still applies, and for `keyword` the `score/(1+score)` compression still applies on top. **Lower the threshold by a notch when reranking is on** (→ [reranking.md](./reranking.md)).
+> Note: when a profile has `rerank.enabled: true`, `score` is replaced by the CrossEncoder output. For a reranker model with a single output, which is what rerankers are, sentence-transformers turns that output into a probability in `[0, 1]` with a sigmoid, so the Dify endpoint passes it through — clamped to `[0, 1]`, whatever the strategy — and the table above does not apply to it. Before 1.5.4 the `keyword` strategy compressed it again with `score/(1+score)`, which put every reranked record below `0.5` (→ [reranking.md](./reranking.md)).
 
 
 ## Authentication

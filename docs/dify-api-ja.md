@@ -117,7 +117,7 @@ activeなdocument exclusionは、すべての検索strategyでresponse構築前�
 >
 > 比較に使うのはレコードに載る `score` そのもの（小数第 6 位に丸めた値）です。表示された `score` が閾値と同じレコードは残り、閾値より小さいレコードは除外されます（1.5.3 から。それ以前は `0.5` と表示されるレコードが閾値 `0.5` で除外されることがありました）。
 
-> 注意：プロファイルで `rerank.enabled: true` の場合、`score` は CrossEncoder の出力に置き換わります。CrossEncoder のスコアレンジはモデル依存で、必ずしも `[0, 1]` には収まらないため、`vector` / `hybrid` / `parent_child` ではクランプ、`keyword` では `score/(1+score)` 圧縮が追加で掛かります。**リランキングを使う場合は閾値を一段下げる**ことを想定してください（→ [reranking-ja.md](./reranking-ja.md)）。
+> 注意：プロファイルで `rerank.enabled: true` の場合、`score` は CrossEncoder の出力に置き換わります。リランカーのような出力が 1 つのモデルでは、sentence-transformers がその出力を sigmoid で `[0, 1]` の確率に変換するので、Dify エンドポイントは検索戦略によらずそれを `[0, 1]` にクランプしてそのまま返します。上の表は適用されません。1.5.4 より前は `keyword` 戦略でさらに `score/(1+score)` 圧縮が掛かり、リランク後のレコードはすべて `0.5` 未満になっていました（→ [reranking-ja.md](./reranking-ja.md)）。
 
 
 ## 認証

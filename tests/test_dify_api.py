@@ -78,6 +78,38 @@ def test_normalize_score_clamp():
     assert _normalize_score(-0.1, "hybrid") == 0.0
 
 
+def test_normalize_score_reranked_passes_through_whatever_the_strategy():
+    # A reranked score is the CrossEncoder's probability, not BM25, so the
+    # keyword compression must not apply to it.
+    for strategy in ("keyword", "vector", "hybrid", "parent_child"):
+        assert _normalize_score(0.737, strategy, reranked=True) == 0.737
+        assert _normalize_score(1.5, strategy, reranked=True) == 1.0
+        assert _normalize_score(-0.1, strategy, reranked=True) == 0.0
+    # Not reranked, keyword is still compressed.
+    assert _normalize_score(0.737, "keyword") < 0.5
+
+
+def test_dify_reranked_keyword_records_carry_the_reranker_score(dify_client, monkeypatch):
+    # Under the keyword strategy with reranking on, a record carries the
+    # reranker's score as it is, not score/(1+score) of it.
+    import mrag.api.routers.dify as router
+    results = [
+        SimpleNamespace(document_id="d1", chunk_id="c1", content="relevant", score=0.737014, metadata={}),
+        SimpleNamespace(document_id="d2", chunk_id="c2", content="unrelated", score=0.500044, metadata={}),
+    ]
+    monkeypatch.setattr(router, "load_profile", lambda *_: SimpleNamespace(retrieval=SimpleNamespace(strategy="keyword")))
+    monkeypatch.setattr(router, "run_retrieval", lambda **_: SimpleNamespace(results=results, reranked=True))
+    monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
+
+    resp = dify_client.client.post("/retrieval", json={
+        "knowledge_id": dify_client.config.knowledge_id,
+        "query": "Hello",
+        "retrieval_setting": {"top_k": 10, "score_threshold": 0.6},
+    })
+    assert resp.status_code == 200
+    assert [(r["content"], r["score"]) for r in resp.json()["records"]] == [("relevant", 0.737014)]
+
+
 # ---------------------------------------------------------------------------
 # POST /retrieval — success cases
 # ---------------------------------------------------------------------------
@@ -166,9 +198,9 @@ def test_dify_threshold_is_compared_with_the_score_the_record_shows(dify_client,
         SimpleNamespace(document_id="d1", chunk_id="c1", content="shows 0.5", score=0.4999996, metadata={}),
         SimpleNamespace(document_id="d2", chunk_id="c2", content="shows 0.499999", score=0.4999994, metadata={}),
     ]
-    monkeypatch.setattr(router, "run_retrieval", lambda **_: SimpleNamespace(results=results))
+    monkeypatch.setattr(router, "run_retrieval", lambda **_: SimpleNamespace(results=results, reranked=False))
     monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
-    monkeypatch.setattr(router, "_normalize_score", lambda score, strategy: score)
+    monkeypatch.setattr(router, "_normalize_score", lambda score, strategy, reranked: score)
 
     def retrieve(threshold):
         resp = dify_client.client.post("/retrieval", json={
@@ -212,7 +244,7 @@ def test_dify_filter_overfetches_and_returns_fixed_metadata(dify_client, monkeyp
 
     def fake_retrieve(**kwargs):
         seen.update(kwargs)
-        return SimpleNamespace(results=results)
+        return SimpleNamespace(results=results, reranked=False)
 
     monkeypatch.setattr(router, "run_retrieval", fake_retrieve)
     monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
