@@ -15,7 +15,8 @@ mrag では、プロファイルの `augmentation.strategy: contextual` を有�
 
 窓を設定すると、要求に `truncate: false` も付きます。付けないと Ollama は長い
 prompt の末尾を残して HTTP 200 を返し、冒頭にある文書の抜粋が失われます。付けた
-場合はサーバーが拒否し(Ollama 0.34.4 では HTTP 400 `exceed_context_size_error`)、
+場合はサーバーが拒否し(Ollama 0.34.4 では HTTP 400 `exceed_context_size_error`、
+0.40.6 からは `request (N tokens) exceeds the available context size` という文だけ)、
 そのチャンクは `3009-token prompt exceeds augmentation.context_window_tokens (2048)`
 のような理由とともに `failure_policy` に従います。抜粋は短くしません。この
 fallback が出たら、窓をその長さと `max_context_tokens` の和より大きくしてください。

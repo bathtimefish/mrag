@@ -12,7 +12,8 @@ Retry policy:
   - HTTP 4xx                → NOT retried; raised as RuntimeError immediately
   - "too large to process"  → NOT retried, whatever the status; raised as
                               OllamaInputTooLargeError immediately
-  - "exceed_context_size_error" → NOT retried, whatever the status; raised as
+  - "exceed_context_size_error" or "exceeds the available context size"
+                            → NOT retried, whatever the status; raised as
                               OllamaPromptExceedsWindowError immediately
 """
 from __future__ import annotations
@@ -46,14 +47,31 @@ class OllamaInputTooLargeError(RuntimeError):
 # window instead of keeping the prompt's end and answering HTTP 200, which
 # silently drops the opening. Observed from Ollama 0.34.4: HTTP 400 with
 # `"type":"exceed_context_size_error","n_prompt_tokens":N,"n_ctx":W` inside
-# the error text, after tokenizing alone (about 3 ms).
-_PROMPT_EXCEEDS_WINDOW_MARKER = "exceed_context_size_error"
+# the error text, after tokenizing alone (about 3 ms). Ollama 0.40.6 passes on
+# only the message, `request (N tokens) exceeds the available context size (W
+# tokens), try increasing it`, without the type or the count fields, so the
+# message, which both carry, is recognised too and the counts are read from it.
+_PROMPT_EXCEEDS_WINDOW_MARKERS = (
+    "exceed_context_size_error",
+    "exceeds the available context size",
+)
+_PROMPT_TOKENS_IN_MESSAGE = re.compile(r"request \((\d+) tokens\)")
+_WINDOW_TOKENS_IN_MESSAGE = re.compile(r"available context size \((\d+) tokens\)")
 
 
 def _count_after(text: str, field: str) -> int | None:
     """The number following `field` in a refusal body, which nests JSON as text."""
     match = re.search(rf'{field}\\?"?\s*:\s*(\d+)', text)
     return int(match.group(1)) if match else None
+
+
+def _count_in(text: str, field: str, in_message: re.Pattern[str]) -> int | None:
+    """A refusal's count from its field, or from its message when it has none."""
+    count = _count_after(text, field)
+    if count is None:
+        match = in_message.search(text)
+        count = int(match.group(1)) if match else None
+    return count
 
 
 class OllamaPromptExceedsWindowError(RuntimeError):
@@ -189,12 +207,14 @@ def ollama_post(
             ) from exc
 
         except httpx.HTTPStatusError as exc:
-            if _PROMPT_EXCEEDS_WINDOW_MARKER in exc.response.text:
+            text = exc.response.text
+            if any(marker in text for marker in _PROMPT_EXCEEDS_WINDOW_MARKERS):
                 raise OllamaPromptExceedsWindowError(
-                    f"Ollama returned HTTP {exc.response.status_code}: "
-                    f"{exc.response.text}",
-                    prompt_tokens=_count_after(exc.response.text, "n_prompt_tokens"),
-                    window_tokens=_count_after(exc.response.text, "n_ctx"),
+                    f"Ollama returned HTTP {exc.response.status_code}: {text}",
+                    prompt_tokens=_count_in(
+                        text, "n_prompt_tokens", _PROMPT_TOKENS_IN_MESSAGE
+                    ),
+                    window_tokens=_count_in(text, "n_ctx", _WINDOW_TOKENS_IN_MESSAGE),
                 ) from exc
             if _INPUT_TOO_LARGE_MARKER in exc.response.text.lower():
                 raise OllamaInputTooLargeError(

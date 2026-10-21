@@ -16,7 +16,8 @@ window uses more model memory; ensure it fits the chosen model and host.
 With a window set, the request also carries `truncate: false`. Ollama would
 otherwise keep the end of a longer prompt and answer HTTP 200, losing the
 document excerpt at its opening. Instead the server refuses it (HTTP 400
-`exceed_context_size_error` on Ollama 0.34.4), and the chunk follows
+`exceed_context_size_error` on Ollama 0.34.4; from 0.40.6 the message alone,
+`request (N tokens) exceeds the available context size`), and the chunk follows
 `failure_policy` with a reason such as `3009-token prompt exceeds
 augmentation.context_window_tokens (2048)`; the excerpt is not shortened. If
 such fallbacks appear, raise the window above that length plus

@@ -33,6 +33,14 @@ _EXCEEDS_WINDOW_BODY = (
     '\\"n_ctx\\":2048}}"}'
 )
 
+# Ollama 0.40.6 passes on the message alone: neither the type nor the count
+# fields reach the client. The text is 0.40.6's, observed on 2026-10-21, with
+# the counts of the answer above.
+_EXCEEDS_WINDOW_MESSAGE_BODY = (
+    '{"error":"request (3009 tokens) exceeds the available context size '
+    '(2048 tokens), try increasing it"}'
+)
+
 # Renders the excerpt alone before the separator, so a test can measure it.
 _TEMPLATE = "{document}\x1f{chunk}"
 
@@ -142,6 +150,22 @@ class TestClientRefusal:
         assert raised.value.prompt_tokens is None
         assert raised.value.window_tokens is None
 
+    def test_the_message_alone_is_recognised_with_the_counts_it_states(self):
+        calls = []
+
+        def _fake_post(url, **kwargs):
+            calls.append(url)
+            return _response(url, 400, _EXCEEDS_WINDOW_MESSAGE_BODY)
+
+        with patch("httpx.post", side_effect=_fake_post), patch("time.sleep") as sleep:
+            with pytest.raises(OllamaPromptExceedsWindowError) as raised:
+                ollama_post("http://localhost:11434", "/api/generate", {}, max_attempts=3)
+
+        assert len(calls) == 1
+        sleep.assert_not_called()
+        assert raised.value.prompt_tokens == 3009
+        assert raised.value.window_tokens == 2048
+
     def test_it_is_not_a_reason_to_send_less(self):
         assert not issubclass(OllamaPromptExceedsWindowError, OllamaInputTooLargeError)
         assert issubclass(OllamaPromptExceedsWindowError, RuntimeError)
@@ -167,6 +191,31 @@ class TestFailurePolicy:
         assert retries == []
         assert isinstance(fallbacks[0], OllamaPromptExceedsWindowError)
         # The fallback log shows the first 120 characters of the reason.
+        assert str(fallbacks[0])[:120].startswith(
+            "3009-token prompt exceeds augmentation.context_window_tokens (2048)"
+        )
+
+    def test_a_refusal_stated_only_in_the_message_reads_the_same(self):
+        # Through the real client, so the reason comes from what the server
+        # answered rather than from a fake that raises the error itself.
+        def _fake_post(url, **kwargs):
+            return _response(url, 400, _EXCEEDS_WINDOW_MESSAGE_BODY)
+
+        fallbacks = []
+        with patch(
+            "mrag.core.indexing.augmentation.model_capabilities",
+            return_value=frozenset(),
+        ), patch("httpx.post", side_effect=_fake_post), patch("time.sleep"):
+            results = augment_chunks(
+                [ChunkData(content="chunk body", chunk_index=0)],
+                "x" * 20_000,
+                _config(mode="raw_fallback"),
+                prompt_template=_TEMPLATE,
+                on_chunk_fallback=lambda cur, total, exc: fallbacks.append(exc),
+            )
+
+        assert results == [None]
+        assert isinstance(fallbacks[0], OllamaPromptExceedsWindowError)
         assert str(fallbacks[0])[:120].startswith(
             "3009-token prompt exceeds augmentation.context_window_tokens (2048)"
         )

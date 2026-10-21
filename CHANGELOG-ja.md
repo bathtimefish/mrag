@@ -7,6 +7,24 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.5.5 — 2026-10-21
+
+### 修正
+
+- **Ollama 0.40.6 で、窓より長いとして拒否された prompt を認識するように
+  なりました。** `augmentation.context_window_tokens` を設定すると、Ollama 0.34.4
+  はそのような prompt を `exceed_context_size_error` と token 数を含む HTTP 400 で
+  拒否していました。0.40.6 は `request (N tokens) exceeds the available context
+  size (W tokens), try increasing it` という文だけを返します。この拒否はただの
+  HTTP 400 として扱われていたため、`raw_fallback` のチャンクは
+  `N-token prompt exceeds augmentation.context_window_tokens (W)` ではなく
+  サーバーの応答本文を理由として fallback し、`fail_document` も同じ一般的な
+  メッセージで失敗していました。この文も認識し、token 数の欄が無いときは文から
+  読むようにしました。チャンクを文脈なしで残す動作は変わらず、変わるのは理由だけ
+  です。
+
+---
+
 ## 1.5.4 — 2026-10-20
 
 ### 修正

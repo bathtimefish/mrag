@@ -7,6 +7,25 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.5 — 2026-10-21
+
+### Fixed
+
+- **A prompt refused as longer than the context window is recognised on
+  Ollama 0.40.6.** With `augmentation.context_window_tokens` set, Ollama 0.34.4
+  answered such a prompt with HTTP 400 carrying `exceed_context_size_error` and
+  the token counts; 0.40.6 passes on only the message, `request (N tokens)
+  exceeds the available context size (W tokens), try increasing it`. That
+  refusal was reported as a plain HTTP 400, so a chunk under `raw_fallback`
+  fell back with the server's body as its reason instead of
+  `N-token prompt exceeds augmentation.context_window_tokens (W)`, and
+  `fail_document` failed with the same generic message. The message is now
+  recognised as well, and the counts are read from it when the fields are
+  absent. The chunk is kept without a context as before; only the reason
+  changes.
+
+---
+
 ## 1.5.4 — 2026-10-20
 
 ### Fixed
