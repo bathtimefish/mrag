@@ -109,8 +109,11 @@ class EmbeddingFailurePolicyConfig(BaseModel):
     mode: Literal["fallback_no_vector", "fail_document"] = "fallback_no_vector"
 
 
+# Each provider field names the one implementation mrag has. A free string let
+# a profile say `lm_studio` or `openai` and be served by Ollama (or FTS5) under
+# that name; it is refused when the profile is read instead.
 class EmbeddingConfig(BaseModel):
-    provider: str = "ollama"
+    provider: Literal["ollama"] = "ollama"
     model: str = "bge-m3"
     endpoint: str = "http://localhost:11434"
     # Ollama needs both values; num_ctx alone does not enlarge the physical batch.
@@ -126,7 +129,7 @@ class AugmentationFailurePolicyConfig(BaseModel):
 
 class AugmentationConfig(BaseModel):
     strategy: str = "none"        # none | contextual | raptor | ...
-    provider: str = "ollama"
+    provider: Literal["ollama"] = "ollama"
     model: str = "gemma4:e2b"
     endpoint: str = "http://localhost:11434"
     # Reasoning models spend most of their generation budget on tokens that are
@@ -142,7 +145,7 @@ class AugmentationConfig(BaseModel):
 
 
 class KeywordConfig(BaseModel):
-    provider: str = "sqlite_fts5"
+    provider: Literal["sqlite_fts5"] = "sqlite_fts5"
     tokenizer: str = "trigram"
     fallback_tokenizer: str = "trigram"
 

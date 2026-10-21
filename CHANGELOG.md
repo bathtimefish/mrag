@@ -7,6 +7,28 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.5.6 — 2026-10-21
+
+### Fixed
+
+- **A provider mrag does not implement is refused when the profile is read.**
+  `embedding.provider`, `augmentation.provider` and `keyword.provider` were free
+  strings that nothing consulted: a profile saying `provider: lm_studio` loaded,
+  and mrag called Ollama at that endpoint under the other name — while the index
+  identity still changed with the string. Each now accepts only the
+  implementation mrag has (`ollama`, `ollama`, `sqlite_fts5`), and any other
+  value stops the command with an `Error:` that names the field and what it
+  accepts (`embedding.provider` / `Input should be 'ollama'`). Profiles that name the implemented provider, or leave
+  it out, load as before and keep their index identity. `rerank.provider` was
+  already refused when used.
+- **`mrag search` and `mrag profiles show` report a profile that fails
+  validation as an error.** They caught only a missing profile, so an invalid
+  one — any value outside what a field accepts, such as `retrieval.fusion:
+  harmonic_mean` — ended them with a traceback. They now print `Error:` with the
+  reason and exit 1, as `mrag index` and `mrag serve` already did.
+
+---
+
 ## 1.5.5 — 2026-10-21
 
 ### Fixed

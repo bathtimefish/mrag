@@ -147,6 +147,23 @@ def test_profiles_show_nonexistent(indexed_project):
     assert result.exit_code != 0
 
 
+def test_an_invalid_profile_is_an_error_line_not_a_traceback(indexed_project):
+    """`profiles show` and `search` caught only a missing profile, so one that
+    failed validation ended them with a traceback; `index` and `serve` already
+    printed the reason and exited 1 (1.5.6)."""
+    profile = Path("profiles") / "default.yaml"
+    text = profile.read_text(encoding="utf-8")
+    assert text.count("  provider: ollama") == 1
+    profile.write_text(text.replace("  provider: ollama", "  provider: lm_studio"), encoding="utf-8")
+
+    for args in (["profiles", "show", "default"], ["search", "hello"], ["index"]):
+        result = runner.invoke(app, args, catch_exceptions=False)
+
+        assert result.exit_code == 1, (args, result.output)
+        assert "Error:" in result.output, (args, result.output)
+        assert "embedding.provider" in result.output, (args, result.output)
+
+
 # ---------------------------------------------------------------------------
 # mrag doctor
 # ---------------------------------------------------------------------------

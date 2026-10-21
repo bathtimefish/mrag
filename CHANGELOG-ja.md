@@ -7,6 +7,30 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.5.6 — 2026-10-21
+
+### 修正
+
+- **mrag が実装していない provider を、profile を読む時点で拒否するように
+  なりました。** `embedding.provider`・`augmentation.provider`・
+  `keyword.provider` は、どこからも参照されない自由な文字列でした。
+  `provider: lm_studio` と書いた profile も読み込まれ、mrag はその endpoint に
+  別の名前のまま Ollama として要求を送っていました — index の identity だけは
+  その文字列で変わっていました。それぞれ mrag が持つ実装(`ollama`・`ollama`・
+  `sqlite_fts5`)だけを受け付け、ほかの値ではコマンドが、欄の名前と受け付ける
+  値を示す `Error:`(`embedding.provider` / `Input should be 'ollama'`)で止まります。
+  実装済みの provider を書いた profile や、書いていない profile は従来どおり
+  読み込まれ、index の identity も変わりません。`rerank.provider` は以前から
+  使用時に拒否されていました。
+- **`mrag search` と `mrag profiles show` が、検証に通らない profile を
+  エラーとして報告するようになりました。** どちらも profile が無い場合しか
+  捕まえていなかったため、無効な profile — `retrieval.fusion: harmonic_mean`
+  のように欄が受け付けない値 — では traceback で終わっていました。
+  `mrag index` や `mrag serve` と同じく、理由を `Error:` として表示し exit 1 で
+  終わります。
+
+---
+
 ## 1.5.5 — 2026-10-21
 
 ### 修正

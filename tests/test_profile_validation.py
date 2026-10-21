@@ -141,6 +141,54 @@ class TestRetrievalFusionValidation:
         assert a.compute_hash() == b.compute_hash()
 
 
+class TestProviderValidation:
+    """A provider mrag does not implement is refused when the profile is read.
+
+    Before 1.5.6 each was a free string: `embedding.provider: lm_studio` loaded,
+    and Ollama was called at that endpoint under the other name.
+    """
+
+    @pytest.mark.parametrize(
+        ("section", "value", "accepted"),
+        [
+            ("embedding", "lm_studio", "ollama"),
+            ("embedding", "openai", "ollama"),
+            ("augmentation", "lm_studio", "ollama"),
+            ("keyword", "tantivy", "sqlite_fts5"),
+        ],
+    )
+    def test_an_unimplemented_provider_is_refused(self, section, value, accepted):
+        with pytest.raises(ValidationError) as caught:
+            ProfileConfig(name="bad", **{section: {"provider": value}})
+
+        message = str(caught.value)
+        assert f"{section}.provider" in message
+        assert f"Input should be '{accepted}'" in message
+
+    def test_a_profile_file_naming_one_is_refused_on_load(self, tmp_path):
+        from mrag.config.profile import load_profile
+
+        (tmp_path / "profiles").mkdir()
+        (tmp_path / "profiles" / "default.yaml").write_text(
+            "name: default\nembedding:\n  provider: lm_studio\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="embedding.provider"):
+            load_profile("default", tmp_path)
+
+    def test_the_implemented_providers_keep_the_index_identity(self):
+        named = ProfileConfig(
+            name="same",
+            embedding={"provider": "ollama"},
+            augmentation={"strategy": "contextual", "provider": "ollama"},
+            keyword={"provider": "sqlite_fts5"},
+        )
+        defaulted = ProfileConfig(name="same", augmentation={"strategy": "contextual"})
+
+        assert named.compute_hash() == defaulted.compute_hash()
+        assert named.embedding.model_dump()["provider"] == "ollama"
+
+
 class TestIndexIdentity:
     def test_all_query_time_retrieval_fields_are_excluded(self):
         baseline = ProfileConfig(name="same")
