@@ -11,8 +11,10 @@ Doctor checks:
   - apsw (optional; the `vaporetto` extra, needed to load sqlite-vaporetto)
   - sqlite-vaporetto native library (optional)
   - Ollama default endpoint (http://localhost:11434) reachability
+  - Ollama version (0.40.4+ serves EmbeddingGemma 2, the model `mrag init` writes)
 """
 import importlib.util
+import re
 import sqlite3
 from typing import Callable
 
@@ -25,6 +27,8 @@ _WARN = "[yellow]WARN [/yellow]"
 _ERR = "[red]ERROR[/red]"
 
 _OLLAMA_DEFAULT_ENDPOINT = "http://localhost:11434"
+# The first Ollama release that runs EmbeddingGemma 2's GGUF tags.
+_EMBEDDINGGEMMA_2_OLLAMA = (0, 40, 4)
 
 
 def _check(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
@@ -129,6 +133,26 @@ def _check_ollama() -> tuple[bool, str]:
         return False, f"not reachable at {_OLLAMA_DEFAULT_ENDPOINT}: {e}"
 
 
+def _check_ollama_version() -> tuple[bool, str]:
+    """Whether the default endpoint's Ollama can serve the model `mrag init` writes.
+
+    A warning rather than an error: an older Ollama still serves bge-m3, and a
+    project may name it."""
+    import httpx
+
+    version = httpx.get(f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0).json()["version"]
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
+    required = ".".join(map(str, _EMBEDDINGGEMMA_2_OLLAMA))
+    if match is None:
+        return False, f"{version} — cannot tell whether it serves EmbeddingGemma 2, which needs {required}+"
+    if tuple(int(part) for part in match.groups()) < _EMBEDDINGGEMMA_2_OLLAMA:
+        return False, (
+            f"{version} — EmbeddingGemma 2, the embedding model mrag init writes, needs {required}+; "
+            "upgrade Ollama, or set embedding.model: bge-m3 and delete embedding.query_prefix"
+        )
+    return True, version
+
+
 def doctor() -> None:
     """Check that the mrag runtime environment is healthy.
 
@@ -147,4 +171,5 @@ def doctor() -> None:
 
     console.print()
     console.print("[bold]Ollama[/bold]")
-    _check(f"endpoint ({_OLLAMA_DEFAULT_ENDPOINT})", _check_ollama)
+    if _check(f"endpoint ({_OLLAMA_DEFAULT_ENDPOINT})", _check_ollama):
+        _check_warn("version (0.40.4+ for EmbeddingGemma 2)", _check_ollama_version)

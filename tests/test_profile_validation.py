@@ -141,6 +141,54 @@ class TestRetrievalFusionValidation:
         assert a.compute_hash() == b.compute_hash()
 
 
+class TestProviderValidation:
+    """A provider mrag does not implement is refused when the profile is read.
+
+    Before 1.5.6 each was a free string: `embedding.provider: lm_studio` loaded,
+    and Ollama was called at that endpoint under the other name.
+    """
+
+    @pytest.mark.parametrize(
+        ("section", "value", "accepted"),
+        [
+            ("embedding", "lm_studio", "ollama"),
+            ("embedding", "openai", "ollama"),
+            ("augmentation", "lm_studio", "ollama"),
+            ("keyword", "tantivy", "sqlite_fts5"),
+        ],
+    )
+    def test_an_unimplemented_provider_is_refused(self, section, value, accepted):
+        with pytest.raises(ValidationError) as caught:
+            ProfileConfig(name="bad", **{section: {"provider": value}})
+
+        message = str(caught.value)
+        assert f"{section}.provider" in message
+        assert f"Input should be '{accepted}'" in message
+
+    def test_a_profile_file_naming_one_is_refused_on_load(self, tmp_path):
+        from mrag.config.profile import load_profile
+
+        (tmp_path / "profiles").mkdir()
+        (tmp_path / "profiles" / "default.yaml").write_text(
+            "name: default\nembedding:\n  provider: lm_studio\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="embedding.provider"):
+            load_profile("default", tmp_path)
+
+    def test_the_implemented_providers_keep_the_index_identity(self):
+        named = ProfileConfig(
+            name="same",
+            embedding={"provider": "ollama"},
+            augmentation={"strategy": "contextual", "provider": "ollama"},
+            keyword={"provider": "sqlite_fts5"},
+        )
+        defaulted = ProfileConfig(name="same", augmentation={"strategy": "contextual"})
+
+        assert named.compute_hash() == defaulted.compute_hash()
+        assert named.embedding.model_dump()["provider"] == "ollama"
+
+
 class TestIndexIdentity:
     def test_all_query_time_retrieval_fields_are_excluded(self):
         baseline = ProfileConfig(name="same")
@@ -213,6 +261,54 @@ class TestIndexIdentity:
             validate_effective_tokenizer(profile, "trigram")
 
         assert validate_effective_tokenizer(profile, "vaporetto") == "vaporetto"
+
+
+class TestEmbeddingPrefixes:
+    QUERY = "task: search result | query: "
+    TITLED = "title: {title} | text: "
+
+    def test_a_profile_without_prefixes_keeps_the_identity_it_had_before_they_existed(self):
+        # The identity of ProfileConfig(name="same") under mrag 1.5.6.
+        assert ProfileConfig(name="same").compute_hash() == (
+            "f287580c5a9e44079fda5ba5fa4fbeac28f4b2679031b1e952b2aee543db4a3f"
+        )
+
+    def test_the_query_prefix_changes_no_stored_vector_so_it_rebuilds_nothing(self):
+        baseline = ProfileConfig(name="same")
+        prefixed = ProfileConfig(name="same", embedding={"query_prefix": self.QUERY})
+
+        assert baseline.compute_hash() == prefixed.compute_hash()
+        assert baseline.compute_config_hash() != prefixed.compute_config_hash()
+
+    def test_the_document_prefix_is_identity_once_set(self):
+        baseline = ProfileConfig(name="same")
+        titled = ProfileConfig(name="same", embedding={"document_prefix": self.TITLED})
+        fixed = ProfileConfig(name="same", embedding={"document_prefix": "passage: "})
+
+        assert len({baseline.compute_hash(), titled.compute_hash(), fixed.compute_hash()}) == 3
+
+    @pytest.mark.parametrize(
+        ("embedding", "message"),
+        [
+            ({"query_prefix": ""}, "embedding.query_prefix must be 1 to 256 characters"),
+            ({"document_prefix": ""}, "embedding.document_prefix must be 1 to 256 characters"),
+            ({"query_prefix": "q" * 257}, "embedding.query_prefix must be 1 to 256 characters"),
+            ({"document_prefix": "d" * 257}, "embedding.document_prefix must be 1 to 256 characters"),
+            ({"query_prefix": "title: {title} | "}, "a query has no document"),
+            ({"document_prefix": "{title} {title}: "}, "may hold {title} once at most"),
+        ],
+    )
+    def test_a_prefix_is_short_non_empty_and_titled_only_where_a_document_is(self, embedding, message):
+        with pytest.raises(ValidationError, match=message):
+            ProfileConfig(name="bad", embedding=embedding)
+
+    def test_the_longest_prefixes_and_one_title_are_accepted(self):
+        profile = ProfileConfig(
+            name="ok",
+            embedding={"query_prefix": "q" * 256, "document_prefix": "{title}" + "d" * 249},
+        )
+
+        assert len(profile.embedding.query_prefix) == len(profile.embedding.document_prefix) == 256
 
 
 class TestRetiredExtractionConfig:

@@ -179,4 +179,5 @@ rebind は sync が手を付けない場合のためのものです。移動 *�
 コマンドは `status: "partial"` で exit 3 を返します。もう一度実行すれば完了します。
 
 どちらのコマンドも単独では index を再構築しません。sync の `--index` か `mrag index` が
-行います。
+行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧は
+`stale` と報告し、次の index が新しい名前で作り直します。

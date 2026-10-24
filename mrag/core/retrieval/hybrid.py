@@ -21,6 +21,7 @@ def hybrid_search(
     fusion: str = "rrf",
     weights: list[float] | None = None,
     tokenizer: str = "trigram",
+    query_prefix: str | None = None,
 ) -> list[RetrievalResult]:
     vector_results = vector_search(
         query_text=query_text,
@@ -31,6 +32,7 @@ def hybrid_search(
         qdrant_client=qdrant_client,
         col_name=col_name,
         top_k=dense_top_k,
+        query_prefix=query_prefix,
     )
     keyword_results = keyword_search(
         query_text=query_text,

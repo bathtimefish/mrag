@@ -260,6 +260,47 @@ class TestOllamaEmbeddingProvider:
             with pytest.raises(RuntimeError, match="failed after 1 attempt"):
                 prov.embed(["text"])
 
+    @staticmethod
+    def _not_found(model: str):
+        import httpx as _httpx
+        resp = MagicMock()
+        resp.status_code = 404
+        # The body Ollama 0.40.7 answers /api/embed with for a model it lacks.
+        resp.text = f'{{"error":"model \'{model}\' not found"}}'
+        return _httpx.HTTPStatusError("404", request=MagicMock(), response=resp)
+
+    def test_a_model_ollama_lacks_is_reported_once_with_the_pull_to_run(self):
+        from mrag.core.ollama_client import OllamaModelNotFoundError
+        prov = OllamaEmbeddingProvider(model="bge-m3", max_attempts=3)
+        with patch("httpx.post", side_effect=self._not_found("bge-m3")) as post:
+            with pytest.raises(OllamaModelNotFoundError) as raised:
+                prov.embed(["text"])
+        assert post.call_count == 1
+        message = str(raised.value)
+        assert "has no model 'bge-m3'" in message
+        assert message.endswith("Pull it with: ollama pull bge-m3")
+
+    def test_a_missing_embeddinggemma_2_tag_names_the_ollama_it_needs(self):
+        from mrag.core.ollama_client import OllamaModelNotFoundError
+        prov = OllamaEmbeddingProvider(model="embeddinggemma-2:740m-q8_0", max_attempts=1)
+        with patch("httpx.post", side_effect=self._not_found("embeddinggemma-2:740m-q8_0")):
+            with pytest.raises(OllamaModelNotFoundError, match=(
+                r"ollama pull embeddinggemma-2:740m-q8_0 \(EmbeddingGemma 2 needs Ollama 0\.40\.4 or later\)"
+            )):
+                prov.embed(["text"])
+
+    def test_a_404_that_is_not_a_missing_model_stays_a_plain_http_error(self):
+        import httpx as _httpx
+        from mrag.core.ollama_client import OllamaModelNotFoundError
+        resp = MagicMock()
+        resp.status_code = 404
+        resp.text = "404 page"
+        prov = OllamaEmbeddingProvider(model="bge-m3", max_attempts=1)
+        with patch("httpx.post", side_effect=_httpx.HTTPStatusError("404", request=MagicMock(), response=resp)):
+            with pytest.raises(RuntimeError, match="Ollama returned HTTP 404: 404 page") as raised:
+                prov.embed(["text"])
+        assert not isinstance(raised.value, OllamaModelNotFoundError)
+
     def test_ensure_model_registered(self, tmp_path: Path):
         db_path = _make_db(tmp_path)
         prov = self._provider()

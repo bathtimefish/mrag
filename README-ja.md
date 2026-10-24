@@ -19,7 +19,7 @@ mragが取り込むのはMarkdownとプレーンテキストです。それ以�
 | コンポーネント | 備考 |
 |---|---|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | `ollama serve` が起動済みであること。デフォルトでは Embedding に `bge-m3`、コンテキスト拡張に `gemma4:e2b` を使用 |
+| [Ollama](https://ollama.com) | `ollama serve` が起動済みであること。新しいプロジェクトは Embedding に `embeddinggemma-2:740m-q8_0`（Ollama 0.40.4 以降が必要）、コンテキスト拡張に `gemma4:e2b` を使用 |
 | [Qdrant](https://qdrant.tech) | デフォルトの `local` モードではプロセス内 Qdrantを利用。`qdrant.mode: server` を指定したときのみ Docker版 Qdrantが必要 |
 
 
@@ -68,10 +68,20 @@ export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ### Embedding モデルの取得
 
 ```bash
-ollama pull bge-m3
+ollama pull embeddinggemma-2:740m-q8_0
 ```
 
-`bge-m3` は日本語・英語を含む多言語対応のモデルです（1024 次元）。`profiles/default.yaml` を編集すれば Ollama が扱える任意のモデルに差し替え可能です。
+`mrag init` は新しいプロジェクトに EmbeddingGemma 2（768 次元、多言語対応、Ollama 0.40.4 以降）を書き込み、モデルが学習時に使ったクエリ用の prefix も合わせて設定します。
+
+```yaml
+embedding:
+  model: embeddinggemma-2:740m-q8_0
+  query_prefix: "task: search result | query: "
+```
+
+`latest` ではなくこの tag を使ってください。Apple Silicon の Mac では Ollama が `latest` を MLX 版に解決し、他の機械が受け取る GGUF の `Q8_0` 版とは vector が異なります。日本語の文書で測ったところ、EmbeddingGemma 2 は 1 つのコーパスで `bge-m3` と同等、別のコーパスで上回り、人が判定した質問セットでは下回りました。埋め込みにかかる時間は Apple Silicon の Mac で 4 分の 1 から 3 分の 1 短く、NVIDIA RTX 4090 では 7% 長くなりました。
+
+`bge-m3`（1024 次元）も引き続き使えます。mrag 1.6.0 より前に作ったプロジェクトは `bge-m3` のままです。新しいプロジェクトで使うには `ollama pull bge-m3` を実行し、`model: bge-m3` に変えて `query_prefix` を削除してください（`bge-m3` は prefix を取りません）。モデルを変えると index は作り直しになります。2 つの prefix の設定は[検索ストラテジー](./docs/retrieval-strategies-ja.md#task-prefix)で説明しています。
 
 
 ## Quick Start

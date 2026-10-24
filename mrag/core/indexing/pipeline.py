@@ -15,6 +15,7 @@ from mrag.config.project import ProjectConfig
 from mrag.core.chunking.base import ChunkData, get_chunker
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
+from mrag.core.embedding.prefix import document_input, document_title
 from mrag.core.indexing.diff import plan_indexing
 from mrag.core.indexing.embedding_fallback import embed_with_fallback
 from mrag.core.indexing.context_prompt_template import (
@@ -413,12 +414,21 @@ def _index_document(
                 variant_types[i] = "contextual"
             # else: remains raw (context_texts[i]=None, original content, "raw" variant_type)
 
+    # 3a. The document prefix is part of what the model reads, so it is put on
+    # here, ahead of the size check and the cache; the stored variants keep
+    # the text without it.
+    title = document_title(doc.get("filename"))
+    embedding_inputs = [
+        document_input(c, profile.embedding.document_prefix, title)
+        for c in contents_for_embedding
+    ]
+
     # 3b. Warn if any content exceeds the embedding model input safety threshold.
     # Silent truncation by the embedding model can degrade retrieval quality
     # without surfacing an error, so we flag this case proactively.
     if on_chunks_oversized is not None:
         oversized_lens = [
-            len(c) for c in contents_for_embedding
+            len(c) for c in embedding_inputs
             if len(c) > _EMBEDDING_INPUT_WARN_THRESHOLD
         ]
         if oversized_lens:
@@ -441,13 +451,13 @@ def _index_document(
         cache = EmbeddingCache(cache_dir=cache_dir, db_path=db_path)
         model_id = provider.get_model_id() if provider._dimension else None
         if model_id is None:
-            vectors, embedding_failures = _do_embed_with_fallback(contents_for_embedding)
+            vectors, embedding_failures = _do_embed_with_fallback(embedding_inputs)
         else:
             vectors, embedding_failures = cache.get_or_embed_with_failures(
-                contents_for_embedding, model_id, _do_embed_with_fallback
+                embedding_inputs, model_id, _do_embed_with_fallback
             )
     else:
-        vectors, embedding_failures = _do_embed_with_fallback(contents_for_embedding)
+        vectors, embedding_failures = _do_embed_with_fallback(embedding_inputs)
 
     model_id = provider.get_model_id()
 

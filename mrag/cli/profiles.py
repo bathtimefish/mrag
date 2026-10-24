@@ -60,7 +60,7 @@ def profiles_show(
 
     try:
         prof = load_profile(name, project_dir)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 

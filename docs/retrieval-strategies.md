@@ -62,7 +62,7 @@ retrieval:
 
 How it works:
 
-1. Vectorize the query text (with the same model used at index time)
+1. Vectorize the query text (with the same model used at index time, behind `embedding.query_prefix` when the profile sets one)
 2. Query Qdrant by cosine similarity and retrieve the top `top_k` matches
 3. Look up each hit's chunk body from SQLite by `chunk_id` and return the results
 
@@ -72,6 +72,22 @@ Strengths and weaknesses:
 - **Weak at**: searches where you want a literal string match — proper nouns, part numbers, and so on. Candidates that are semantically near but actually refer to a different entity tend to slip in.
 
 > Vector search does **not** NFKC-normalize the query side. Multilingual models such as bge-m3 are largely insensitive to halfwidth/fullwidth differences and variant glyphs, but queries containing truly unusual characters can still drift slightly in the embedding space.
+
+### Task prefixes
+
+Some embedding models were trained to read each input behind a task prefix and lose accuracy without it. EmbeddingGemma 2, the model `mrag init` writes, expects `task: search result | query: ` before a search query; measured without it, it ranked below `bge-m3` on both corpora tried. Two profile settings carry such prefixes:
+
+```yaml
+embedding:
+  model: embeddinggemma-2:740m-q8_0
+  query_prefix: "task: search result | query: "   # written by mrag init
+  # document_prefix: "title: {title} | text: "      # unset in new projects
+```
+
+- **`query_prefix`** is put before the query when it is embedded — by `vector`, by the vector half of `hybrid` and `parent_child`, and by `mrag eval`. The keyword half still searches the query as written. No stored vector depends on it, so it is not part of the index identity: changing it rebuilds nothing.
+- **`document_prefix`** is put before every chunk when it is embedded, after any contextual-augmentation context. `{title}` in it becomes the document's file name without its extension (`none` when there is none), the model card's `title: {title} | text: ` form. Once set, it is part of the index identity, so setting or changing it rebuilds the index; renaming a file with `mrag documents sync` rebuilds that document at the next `mrag index`, so its title follows. New projects leave it unset: in our measurements the titled form helped on one corpus and hurt on human-judged questions.
+
+Both are optional. Unset, a text is embedded exactly as written — what every profile written before mrag 1.6.0 does, and what `bge-m3`, which takes no prefix, needs. Stored chunk variants, the FTS5 index and search results never contain either prefix. A prefix is 1 to 256 characters; `{title}` may appear at most once, and only in `document_prefix`.
 
 
 ## `hybrid` — fusion of keyword + vector (default)

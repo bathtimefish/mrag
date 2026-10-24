@@ -147,6 +147,23 @@ def test_profiles_show_nonexistent(indexed_project):
     assert result.exit_code != 0
 
 
+def test_an_invalid_profile_is_an_error_line_not_a_traceback(indexed_project):
+    """`profiles show` and `search` caught only a missing profile, so one that
+    failed validation ended them with a traceback; `index` and `serve` already
+    printed the reason and exited 1 (1.5.6)."""
+    profile = Path("profiles") / "default.yaml"
+    text = profile.read_text(encoding="utf-8")
+    assert text.count("  provider: ollama") == 1
+    profile.write_text(text.replace("  provider: ollama", "  provider: lm_studio"), encoding="utf-8")
+
+    for args in (["profiles", "show", "default"], ["search", "hello"], ["index"]):
+        result = runner.invoke(app, args, catch_exceptions=False)
+
+        assert result.exit_code == 1, (args, result.output)
+        assert "Error:" in result.output, (args, result.output)
+        assert "embedding.provider" in result.output, (args, result.output)
+
+
 # ---------------------------------------------------------------------------
 # mrag doctor
 # ---------------------------------------------------------------------------
@@ -275,3 +292,41 @@ def test_doctor_names_apsw_when_library_is_found_but_cannot_load(tmp_path, monke
     )
     result = runner.invoke(app, ["doctor"], catch_exceptions=False)
     assert "apsw is not installed" in result.output.replace("\n", "")
+
+
+@pytest.mark.parametrize(
+    ("version", "badge", "expected"),
+    [
+        ("0.40.7", "OK", "0.40.7"),
+        ("0.40.4", "OK", "0.40.4"),
+        ("0.40.3", "WARN", "EmbeddingGemma 2, the embedding model mrag init writes, needs 0.40.4+"),
+        ("0.9.10", "WARN", "needs 0.40.4+"),
+        ("dev", "WARN", "cannot tell whether it serves EmbeddingGemma 2"),
+    ],
+)
+def test_doctor_judges_the_ollama_version_against_embeddinggemma_2(tmp_path, monkeypatch, version, badge, expected):
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    response = MagicMock()
+    response.json.return_value = {"version": version}
+    with patch("httpx.get", return_value=response):
+        result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+
+    [line] = [line for line in result.output.splitlines() if "version (0.40.4+" in line]
+    assert line.split()[0] == badge
+    assert expected in " ".join(result.output.split())
+    assert result.exit_code == 0
+
+
+def test_doctor_skips_the_version_when_ollama_is_unreachable(tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    import httpx
+
+    monkeypatch.chdir(tmp_path)
+    with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+        result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+
+    assert "not reachable" in result.output
+    assert "0.40.4" not in result.output

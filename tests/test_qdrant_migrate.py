@@ -26,7 +26,8 @@ runner = CliRunner()
 
 # Retrieval derives the collection name from the profile's `embedding.model`,
 # while indexing derives it from the provider; the fake must agree with the
-# profile `mrag init` writes (bge-m3) for search to look where index wrote.
+# profile for search to look where index wrote. A project from before 0.24.0
+# embedded with bge-m3, so the fixture's profile names it.
 MODEL = normalize_name("bge-m3")
 
 
@@ -77,10 +78,18 @@ def legacy_project(tmp_path: Path, sample_md: Path, monkeypatch):
     project_dir = tmp_path / "legacy-kb"
     monkeypatch.chdir(project_dir)
     runner.invoke(app, ["add", str(sample_md)], catch_exceptions=False)
+    profile_path = project_dir / "profiles" / "default.yaml"
+    profile_path.write_text(
+        profile_path.read_text(encoding="utf-8")
+        .replace("model: embeddinggemma-2:740m-q8_0", "model: bge-m3")
+        .replace('  query_prefix: "task: search result | query: "\n', ""),
+        encoding="utf-8",
+    )
 
     config = load_project_config(project_dir)
     profile = load_profile("default", project_dir)
     assert normalize_name(profile.embedding.model) == MODEL
+    assert profile.embedding.query_prefix is None
     provider = ProfileModelFake()
     client = QdrantClient(path=str(project_dir / "qdrant"))
     run_index(

@@ -16,7 +16,8 @@ window uses more model memory; ensure it fits the chosen model and host.
 With a window set, the request also carries `truncate: false`. Ollama would
 otherwise keep the end of a longer prompt and answer HTTP 200, losing the
 document excerpt at its opening. Instead the server refuses it (HTTP 400
-`exceed_context_size_error` on Ollama 0.34.4), and the chunk follows
+`exceed_context_size_error` on Ollama 0.34.4; from 0.40.6 the message alone,
+`request (N tokens) exceeds the available context size`), and the chunk follows
 `failure_policy` with a reason such as `3009-token prompt exceeds
 augmentation.context_window_tokens (2048)`; the excerpt is not shortened. If
 such fallbacks appear, raise the window above that length plus
@@ -24,12 +25,17 @@ such fallbacks appear, raise the window above that length plus
 chunk, and the template; a table is never cut inside a row, so one long row can
 make a chunk longer than `chunk_size`.
 
-New `bge-m3` profiles also set `embedding.max_input_tokens: 8192`, sent as
+New profiles also set `embedding.max_input_tokens: 8192` — the input limit of both
+EmbeddingGemma 2 and `bge-m3` — sent as
 both `options.num_ctx` and `options.num_batch` to `/api/embed`. Sending only
 `num_ctx` does not enlarge Ollama's physical embedding batch. Existing profiles
 without this field keep their previous request; changing it changes the index
 identity. An HTTP 200 response alone does not prove a long embedding input was
 not truncated, so inspect long chunks and the model's supported input length.
+
+With `embedding.document_prefix` set, the embedding input is the prefix, then the
+generated context, then the chunk; the stored variant keeps the context and the
+chunk without the prefix ([task prefixes](retrieval-strategies.md#task-prefixes)).
 
 
 ## How it works
