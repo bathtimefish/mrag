@@ -67,6 +67,7 @@ def _run_search(
             initial_delay=prof.embedding.retry.initial_delay_seconds,
             backoff_multiplier=prof.embedding.retry.backoff_multiplier,
             max_delay=prof.embedding.retry.max_delay_seconds,
+            max_input_tokens=prof.embedding.max_input_tokens,
         )
         qdrant_client = make_client(
             mode=config.qdrant.mode,
@@ -92,6 +93,7 @@ def _run_search(
                 qdrant_client=qdrant_client,
                 col_name=col,
                 top_k=retrieval_top_k,
+                query_prefix=prof.embedding.query_prefix,
             )
         elif retrieval_strategy == "parent_child":
             results = hybrid_search(
@@ -108,6 +110,7 @@ def _run_search(
                 fusion=prof.retrieval.fusion,
                 weights=prof.retrieval.weights,
                 tokenizer=tokenizer,
+                query_prefix=prof.embedding.query_prefix,
             )
             from mrag.core.retrieval.parent_child import resolve_to_parent
             results = resolve_to_parent(results, db_path)
@@ -127,6 +130,7 @@ def _run_search(
                 fusion=prof.retrieval.fusion,
                 weights=prof.retrieval.weights,
                 tokenizer=tokenizer,
+                query_prefix=prof.embedding.query_prefix,
             )
 
     reranked = False

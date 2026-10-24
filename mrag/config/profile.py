@@ -16,6 +16,12 @@ from pydantic import BaseModel, Field, model_validator
 INDEX_IDENTITY_VERSION = 3
 TEXT_NORMALIZATION_IDENTITY = "NFKC-v1"
 
+# The placeholder embedding.document_prefix replaces with a document's name.
+EMBEDDING_PREFIX_TITLE = "{title}"
+# Longest embedding prefix accepted, in characters: a typo guard, as the
+# prefixes a model card prescribes are a few words.
+MAX_EMBEDDING_PREFIX_CHARS = 256
+
 
 class ParentConfig(BaseModel):
     strategy: Literal["fixed_size", "section"] = "fixed_size"
@@ -118,9 +124,37 @@ class EmbeddingConfig(BaseModel):
     endpoint: str = "http://localhost:11434"
     # Ollama needs both values; num_ctx alone does not enlarge the physical batch.
     max_input_tokens: int | None = Field(default=None, ge=1, le=1048576)
+    # Task prefixes, for a model trained with them (EmbeddingGemma 2's query
+    # one is "task: search result | query: "). Unset, the text is embedded as
+    # written, as before either existed. The query prefix goes before a search
+    # query only, so it changes no stored vector and is not index identity; the
+    # document prefix goes before every chunk, and once set it is identity.
+    # {title} in the document prefix is replaced by the document's file name
+    # without its extension.
+    query_prefix: str | None = None
+    document_prefix: str | None = None
     cache: EmbeddingCacheConfig = Field(default_factory=EmbeddingCacheConfig)
     retry: OllamaRetryConfig = Field(default_factory=OllamaRetryConfig)
     failure_policy: EmbeddingFailurePolicyConfig = Field(default_factory=EmbeddingFailurePolicyConfig)
+
+    @model_validator(mode="after")
+    def _validate_prefixes(self) -> "EmbeddingConfig":
+        for field, prefix in (
+            ("embedding.query_prefix", self.query_prefix),
+            ("embedding.document_prefix", self.document_prefix),
+        ):
+            if prefix is not None and not 1 <= len(prefix) <= MAX_EMBEDDING_PREFIX_CHARS:
+                raise ValueError(
+                    f"{field} must be 1 to {MAX_EMBEDDING_PREFIX_CHARS} characters, "
+                    "or left unset to send the text alone"
+                )
+        if self.query_prefix is not None and EMBEDDING_PREFIX_TITLE in self.query_prefix:
+            raise ValueError(
+                "embedding.query_prefix: a query has no document, so it has no {title} to fill"
+            )
+        if self.document_prefix is not None and self.document_prefix.count(EMBEDDING_PREFIX_TITLE) > 1:
+            raise ValueError("embedding.document_prefix may hold {title} once at most")
+        return self
 
 
 class AugmentationFailurePolicyConfig(BaseModel):
@@ -232,8 +266,9 @@ class ProfileConfig(BaseModel):
         relevant = {
             "index_identity_version": INDEX_IDENTITY_VERSION,
             "chunking": self.chunking.model_dump(),
+            # The query prefix changes no stored vector, so it rebuilds nothing.
             "embedding": self.embedding.model_dump(
-                exclude={"cache", "retry", "failure_policy"}, exclude_none=True
+                exclude={"cache", "retry", "failure_policy", "query_prefix"}, exclude_none=True
             ),
             "augmentation": augmentation,
             "keyword": {

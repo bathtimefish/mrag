@@ -5,7 +5,7 @@ from pathlib import Path
 from textwrap import dedent
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -294,6 +294,43 @@ def test_plan_indexing_error_retry(tmp_path: Path):
     assert decisions[0].reason == "error_retry"
 
 
+def _indexed_under(db: Path, recorded_name: str | None) -> None:
+    conn = sqlite3.connect(str(db))
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute(
+        "INSERT INTO documents (id, knowledge_id, source_identity, filename, original_path, file_hash, "
+        "source_type, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("doc1", "kb_test", "docs/beta.md", "beta.md", "p/f.md", "fh1", "md", "extracted",
+         "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+    )
+    conn.execute(
+        "INSERT INTO document_indexes (id, knowledge_id, document_id, profile_name, "
+        "document_file_hash, extracted_hash, profile_hash, status, indexed_display_name) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), "kb_test", "doc1", "default", "fh1", "eh1", "ph1", "indexed", recorded_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_plan_indexing_rebuilds_a_document_indexed_under_another_name(tmp_path: Path):
+    db = _make_db(tmp_path)
+    _indexed_under(db, "docs/alpha.md")
+
+    doc = {"id": "doc1", "source_identity": "docs/beta.md", "file_hash": "fh1", "extracted_hash": "eh1"}
+    [decision] = plan_indexing([doc], "default", "ph1", db)
+    assert (decision.needs_index, decision.reason) == (True, "name_changed")
+
+
+def test_plan_indexing_does_not_judge_a_name_that_was_never_recorded(tmp_path: Path):
+    db = _make_db(tmp_path)
+    _indexed_under(db, None)
+
+    doc = {"id": "doc1", "source_identity": "docs/beta.md", "file_hash": "fh1", "extracted_hash": "eh1"}
+    [decision] = plan_indexing([doc], "default", "ph1", db)
+    assert (decision.needs_index, decision.reason) == (False, "skip")
+
+
 # ---------------------------------------------------------------------------
 # 5-2: FTS5 operations
 # ---------------------------------------------------------------------------
@@ -472,6 +509,47 @@ def test_pipeline_idempotent_skips_second_run(tmp_path: Path, sample_txt: Path):
     assert result2.indexed == 0
     assert result2.skipped == 1
     assert result2.errors == []
+
+
+def test_a_file_renamed_by_the_sync_is_rebuilt_by_the_next_index(tmp_path: Path):
+    """The list calls a renamed document stale; the next run must agree and rebuild it."""
+    from mrag.config.project import load_project_config
+    from mrag.core.ingestion.inventory import document_inventory
+
+    def listed(project_dir: Path) -> list[tuple[str, str]]:
+        conn = open_connection(find_db(project_dir))
+        try:
+            rows = document_inventory(conn, project_dir, "default")["rows"]
+        finally:
+            conn.close()
+        return [(row["display_name"], row["index_status"]) for row in rows]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        (project_dir / "corpus").mkdir()
+        (project_dir / "corpus" / "alpha.md").write_text("# Alpha\n\nThe fox.\n", encoding="utf-8")
+        _add_document(project_dir, project_dir / "corpus" / "alpha.md")
+        config = load_project_config(project_dir)
+        provider = FakeEmbeddingProvider()
+        qdrant = _fake_qdrant_client()
+        run_index(project_dir=project_dir, config=config, profile_name="default",
+                  embedding_provider=provider, qdrant_client=qdrant)
+
+        (project_dir / "corpus" / "alpha.md").rename(project_dir / "corpus" / "beta.md")
+        synced = runner.invoke(app, ["documents", "sync", "corpus", "--apply"], catch_exceptions=False)
+        assert synced.exit_code == 0, synced.output
+        assert listed(project_dir) == [("corpus/beta.md", "stale")]
+
+        rebuilt = run_index(project_dir=project_dir, config=config, profile_name="default",
+                            embedding_provider=provider, qdrant_client=qdrant)
+        assert (rebuilt.indexed, rebuilt.skipped) == (1, 0)
+        assert listed(project_dir) == [("corpus/beta.md", "indexed")]
+
+        settled = run_index(project_dir=project_dir, config=config, profile_name="default",
+                            embedding_provider=provider, qdrant_client=qdrant)
+        assert (settled.indexed, settled.skipped) == (0, 1)
 
 
 def test_query_time_profile_change_does_not_reindex(tmp_path: Path, sample_txt: Path):
@@ -1457,3 +1535,26 @@ def test_pc_pipeline_indexed_count_excludes_parents(tmp_path: Path):
 
     assert result.indexed == 1  # 1 document indexed
     assert child_count >= 1
+
+
+@pytest.mark.parametrize("command", [["index"], ["reindex"]])
+def test_an_embedding_model_ollama_lacks_ends_the_command_with_the_pull_to_run(
+    tmp_path: Path, sample_txt: Path, command: list[str]
+):
+    import httpx
+
+    response = MagicMock()
+    response.status_code = 404
+    response.text = "{\"error\":\"model 'embeddinggemma-2:740m-q8_0' not found\"}"
+    not_found = httpx.HTTPStatusError("404", request=MagicMock(), response=response)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        project_dir = _init_project(tmp_path)
+        mp.chdir(project_dir)
+        _add_document(project_dir, sample_txt)
+        with patch("httpx.post", side_effect=not_found):
+            result = runner.invoke(app, command)
+
+    assert result.exit_code == 1, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "ollama pull embeddinggemma-2:740m-q8_0" in " ".join(result.output.split())

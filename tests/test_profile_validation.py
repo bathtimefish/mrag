@@ -263,6 +263,54 @@ class TestIndexIdentity:
         assert validate_effective_tokenizer(profile, "vaporetto") == "vaporetto"
 
 
+class TestEmbeddingPrefixes:
+    QUERY = "task: search result | query: "
+    TITLED = "title: {title} | text: "
+
+    def test_a_profile_without_prefixes_keeps_the_identity_it_had_before_they_existed(self):
+        # The identity of ProfileConfig(name="same") under mrag 1.5.6.
+        assert ProfileConfig(name="same").compute_hash() == (
+            "f287580c5a9e44079fda5ba5fa4fbeac28f4b2679031b1e952b2aee543db4a3f"
+        )
+
+    def test_the_query_prefix_changes_no_stored_vector_so_it_rebuilds_nothing(self):
+        baseline = ProfileConfig(name="same")
+        prefixed = ProfileConfig(name="same", embedding={"query_prefix": self.QUERY})
+
+        assert baseline.compute_hash() == prefixed.compute_hash()
+        assert baseline.compute_config_hash() != prefixed.compute_config_hash()
+
+    def test_the_document_prefix_is_identity_once_set(self):
+        baseline = ProfileConfig(name="same")
+        titled = ProfileConfig(name="same", embedding={"document_prefix": self.TITLED})
+        fixed = ProfileConfig(name="same", embedding={"document_prefix": "passage: "})
+
+        assert len({baseline.compute_hash(), titled.compute_hash(), fixed.compute_hash()}) == 3
+
+    @pytest.mark.parametrize(
+        ("embedding", "message"),
+        [
+            ({"query_prefix": ""}, "embedding.query_prefix must be 1 to 256 characters"),
+            ({"document_prefix": ""}, "embedding.document_prefix must be 1 to 256 characters"),
+            ({"query_prefix": "q" * 257}, "embedding.query_prefix must be 1 to 256 characters"),
+            ({"document_prefix": "d" * 257}, "embedding.document_prefix must be 1 to 256 characters"),
+            ({"query_prefix": "title: {title} | "}, "a query has no document"),
+            ({"document_prefix": "{title} {title}: "}, "may hold {title} once at most"),
+        ],
+    )
+    def test_a_prefix_is_short_non_empty_and_titled_only_where_a_document_is(self, embedding, message):
+        with pytest.raises(ValidationError, match=message):
+            ProfileConfig(name="bad", embedding=embedding)
+
+    def test_the_longest_prefixes_and_one_title_are_accepted(self):
+        profile = ProfileConfig(
+            name="ok",
+            embedding={"query_prefix": "q" * 256, "document_prefix": "{title}" + "d" * 249},
+        )
+
+        assert len(profile.embedding.query_prefix) == len(profile.embedding.document_prefix) == 256
+
+
 class TestRetiredExtractionConfig:
     """mrag 1.0 removed in-process PDF extraction along with its config keys.
 

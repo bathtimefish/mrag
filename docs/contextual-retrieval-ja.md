@@ -23,11 +23,16 @@ fallback が出たら、窓をその長さと `max_context_tokens` の和より�
 prompt は最大で 8,000 文字の抜粋・チャンク・テンプレートの合計です。表は行の途中
 では切られないため、長い行が 1 つあるとチャンクが `chunk_size` より長くなります。
 
-新規の `bge-m3` プロファイルは `embedding.max_input_tokens: 8192` も設定し、
+新規のプロファイルは `embedding.max_input_tokens: 8192`（EmbeddingGemma 2 と `bge-m3` の
+どちらの入力上限でもある値）も設定し、
 `/api/embed` に `options.num_ctx` と `options.num_batch` の両方として送ります。
 `num_ctx` だけでは埋め込みの物理 batch は広がりません。旧プロファイルには送らず、
 値を変えた場合は索引識別子が変わります。HTTP 200 だけでは長い入力が切り詰められなかった
 証拠にはならないため、長いチャンクとモデルの入力上限を確認してください。
+
+`embedding.document_prefix` を設定すると、埋め込みの入力は prefix、生成した context、
+チャンクの順になります。保存する variant は prefix を除いた context とチャンクです
+（[task prefix](retrieval-strategies-ja.md#task-prefix)）。
 
 
 ## 処理の概要

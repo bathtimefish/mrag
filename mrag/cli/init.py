@@ -68,7 +68,10 @@ retrieval:
 
 embedding:
   provider: ollama
-  model: bge-m3
+  # EmbeddingGemma 2 was trained with task prefixes and needs the query one.
+  # To embed with bge-m3 instead, set model: bge-m3 and delete query_prefix.
+  model: embeddinggemma-2:740m-q8_0
+  query_prefix: "task: search result | query: "
   endpoint: http://localhost:11434
   max_input_tokens: 8192
   cache:

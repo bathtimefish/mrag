@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 
 from mrag.config.project import load_project_config
+from mrag.core.ollama_client import OllamaModelNotFoundError
 from mrag.core.indexing.pipeline import run_index, write_index_log
 
 console = Console()
@@ -67,7 +68,7 @@ def index(
             skip_document_ids=skip_ids or None,
             console=console,
         )
-    except (FileNotFoundError, ConnectionError, ValueError) as e:
+    except (FileNotFoundError, ConnectionError, ValueError, OllamaModelNotFoundError) as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 

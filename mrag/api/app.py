@@ -46,6 +46,7 @@ def create_app(
                 initial_delay=prof.embedding.retry.initial_delay_seconds,
                 backoff_multiplier=prof.embedding.retry.backoff_multiplier,
                 max_delay=prof.embedding.retry.max_delay_seconds,
+                max_input_tokens=prof.embedding.max_input_tokens,
             )
 
         if _qdrant_client is not None:

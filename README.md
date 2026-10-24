@@ -19,7 +19,7 @@ Release notes, including breaking changes and upgrade steps, live in [CHANGELOG.
 | Component | Notes |
 |---|---|
 | Python 3.11+ | |
-| [Ollama](https://ollama.com) | `ollama serve` must be running. Defaults use `bge-m3` for embeddings and `gemma4:e2b` for contextual augmentation |
+| [Ollama](https://ollama.com) | `ollama serve` must be running. New projects embed with `embeddinggemma-2:740m-q8_0`, which needs Ollama 0.40.4 or later; `gemma4:e2b` is the default for contextual augmentation |
 | [Qdrant](https://qdrant.tech) | The default `local` mode runs Qdrant in-process. Docker Qdrant is required only when `qdrant.mode: server` is set |
 
 
@@ -67,10 +67,20 @@ If vaporetto is not detected when you run `mrag init`, mrag falls back to the tr
 ### Pull the embedding model
 
 ```bash
-ollama pull bge-m3
+ollama pull embeddinggemma-2:740m-q8_0
 ```
 
-`bge-m3` is a multilingual model that supports Japanese and English (1024 dimensions). You can swap it for any Ollama-compatible model by editing `profiles/default.yaml`.
+`mrag init` writes EmbeddingGemma 2 (768 dimensions, multilingual, Ollama 0.40.4 or later) into a new project, together with the query prefix the model was trained with:
+
+```yaml
+embedding:
+  model: embeddinggemma-2:740m-q8_0
+  query_prefix: "task: search result | query: "
+```
+
+Use this tag rather than `latest`: on an Apple Silicon Mac, Ollama resolves `latest` to an MLX build whose vectors differ from the GGUF `Q8_0` build other machines get. Measured on Japanese documents, EmbeddingGemma 2 was level with `bge-m3` on one corpus, better on another and below it on a set of human-judged questions; embedding took a quarter to a third less time on an Apple Silicon Mac and 7% more on an NVIDIA RTX 4090.
+
+`bge-m3` (1024 dimensions) remains supported, and projects created before mrag 1.6.0 keep it. To use it in a new project, run `ollama pull bge-m3`, set `model: bge-m3` and delete `query_prefix` — it takes no prefix. Changing the model rebuilds the index. The two prefix settings are described in [retrieval strategies](./docs/retrieval-strategies.md#task-prefixes).
 
 
 ## Quick Start

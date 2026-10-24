@@ -146,6 +146,7 @@ def run_retrieval(
                 qdrant_client=qdrant,
                 col_name=col,
                 top_k=retrieval_top_k,
+                query_prefix=profile.embedding.query_prefix,
             )
         elif resolved_strategy == "parent_child":
             results = hybrid_search(
@@ -162,6 +163,7 @@ def run_retrieval(
                 fusion=profile.retrieval.fusion,
                 weights=profile.retrieval.weights,
                 tokenizer=tokenizer,
+                query_prefix=profile.embedding.query_prefix,
             )
             from mrag.core.retrieval.parent_child import resolve_to_parent
 
@@ -181,6 +183,7 @@ def run_retrieval(
                 fusion=profile.retrieval.fusion,
                 weights=profile.retrieval.weights,
                 tokenizer=tokenizer,
+                query_prefix=profile.embedding.query_prefix,
             )
 
     reranked = False

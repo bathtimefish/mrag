@@ -62,7 +62,7 @@ retrieval:
 
 挙動：
 
-1. クエリテキストのベクトル化（インデックス時と同じモデル）
+1. クエリテキストのベクトル化（インデックス時と同じモデル。プロファイルが `embedding.query_prefix` を設定していればその後ろに置く）
 2. Qdrant にコサイン類似度で問い合わせ、上位 `top_k` 件を取得
 3. 各ヒットの `chunk_id` から SQLite で本文を引き、結果として返す
 
@@ -72,6 +72,22 @@ retrieval:
 - **不得意**：固有名詞や型番など「文字列として一致してほしい」検索。意味は近いが指している対象が違う候補が混ざりやすい
 
 > ベクター検索はクエリ側の NFKC 正規化を行いません。多言語モデル（bge-m3 など）は半角全角や異体字の影響を受けにくいですが、極端に特殊な文字を含むクエリでは結果が微妙にぶれる可能性があります。
+
+### task prefix
+
+埋め込みモデルの中には、入力ごとに task prefix を付けて学習され、prefix が無いと精度が落ちるものがあります。`mrag init` が書き込む EmbeddingGemma 2 は検索クエリの前に `task: search result | query: ` を期待し、これを付けずに測った 2 つのコーパスではどちらも `bge-m3` を下回りました。prefix はプロファイルの 2 つの設定で指定します。
+
+```yaml
+embedding:
+  model: embeddinggemma-2:740m-q8_0
+  query_prefix: "task: search result | query: "   # mrag init が書き込む
+  # document_prefix: "title: {title} | text: "      # 新しいプロジェクトでは未設定
+```
+
+- **`query_prefix`** はクエリを埋め込むときにその前に置きます。対象は `vector`、`hybrid` と `parent_child` の vector 側、`mrag eval` です。keyword 側は書かれたままのクエリで検索します。保存済みの vector はこの設定に依存しないので index identity には含まれず、変えても何も作り直しません。
+- **`document_prefix`** はチャンクを埋め込むときにその前に置きます（contextual augmentation の context よりさらに前）。中の `{title}` は拡張子を除いたファイル名（無ければ `none`）に置き換わり、モデルカードの `title: {title} | text: ` の形になります。設定すると index identity に含まれるので、設定・変更すると index は作り直しになります。`mrag documents sync` でファイル名を変えると、次の `mrag index` でその文書が作り直され、title も新しい名前になります。新しいプロジェクトでは未設定です。測定では title 付きの形は 1 つのコーパスで効き、人が判定した質問では悪化させました。
+
+どちらも省略できます。未設定ならテキストは書かれたまま埋め込まれます。mrag 1.6.0 より前に書かれたプロファイルはすべてこの動作で、prefix を取らない `bge-m3` もこれを必要とします。保存されるチャンクの variant、FTS5 の index、検索結果にはどちらの prefix も入りません。prefix は 1〜256 文字で、`{title}` は `document_prefix` の中にだけ、1 回まで書けます。
 
 
 ## `hybrid` — keyword + vector の融合（デフォルト）

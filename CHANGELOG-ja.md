@@ -7,6 +7,76 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.6.0 — 2026-10-24
+
+### 追加
+
+- **埋め込みモデルの task prefix。** 省略可能な 2 つの profile 設定
+  `embedding.query_prefix` と `embedding.document_prefix` で、モデルが埋め込む
+  テキストの前に決まった文字列を置けるようになりました。query prefix は検索
+  クエリの前に置きます(`vector`、`hybrid` と `parent_child` の vector 側、
+  `mrag eval`)。keyword 側は書かれたままのクエリで検索し、保存済みの vector は
+  この設定に依存しないので、変えても何も作り直しません。document prefix は
+  index が埋め込むすべてのチャンクの前に(contextual の context よりさらに前に)
+  置き、中の `{title}` は拡張子を除いたファイル名(無ければ `none`)になります。
+  設定すると index identity に含まれます。どちらも 1〜256 文字で、`{title}` は
+  document prefix の中にだけ 1 回まで書けます。保存される variant、FTS5 の
+  index、検索結果にはどちらも入りません。未設定なら(既存の profile はすべて
+  そうです)テキストは書かれたまま埋め込まれ、index identity も変わりません。
+  [task prefix](docs/retrieval-strategies-ja.md#task-prefix) を参照してください。
+- **`mrag doctor` が Ollama の版を表示し**、EmbeddingGemma 2 を動かせる最初の版
+  である 0.40.4 より古いと警告します。
+
+### 変更
+
+- **新しいプロジェクトは EmbeddingGemma 2 で埋め込みます。** `mrag init` は
+  `embedding.model: embeddinggemma-2:740m-q8_0` と、モデルが学習時に使った
+  `query_prefix: "task: search result | query: "` を書き込みます。prefix を
+  付けずに測った 2 つのコーパスでは、どちらも `bge-m3` を下回りました。この tag は
+  どの OS でも GGUF の `Q8_0` 版です(`latest` は Apple Silicon では vector の
+  異なる MLX 版に解決されます)。prefix 付きで日本語の文書を測ったところ、1 つの
+  コーパスで `bge-m3` と同等、別のコーパスで上回り、人が判定した質問では
+  下回りました。埋め込みにかかる時間は Apple Silicon の Mac で 4 分の 1 から
+  3 分の 1 短く、NVIDIA RTX 4090 では 7% 長くなりました。Ollama 0.40.4 以降と
+  `ollama pull embeddinggemma-2:740m-q8_0` が必要です。model を書いていない
+  profile は引き続き `bge-m3` を意味します。
+
+### 修正
+
+- **名前が変わった document を次の index が作り直すようになりました。**
+  `mrag documents sync` が document を新しいパスへ移した後(または
+  `mrag documents rebind` が別のファイルを指させた後)、document の一覧は
+  それを `stale` と報告するのに、`mrag index` と `documents sync --index` は
+  最新と判定して飛ばしていました。そのため `mrag reindex` するまで `stale` の
+  ままでした。index の計画が一覧と同じ規則を使い、別の名前で index された
+  document を作り直します。名前を記録する前に index された行は、一覧と同じく
+  判定しません。
+- **Ollama に無い埋め込みモデルを traceback ではなくエラーとして報告します。**
+  profile の model に Ollama が HTTP 404 を返すと、`mrag index` と
+  `mrag reindex` は traceback で終わり、`mrag search` は 404 をそのまま表示して
+  いました。エラーは endpoint と model を示し、`Pull it with: ollama pull <model>`
+  と案内し(EmbeddingGemma 2 なら Ollama 0.40.4 以降が要ることも添えます)、
+  コマンドは exit 1 で終わります。
+- **API サーバーと `mrag eval` が `mrag search` と同じ形でクエリを埋め込みます。**
+  どちらも埋め込みの client を自前で作り、`embedding.max_input_tokens` を渡して
+  いませんでした。そのためサーバーの既定 profile と `mrag eval` の要求には
+  `num_ctx`/`num_batch` が無く、`mrag search`・MCP・index の要求にはありました。
+  Ollama の既定の batch より長いクエリは経路によって扱いが変わることがあり、
+  2 種類の要求が交互に来るたびに Ollama はモデルを読み直していました。どの経路も
+  profile の設定を送るようになりました。
+
+### 互換性
+
+- 既存のプロジェクトには影響しません。profile が model を書いており、prefix を
+  設定しておらず、index identity も変わりません。既存のプロジェクトを
+  EmbeddingGemma 2 に移すには上の 2 行を設定します(index は作り直しになります)。
+  新しいプロジェクトで `bge-m3` を使うには `model: bge-m3` にして
+  `query_prefix` を消します(`bge-m3` は prefix を取りません)。
+- 1.3.0〜1.5.6 で名前を変えた document があるプロジェクトでは、次の
+  `mrag index` でその document が作り直されます。
+
+---
+
 ## 1.5.6 — 2026-10-21
 
 ### 修正

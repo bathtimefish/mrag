@@ -191,4 +191,6 @@ left at its new path with its previous content and the command exits 3 with
 `status: "partial"`; running it again finishes the job.
 
 Neither command rebuilds the index on its own; `--index` on the sync, or
-`mrag index`, does.
+`mrag index`, does. A moved or rebound document counts as changed: the document
+list reports it `stale` until then, and the next index rebuilds it under its new
+name.

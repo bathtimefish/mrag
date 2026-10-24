@@ -25,12 +25,17 @@ such fallbacks appear, raise the window above that length plus
 chunk, and the template; a table is never cut inside a row, so one long row can
 make a chunk longer than `chunk_size`.
 
-New `bge-m3` profiles also set `embedding.max_input_tokens: 8192`, sent as
+New profiles also set `embedding.max_input_tokens: 8192` — the input limit of both
+EmbeddingGemma 2 and `bge-m3` — sent as
 both `options.num_ctx` and `options.num_batch` to `/api/embed`. Sending only
 `num_ctx` does not enlarge Ollama's physical embedding batch. Existing profiles
 without this field keep their previous request; changing it changes the index
 identity. An HTTP 200 response alone does not prove a long embedding input was
 not truncated, so inspect long chunks and the model's supported input length.
+
+With `embedding.document_prefix` set, the embedding input is the prefix, then the
+generated context, then the chunk; the stored variant keeps the context and the
+chunk without the prefix ([task prefixes](retrieval-strategies.md#task-prefixes)).
 
 
 ## How it works

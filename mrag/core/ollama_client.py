@@ -10,6 +10,8 @@ Retry policy:
   - RuntimeError from validate() → retried (e.g. empty Ollama response)
   - httpx.ConnectError      → NOT retried; raised as ConnectionError immediately
   - HTTP 4xx                → NOT retried; raised as RuntimeError immediately
+  - HTTP 404 "not found"    → NOT retried; raised as OllamaModelNotFoundError,
+                              which names the `ollama pull` to run
   - "too large to process"  → NOT retried, whatever the status; raised as
                               OllamaInputTooLargeError immediately
   - "exceed_context_size_error" or "exceeds the available context size"
@@ -41,6 +43,30 @@ class OllamaInputTooLargeError(RuntimeError):
     only spends the backoff. A caller that can send less catches this, and
     every other caller still sees a RuntimeError.
     """
+
+
+class OllamaModelNotFoundError(RuntimeError):
+    """The server has no model by the name the request gave.
+
+    Observed from Ollama 0.40.7: HTTP 404 with `model 'NAME' not found`. Never
+    retried, and the message says what to pull, as the server's does not. A
+    model's tag can also be unknown to an Ollama too old for it: EmbeddingGemma
+    2's tags need 0.40.4 or later.
+    """
+
+
+# The release from which Ollama runs EmbeddingGemma 2's GGUF tags.
+_EMBEDDINGGEMMA_2_OLLAMA = "0.40.4"
+
+
+def _model_not_found_message(endpoint: str, model: object, text: str) -> str:
+    message = (
+        f"Ollama at {endpoint} has no model {model!r} (HTTP 404: {text}). "
+        f"Pull it with: ollama pull {model}"
+    )
+    if isinstance(model, str) and model.startswith("embeddinggemma-2"):
+        message += f" (EmbeddingGemma 2 needs Ollama {_EMBEDDINGGEMMA_2_OLLAMA} or later)"
+    return message
 
 
 # Asked with `truncate: false`, Ollama refuses a prompt longer than its context
@@ -220,6 +246,10 @@ def ollama_post(
                 raise OllamaInputTooLargeError(
                     f"Ollama returned HTTP {exc.response.status_code}: "
                     f"{exc.response.text}"
+                ) from exc
+            if exc.response.status_code == 404 and "not found" in text.lower():
+                raise OllamaModelNotFoundError(
+                    _model_not_found_message(endpoint, payload.get("model"), text)
                 ) from exc
             if exc.response.status_code not in _RETRYABLE_HTTP_CODES:
                 raise RuntimeError(
