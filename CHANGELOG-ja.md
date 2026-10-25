@@ -7,6 +7,24 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.6.2 — 2026-10-25
+
+### 修正
+
+- **Vaporetto の keyword 検索が、API の要求ごとに分かち書きの model を作り直さなく
+  なりました。** sqlite-vaporetto extension は model（2026 年の作業機で約 2.6 秒）を、
+  交わらない 2 つの cache に分けて読み込みます。FTS5 の tokenizer は接続ごとに、
+  `vaporetto_split` は thread ごとに 1 つ持ちます。`keyword_search` は呼び出しごとに、
+  呼んだ thread で接続を開いていたので、`mrag serve` は keyword の要求ごとに両方を
+  払っていました（1 回 5.2 秒、hybrid は 7.5 秒）。Vaporetto の検索は process の
+  寿命のあいだ保持する 1 本の接続・1 本の thread を通るようになり、server が払うのは
+  最初の要求の 1 回だけ、その後は 15 ms です。各文は独立した読みなので、保持した
+  接続も後の `mrag index` が commit した内容を見ます。trigram の project は変わらず、
+  コマンドラインの `mrag search` も変わりません（process ごとに 1 回払うのは同じで、
+  Vaporetto なら約 5 秒。これを下げられるのは extension だけです）。
+
+---
+
 ## 1.6.1 — 2026-10-25
 
 ### 修正

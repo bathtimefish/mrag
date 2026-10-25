@@ -821,3 +821,58 @@ def test_vaporetto_keyword_search_answers_a_function_word_question_with_nothing(
 
     assert keyword.keyword_search("のは何ですか", "kb", "default", tmp_path / "x.db", tokenizer="vaporetto") == []
     assert opened == [1], "the connection is opened once and closed; no MATCH is run"
+
+
+def test_vaporetto_keyword_searches_share_one_connection_and_one_thread(tmp_path, monkeypatch):
+    # The extension builds its segmentation model per connection (the FTS5
+    # tokenizer) and per thread (`vaporetto_split`), about 2.6 s each, so a
+    # search that opened a connection on the calling thread paid both on every
+    # API request (1.6.2). Whichever thread asks, the search runs on one
+    # thread, over one connection opened once.
+    import threading
+    import mrag.core.retrieval.keyword as keyword
+
+    opened = []
+    segmented_on = []
+
+    def open_once(_path, _tokenizer):
+        opened.append(threading.get_ident())
+        connection = MagicMock()
+        connection.execute.return_value.fetchone.return_value = None
+        connection.execute.return_value.fetchall.return_value = []
+        return connection
+
+    monkeypatch.setattr(keyword, "open_fts_connection", open_once)
+    # Searching another catalog first: the held connection follows the catalog
+    # last searched, so this one is closed and the one under test opened.
+    keyword._HELD.run(tmp_path / "other.db", "vaporetto", lambda _conn: None)
+    opened.clear()
+
+    monkeypatch.setattr(
+        keyword, "_vaporetto_segments",
+        lambda _conn, text: segmented_on.append(threading.get_ident()) or ["Hello"],
+    )
+    db_path = tmp_path / "held.db"
+
+    asked_from = []
+
+    def search():
+        asked_from.append(threading.get_ident())
+        return keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="vaporetto")
+
+    assert search() == []
+    worker = threading.Thread(target=lambda: asked_from.append(("result", search())))
+    worker.start()
+    worker.join()
+
+    assert len(opened) == 1, "the connection is opened once for the process"
+    assert len(segmented_on) == 2 and len(set(segmented_on)) == 1, "every search ran on one thread"
+    assert segmented_on[0] == opened[0], "the connection was opened on that thread"
+    callers = [item for item in asked_from if not isinstance(item, tuple)]
+    assert len(callers) == 2 and segmented_on[0] not in callers, "and it is neither caller's thread"
+
+    # A trigram search still opens a connection per call, on the caller's thread.
+    monkeypatch.setattr(keyword, "_prepare_query", lambda text, tokenizer: '"Hello"')
+    keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="trigram")
+    keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="trigram")
+    assert opened[1:] == [threading.get_ident(), threading.get_ident()]

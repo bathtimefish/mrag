@@ -7,6 +7,26 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.6.2 — 2026-10-25
+
+### Fixed
+
+- **A Vaporetto keyword search no longer rebuilds the segmentation model on
+  every API request.** The sqlite-vaporetto extension deserializes its model
+  — about 2.6 s on a 2026 workstation — twice, in caches that never meet: the
+  FTS5 tokenizer keeps one per connection, and `vaporetto_split` keeps one per
+  thread. `keyword_search` opened a connection per call on whichever thread
+  asked, so `mrag serve` paid both on every keyword request (5.2 s each; a
+  hybrid request 7.5 s). Vaporetto searches now run through one connection
+  and one thread held for the life of the process: the server pays once, on
+  its first request, and 15 ms after. Each statement is its own read, so the
+  held connection still sees what a later `mrag index` commits. Trigram
+  projects are unchanged, and so is `mrag search` from the command line,
+  which pays once per process either way (about 5 s with Vaporetto); only the
+  extension could lower that.
+
+---
+
 ## 1.6.1 — 2026-10-25
 
 ### Fixed
