@@ -27,7 +27,7 @@ from mrag.db.qdrant import (
     search,
     delete_points,
 )
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, SearchParams, VectorParams
 from mrag.db.migrate import apply_schema
 
 
@@ -773,6 +773,7 @@ class TestQdrantHelpers:
             query=[0.1, 0.2],
             limit=5,
             with_payload=True,
+            search_params=SearchParams(hnsw_ef=1600),
         )
 
     def test_delete_points_calls_client(self):

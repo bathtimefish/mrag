@@ -7,6 +7,22 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.6.1 — 2026-10-25
+
+### Fixed
+
+- **A vector search on a Qdrant server reaches the nearest points it used to
+  miss.** Searches went out with Qdrant's default HNSW beam, the graph's
+  `ef_construct` (100). Measured on a 30,000-point corpus in one graph, that
+  beam returned 8 % of an exact search's top 10 differently; from a beam of
+  1600 it returned the exact top 10 in full, for a few milliseconds at
+  100,000 points. Every vector search now asks for a beam of 1600. The default
+  local mode scans every vector and ignores the beam, so its results are
+  unchanged, as is a server segment small enough to be scanned. Nothing is
+  re-indexed.
+
+---
+
 ## 1.6.0 — 2026-10-24
 
 ### Added

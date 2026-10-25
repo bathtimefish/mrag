@@ -2,14 +2,52 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from mrag.db.qdrant import (
+    SEARCH_HNSW_EF,
     _identity_fingerprint,
     collection_name,
     ensure_collection,
     legacy_collection_name,
+    search,
 )
+
+
+# ---------------------------------------------------------------------------
+# search
+# ---------------------------------------------------------------------------
+
+
+def test_search_asks_for_the_measured_hnsw_beam() -> None:
+    client = MagicMock()
+    client.query_points.return_value = SimpleNamespace(points=[])
+
+    search(client, "col", [0.5, 0.25], top_k=20)
+
+    kwargs = client.query_points.call_args.kwargs
+    assert SEARCH_HNSW_EF == 1600
+    assert kwargs["search_params"].hnsw_ef == 1600
+    assert not kwargs["search_params"].exact
+    assert kwargs["limit"] == 20
+    assert kwargs["collection_name"] == "col"
+
+
+def test_local_mode_accepts_the_beam_and_still_finds_the_nearest_point() -> None:
+    client = QdrantClient(location=":memory:")
+    client.create_collection("col", vectors_config=VectorParams(size=2, distance=Distance.COSINE))
+    client.upsert(
+        "col",
+        points=[
+            PointStruct(id=1, vector=[1.0, 0.0], payload={"name": "east"}),
+            PointStruct(id=2, vector=[0.0, 1.0], payload={"name": "north"}),
+        ],
+    )
+
+    hits = search(client, "col", [0.9, 0.1], top_k=1)
+
+    assert [hit["payload"]["name"] for hit in hits] == ["east"]
 
 
 # ---------------------------------------------------------------------------
