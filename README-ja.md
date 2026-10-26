@@ -46,7 +46,7 @@ uv pip install -e ".[vaporetto,reranker]"
 
 ### vaporetto ネイティブライブラリ
 
-`vaporetto` extra は `apsw`（SQLite 拡張ローディング用）を入れますが、ネイティブ共有ライブラリは別途配置が必要です。
+`vaporetto` extra は `apsw`（`mrag init` が vaporetto を選ぶのに必要で、Python 標準の `sqlite3` が拡張を読めない環境では拡張の読み込みにも使います）を入れますが、ネイティブ共有ライブラリは別途配置が必要です。
 
 1. [sqlite-vaporetto releases](https://github.com/hotchpotch/sqlite-vaporetto/releases) から、ご利用の OS / アーキテクチャに対応した最新の **`-with-model.tar.gz`** をダウンロード（モデル同梱のバリアントを使ってください）
 2. アーカイブを展開して `~/.mrag/extensions/` に共有ライブラリを配置：

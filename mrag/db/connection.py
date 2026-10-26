@@ -216,13 +216,83 @@ def find_db(project_dir: Path | None = None) -> Path:
     return db_path
 
 
+VAPORETTO_RUNTIME_SQLITE3 = "sqlite3"
+VAPORETTO_RUNTIME_APSW = "apsw"
+
+_vaporetto_runtimes: dict[str, str] = {}
+
+
+def _sqlite3_loads(lib: Path) -> bool:
+    """Whether Python's own sqlite3 can load the sqlite-vaporetto library.
+
+    Loading only registers the tokenizer and functions; the model is built the
+    first time a connection uses them, so this costs well under a millisecond.
+    A build compiled with OMIT_LOAD_EXTENSION has no enable_load_extension, and
+    the extension refuses to load into an SQLite without FTS5.
+    """
+    if not hasattr(sqlite3.Connection, "enable_load_extension"):
+        return False
+    conn = sqlite3.connect(":memory:")
+    try:
+        _load_vaporetto(conn, lib)
+        return True
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def _load_vaporetto(conn: sqlite3.Connection, lib: Path) -> None:
+    # Through the SQL function: load_extension()'s entrypoint argument only
+    # exists from Python 3.12.
+    conn.enable_load_extension(True)
+    try:
+        conn.execute("SELECT load_extension(?, ?)", (str(lib), _VAPORETTO_ENTRYPOINT))
+    finally:
+        conn.enable_load_extension(False)
+
+
+def vaporetto_runtime(lib: Path) -> str:
+    """The SQLite library that runs sqlite-vaporetto in this process.
+
+    Python's sqlite3 when it can load the extension, apsw otherwise; decided
+    once per library, so every Vaporetto connection a process opens — the index
+    writes as well as the searches — goes through one SQLite. Two SQLite copies
+    must not share a database in one process: POSIX locks belong to the
+    process, so when a connection of one copy closes, that copy believes it is
+    the last, checkpoints, and deletes the `-wal` and `-shm` files under any
+    connection the other copy still has open, which then stops seeing commits.
+    """
+    key = str(lib)
+    if key not in _vaporetto_runtimes:
+        _vaporetto_runtimes[key] = (
+            VAPORETTO_RUNTIME_SQLITE3 if _sqlite3_loads(lib) else VAPORETTO_RUNTIME_APSW
+        )
+    return _vaporetto_runtimes[key]
+
+
+def _open_vaporetto_sqlite3(db_path: Path, lib: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        _load_vaporetto(conn, lib)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except Exception:
+        conn.close()
+        raise
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def open_fts_connection(db_path: Path, tokenizer: str) -> Union[sqlite3.Connection, "ApswConnection"]:
     """
     Open a DB connection suitable for FTS5 operations.
-    When tokenizer='vaporetto', uses an apsw-backed connection that loads
-    the vaporetto extension. A missing Vaporetto runtime is an explicit error
-    because an existing FTS5 table cannot safely change tokenizer. Trigram
-    projects use the standard sqlite3 connection.
+    When tokenizer='vaporetto', the connection loads the sqlite-vaporetto
+    extension, on the SQLite `vaporetto_runtime` chose for this process:
+    Python's sqlite3, or an apsw-backed connection where sqlite3 cannot load
+    extensions. A missing Vaporetto runtime is an explicit error because an
+    existing FTS5 table cannot safely change tokenizer. Trigram projects use
+    the standard sqlite3 connection.
     """
     if tokenizer == TOKENIZER_VAPORETTO:
         try:
@@ -237,6 +307,8 @@ def open_fts_connection(db_path: Path, tokenizer: str) -> Union[sqlite3.Connecti
                 "'mrag doctor'. The existing FTS index cannot fall back to "
                 "trigram."
             )
+        if vaporetto_runtime(lib) == VAPORETTO_RUNTIME_SQLITE3:
+            return _open_vaporetto_sqlite3(db_path, lib)
         from mrag.db.apsw_compat import ApswConnection
         try:
             return ApswConnection(db_path, lib, _VAPORETTO_ENTRYPOINT)
@@ -244,9 +316,9 @@ def open_fts_connection(db_path: Path, tokenizer: str) -> Union[sqlite3.Connecti
             if exc.name != "apsw":
                 raise
             raise VaporettoDependencyError(
-                "vaporetto is configured for this project, but APSW is not "
-                "installed. Install the 'vaporetto' optional dependency and "
-                "run 'mrag doctor'."
+                "vaporetto is configured for this project, but Python's sqlite3 "
+                "cannot load extensions here and APSW is not installed. Install "
+                "the 'vaporetto' optional dependency and run 'mrag doctor'."
             ) from exc
     return open_connection(db_path)
 

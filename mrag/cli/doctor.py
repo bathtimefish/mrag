@@ -8,8 +8,9 @@ the responsibility of the individual project commands at runtime.
 Doctor checks:
   - SQLite version (>= 3.35.0)
   - SQLite FTS5 trigram tokenizer
-  - apsw (optional; the `vaporetto` extra, needed to load sqlite-vaporetto)
+  - apsw (optional; the `vaporetto` extra, which `mrag init` needs to choose vaporetto)
   - sqlite-vaporetto native library (optional)
+  - which SQLite runs sqlite-vaporetto: Python's sqlite3, or apsw where it cannot load extensions
   - Ollama default endpoint (http://localhost:11434) reachability
   - Ollama version (0.40.4+ serves EmbeddingGemma 2, the model `mrag init` writes)
 """
@@ -19,6 +20,7 @@ import sqlite3
 from typing import Callable
 
 from rich.console import Console
+from rich.markup import escape
 
 console = Console()
 
@@ -31,14 +33,19 @@ _OLLAMA_DEFAULT_ENDPOINT = "http://localhost:11434"
 _EMBEDDINGGEMMA_2_OLLAMA = (0, 40, 4)
 
 
+# A check's message is plain text, printed through Rich: escaped, so that a
+# bracket in it — `'.[vaporetto]'`, a path — is shown rather than taken for
+# markup and dropped.
+
+
 def _check(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
     try:
         ok, msg = fn()
         badge = _OK if ok else _ERR
-        console.print(f"  {badge}  {label}: {msg}")
+        console.print(f"  {badge}  {label}: {escape(msg)}")
         return ok
     except Exception as e:
-        console.print(f"  {_ERR}  {label}: {e}")
+        console.print(f"  {_ERR}  {label}: {escape(str(e))}")
         return False
 
 
@@ -47,10 +54,10 @@ def _check_warn(label: str, fn: Callable[[], tuple[bool, str]]) -> bool:
     try:
         ok, msg = fn()
         badge = _OK if ok else _WARN
-        console.print(f"  {badge}  {label}: {msg}")
+        console.print(f"  {badge}  {label}: {escape(msg)}")
         return ok
     except Exception as e:
-        console.print(f"  {_WARN}  {label}: {e}")
+        console.print(f"  {_WARN}  {label}: {escape(str(e))}")
         return False
 
 
@@ -87,18 +94,19 @@ def _apsw_version() -> str | None:
 
 
 def _check_apsw() -> tuple[bool, str]:
-    """apsw is what loads the sqlite-vaporetto extension.
+    """apsw is what `mrag init` loads sqlite-vaporetto with before choosing it,
+    and what runs the extension where Python's sqlite3 cannot load extensions.
 
-    Reported on its own line rather than folded into the vaporetto check: a
-    project configured for vaporetto fails at search time with "APSW is not
+    Reported on its own line rather than folded into the vaporetto check: there
+    a project configured for vaporetto fails at search time with "APSW is not
     installed", and that has to be visible here even when the library check
     stops early (for example on an ambiguous library location).
     """
     version = _apsw_version()
     if version is None:
         return False, (
-            f"not installed — needed to load sqlite-vaporetto ({_APSW_INSTALL_HINT}); "
-            "projects with fts_tokenizer: vaporetto cannot be searched without it"
+            f"not installed — mrag init chooses vaporetto only with it ({_APSW_INSTALL_HINT}); "
+            "an existing vaporetto project runs without it only where Python's sqlite3 can load extensions"
         )
     return True, version
 
@@ -116,10 +124,40 @@ def _check_vaporetto() -> tuple[bool, str]:
     if lib is None:
         return False, "library not found (optional — place libsqlite_vaporetto in ~/.mrag/extensions/)"
     if _apsw_version() is None:
-        return False, f"found at {lib} but apsw is not installed, so it cannot load ({_APSW_INSTALL_HINT})"
+        return False, f"found at {lib} but apsw is not installed, so mrag init will not choose it ({_APSW_INSTALL_HINT})"
     if not probe_vaporetto(lib):
         return False, f"found at {lib} but failed to load"
     return True, f"ready ({lib.name})"
+
+
+def _check_vaporetto_runtime() -> tuple[bool, str]:
+    """Which SQLite this process would run sqlite-vaporetto on.
+
+    A warning on apsw: there each keyword search opens its own connection, so
+    the API server builds the extension's model again for every one.
+    """
+    from mrag.db.connection import VAPORETTO_RUNTIME_SQLITE3, vaporetto_runtime
+    from mrag.db.tokenizer import find_vaporetto_lib
+
+    lib = find_vaporetto_lib()
+    if vaporetto_runtime(lib) == VAPORETTO_RUNTIME_SQLITE3:
+        return True, f"Python's sqlite3 (SQLite {sqlite3.sqlite_version})"
+    if _apsw_version() is None:
+        return False, "nothing: Python's sqlite3 cannot load extensions here and apsw is not installed"
+    import apsw
+    return False, (
+        f"apsw (SQLite {apsw.sqlitelibversion()}): Python's sqlite3 cannot load extensions here, "
+        "so every keyword search of the API server builds Vaporetto's model again, about 2 to 3 s"
+    )
+
+
+def _vaporetto_library_present() -> bool:
+    from mrag.db.tokenizer import VaporettoLibraryAmbiguityError, find_vaporetto_lib
+
+    try:
+        return find_vaporetto_lib() is not None
+    except VaporettoLibraryAmbiguityError:
+        return False
 
 
 def _check_ollama() -> tuple[bool, str]:
@@ -168,6 +206,8 @@ def doctor() -> None:
     _check("FTS5 trigram tokenizer", _check_fts5_trigram)
     _check_warn("apsw (optional, vaporetto extra)", _check_apsw)
     _check_warn("sqlite-vaporetto (optional)", _check_vaporetto)
+    if _vaporetto_library_present():
+        _check_warn("sqlite-vaporetto runs on", _check_vaporetto_runtime)
 
     console.print()
     console.print("[bold]Ollama[/bold]")

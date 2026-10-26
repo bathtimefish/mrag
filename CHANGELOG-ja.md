@@ -7,6 +7,45 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.6.2 — 2026-10-27
+
+### 変更
+
+- **sqlite-vaporetto は、Python 標準の `sqlite3` が拡張を読める環境ではその上で、
+  読めない環境でだけ apsw の上で動くようになりました。** Vaporetto の project では、
+  1 つの process が使う SQLite は検索も index の書き込みも 1 つになります。1 つの
+  process で 2 つの SQLite が同じ database を開いてはいけません。macOS と Linux の
+  lock は process 単位なので、片方の SQLite の接続が閉じると、その SQLite は自分が
+  最後の接続だと判断して checkpoint し、もう片方の SQLite がまだ開いている接続の
+  下で `-wal` と `-shm` を消します。その接続は以後 commit を見なくなります。uv の
+  Python は拡張を読めます。`mrag doctor` は拡張がどちらの SQLite で動くかを表示
+  します。`mrag init` が Vaporetto を選ぶのは今までどおり apsw がある場合だけです
+  （`vaporetto` extra）。`sqlite3` が拡張を読める環境なら、Vaporetto の project は
+  apsw なしでも開けるようになりました。index の作り直しは要りません。
+
+### 修正
+
+- **`sqlite3` が拡張を動かす環境では、`mrag serve` の Vaporetto の keyword 検索が、
+  要求ごとに分かち書きの model を作り直さなくなりました。** 拡張は model（測った
+  機械で 2〜2.6 秒）を、交わらない 2 つの cache に分けて読み込みます。FTS5 の
+  tokenizer は接続ごとに、`vaporetto_split` は thread ごとに 1 つ持ちます。
+  `keyword_search` は呼び出しごとに、呼んだ thread で接続を開いていたので、server は
+  keyword の要求ごとに少なくとも前者を払っていました（ある機械で 1 回 2.1 秒、要求の
+  thread が替わる別の機械で 5.2 秒）。Vaporetto の検索は process の寿命のあいだ
+  保持する 1 本の接続・1 本の thread を通るようになりました。1 文書の project で
+  測ると、最初の keyword の要求が 4.2 秒、その後はすべて 4 ms（hybrid は 40〜50 ms）
+  で、server の稼働中に別の `mrag index` が足した文書も次の検索で見つかりました。
+  apsw でしか拡張を読めない環境では、検索は今までどおり接続を毎回開きます（保持すると
+  上の 2 つ目の SQLite になるため）。ただし同じ 1 本の thread で動くので、要求の
+  thread が替わっても thread 側の model は作り直しません。trigram の project と、
+  コマンドラインの `mrag search` は変わりません（process ごとに 1 回払うのは同じで、
+  これを下げられるのは拡張だけです）。
+- **`mrag doctor` が apsw の install の command を欠けずに表示するようになりました。**
+  Rich が `[vaporetto]` を markup と解釈し、案内が `uv pip install -e '.'`（apsw が
+  入らない）になっていました。各 check の文面は書いたとおりに表示します。
+
+---
+
 ## 1.6.1 — 2026-10-25
 
 ### 修正
