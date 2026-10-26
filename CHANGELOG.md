@@ -7,6 +7,132 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.6.1 — 2026-10-25
+
+### Fixed
+
+- **A vector search on a Qdrant server reaches the nearest points it used to
+  miss.** Searches went out with Qdrant's default HNSW beam, the graph's
+  `ef_construct` (100). Measured on a 30,000-point corpus in one graph, that
+  beam returned 8 % of an exact search's top 10 differently; from a beam of
+  1600 it returned the exact top 10 in full, for a few milliseconds at
+  100,000 points. Every vector search now asks for a beam of 1600. The default
+  local mode scans every vector and ignores the beam, so its results are
+  unchanged, as is a server segment small enough to be scanned. Nothing is
+  re-indexed.
+
+---
+
+## 1.6.0 — 2026-10-24
+
+### Added
+
+- **Task prefixes for the embedding model.** Two optional profile settings,
+  `embedding.query_prefix` and `embedding.document_prefix`, put a fixed text
+  before what the model embeds. The query prefix goes before a search query —
+  in `vector`, in the vector half of `hybrid` and `parent_child`, and in
+  `mrag eval`; the keyword half still searches the query as written, and since
+  no stored vector depends on it, changing it rebuilds nothing. The document
+  prefix goes before every chunk an index run embeds, after any contextual
+  context; `{title}` in it becomes the document's file name without its
+  extension (`none` when there is none). Once set it is part of the index
+  identity. Each is 1 to 256 characters, `{title}` may appear once and only in
+  the document prefix, and stored variants, the FTS5 index and results never
+  contain either. Unset — as in every existing profile — a text is embedded as
+  written and the index identity is unchanged. See
+  [task prefixes](docs/retrieval-strategies.md#task-prefixes).
+- **`mrag doctor` reports the Ollama version** and warns when it is older than
+  0.40.4, the first release that runs EmbeddingGemma 2.
+
+### Changed
+
+- **New projects embed with EmbeddingGemma 2.** `mrag init` writes
+  `embedding.model: embeddinggemma-2:740m-q8_0` with
+  `query_prefix: "task: search result | query: "`, the prefix the model was
+  trained with; without it, the model ranked below `bge-m3` on both corpora
+  measured. The tag is the GGUF `Q8_0` build on every OS — `latest` resolves to
+  an MLX build with different vectors on Apple Silicon. Measured on Japanese
+  documents with the prefix, it was level with `bge-m3` on one corpus, better on
+  another, and below it on human-judged questions; embedding took a quarter to
+  a third less time on an Apple Silicon Mac and 7% more on an NVIDIA RTX 4090.
+  It needs Ollama 0.40.4 or later and `ollama pull embeddinggemma-2:740m-q8_0`.
+  A profile that names no model still means `bge-m3`.
+
+### Fixed
+
+- **A renamed document is rebuilt by the next index.** After `mrag documents
+  sync` moved a document to a new path (or `mrag documents rebind` pointed it at
+  one), the document list reported it `stale` — but `mrag index` and
+  `documents sync --index` judged it up to date and skipped it, so it stayed
+  `stale` until `mrag reindex`. The index plan now applies the list's rule and
+  rebuilds a document indexed under another name. A row indexed before names
+  were recorded is not judged, as in the list.
+- **An embedding model Ollama does not have is reported, not a traceback.**
+  `mrag index` and `mrag reindex` ended with a traceback when Ollama answered
+  HTTP 404 for the profile's model, and `mrag search` printed the bare 404. The
+  error now names the endpoint and the model, says
+  `Pull it with: ollama pull <model>` (and, for EmbeddingGemma 2, that it needs
+  Ollama 0.40.4 or later), and the commands exit 1.
+- **The API server and `mrag eval` embed a query as `mrag search` does.** Both
+  built their own embedding client and left out `embedding.max_input_tokens`,
+  so for the server's default profile and for `mrag eval` the request carried no
+  `num_ctx`/`num_batch` while `mrag search`, MCP and the index did. A query
+  longer than Ollama's default batch could then be treated differently on the
+  two paths, and Ollama reloaded the model whenever the two kinds of request
+  alternated. Every path now sends the profile's setting.
+
+### Compatibility
+
+- Existing projects are unaffected: their profiles name their model, set no
+  prefix, and keep their index identity. Moving a project to EmbeddingGemma 2
+  means setting both lines above, which rebuilds its index; keeping `bge-m3` in
+  a new project means `model: bge-m3` and no `query_prefix` — it takes none.
+- A project whose documents were renamed under 1.3.0–1.5.6 rebuilds those
+  documents at its next `mrag index`.
+
+---
+
+## 1.5.6 — 2026-10-21
+
+### Fixed
+
+- **A provider mrag does not implement is refused when the profile is read.**
+  `embedding.provider`, `augmentation.provider` and `keyword.provider` were free
+  strings that nothing consulted: a profile saying `provider: lm_studio` loaded,
+  and mrag called Ollama at that endpoint under the other name — while the index
+  identity still changed with the string. Each now accepts only the
+  implementation mrag has (`ollama`, `ollama`, `sqlite_fts5`), and any other
+  value stops the command with an `Error:` that names the field and what it
+  accepts (`embedding.provider` / `Input should be 'ollama'`). Profiles that name the implemented provider, or leave
+  it out, load as before and keep their index identity. `rerank.provider` was
+  already refused when used.
+- **`mrag search` and `mrag profiles show` report a profile that fails
+  validation as an error.** They caught only a missing profile, so an invalid
+  one — any value outside what a field accepts, such as `retrieval.fusion:
+  harmonic_mean` — ended them with a traceback. They now print `Error:` with the
+  reason and exit 1, as `mrag index` and `mrag serve` already did.
+
+---
+
+## 1.5.5 — 2026-10-21
+
+### Fixed
+
+- **A prompt refused as longer than the context window is recognised on
+  Ollama 0.40.6.** With `augmentation.context_window_tokens` set, Ollama 0.34.4
+  answered such a prompt with HTTP 400 carrying `exceed_context_size_error` and
+  the token counts; 0.40.6 passes on only the message, `request (N tokens)
+  exceeds the available context size (W tokens), try increasing it`. That
+  refusal was reported as a plain HTTP 400, so a chunk under `raw_fallback`
+  fell back with the server's body as its reason instead of
+  `N-token prompt exceeds augmentation.context_window_tokens (W)`, and
+  `fail_document` failed with the same generic message. The message is now
+  recognised as well, and the counts are read from it when the fields are
+  absent. The chunk is kept without a context as before; only the reason
+  changes.
+
+---
+
 ## 1.5.4 — 2026-10-20
 
 ### Fixed

@@ -4,6 +4,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
+from mrag.core.ollama_client import OllamaModelNotFoundError
 from mrag.config.project import load_project_config
 from mrag.core.indexing.pipeline import (
     reconcile_profile_vectors,
@@ -72,7 +73,7 @@ def reindex(
             qdrant_client=qdrant_client,
             console=console,
         )
-    except (FileNotFoundError, ConnectionError, ValueError) as e:
+    except (FileNotFoundError, ConnectionError, ValueError, OllamaModelNotFoundError) as e:
         console.print(f"[red]Error:[/red] {e}")
         console.print("[dim]The existing index was left in place.[/dim]")
         raise typer.Exit(1)

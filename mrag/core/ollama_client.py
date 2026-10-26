@@ -10,9 +10,12 @@ Retry policy:
   - RuntimeError from validate() → retried (e.g. empty Ollama response)
   - httpx.ConnectError      → NOT retried; raised as ConnectionError immediately
   - HTTP 4xx                → NOT retried; raised as RuntimeError immediately
+  - HTTP 404 "not found"    → NOT retried; raised as OllamaModelNotFoundError,
+                              which names the `ollama pull` to run
   - "too large to process"  → NOT retried, whatever the status; raised as
                               OllamaInputTooLargeError immediately
-  - "exceed_context_size_error" → NOT retried, whatever the status; raised as
+  - "exceed_context_size_error" or "exceeds the available context size"
+                            → NOT retried, whatever the status; raised as
                               OllamaPromptExceedsWindowError immediately
 """
 from __future__ import annotations
@@ -42,18 +45,59 @@ class OllamaInputTooLargeError(RuntimeError):
     """
 
 
+class OllamaModelNotFoundError(RuntimeError):
+    """The server has no model by the name the request gave.
+
+    Observed from Ollama 0.40.7: HTTP 404 with `model 'NAME' not found`. Never
+    retried, and the message says what to pull, as the server's does not. A
+    model's tag can also be unknown to an Ollama too old for it: EmbeddingGemma
+    2's tags need 0.40.4 or later.
+    """
+
+
+# The release from which Ollama runs EmbeddingGemma 2's GGUF tags.
+_EMBEDDINGGEMMA_2_OLLAMA = "0.40.4"
+
+
+def _model_not_found_message(endpoint: str, model: object, text: str) -> str:
+    message = (
+        f"Ollama at {endpoint} has no model {model!r} (HTTP 404: {text}). "
+        f"Pull it with: ollama pull {model}"
+    )
+    if isinstance(model, str) and model.startswith("embeddinggemma-2"):
+        message += f" (EmbeddingGemma 2 needs Ollama {_EMBEDDINGGEMMA_2_OLLAMA} or later)"
+    return message
+
+
 # Asked with `truncate: false`, Ollama refuses a prompt longer than its context
 # window instead of keeping the prompt's end and answering HTTP 200, which
 # silently drops the opening. Observed from Ollama 0.34.4: HTTP 400 with
 # `"type":"exceed_context_size_error","n_prompt_tokens":N,"n_ctx":W` inside
-# the error text, after tokenizing alone (about 3 ms).
-_PROMPT_EXCEEDS_WINDOW_MARKER = "exceed_context_size_error"
+# the error text, after tokenizing alone (about 3 ms). Ollama 0.40.6 passes on
+# only the message, `request (N tokens) exceeds the available context size (W
+# tokens), try increasing it`, without the type or the count fields, so the
+# message, which both carry, is recognised too and the counts are read from it.
+_PROMPT_EXCEEDS_WINDOW_MARKERS = (
+    "exceed_context_size_error",
+    "exceeds the available context size",
+)
+_PROMPT_TOKENS_IN_MESSAGE = re.compile(r"request \((\d+) tokens\)")
+_WINDOW_TOKENS_IN_MESSAGE = re.compile(r"available context size \((\d+) tokens\)")
 
 
 def _count_after(text: str, field: str) -> int | None:
     """The number following `field` in a refusal body, which nests JSON as text."""
     match = re.search(rf'{field}\\?"?\s*:\s*(\d+)', text)
     return int(match.group(1)) if match else None
+
+
+def _count_in(text: str, field: str, in_message: re.Pattern[str]) -> int | None:
+    """A refusal's count from its field, or from its message when it has none."""
+    count = _count_after(text, field)
+    if count is None:
+        match = in_message.search(text)
+        count = int(match.group(1)) if match else None
+    return count
 
 
 class OllamaPromptExceedsWindowError(RuntimeError):
@@ -189,17 +233,23 @@ def ollama_post(
             ) from exc
 
         except httpx.HTTPStatusError as exc:
-            if _PROMPT_EXCEEDS_WINDOW_MARKER in exc.response.text:
+            text = exc.response.text
+            if any(marker in text for marker in _PROMPT_EXCEEDS_WINDOW_MARKERS):
                 raise OllamaPromptExceedsWindowError(
-                    f"Ollama returned HTTP {exc.response.status_code}: "
-                    f"{exc.response.text}",
-                    prompt_tokens=_count_after(exc.response.text, "n_prompt_tokens"),
-                    window_tokens=_count_after(exc.response.text, "n_ctx"),
+                    f"Ollama returned HTTP {exc.response.status_code}: {text}",
+                    prompt_tokens=_count_in(
+                        text, "n_prompt_tokens", _PROMPT_TOKENS_IN_MESSAGE
+                    ),
+                    window_tokens=_count_in(text, "n_ctx", _WINDOW_TOKENS_IN_MESSAGE),
                 ) from exc
             if _INPUT_TOO_LARGE_MARKER in exc.response.text.lower():
                 raise OllamaInputTooLargeError(
                     f"Ollama returned HTTP {exc.response.status_code}: "
                     f"{exc.response.text}"
+                ) from exc
+            if exc.response.status_code == 404 and "not found" in text.lower():
+                raise OllamaModelNotFoundError(
+                    _model_not_found_message(endpoint, payload.get("model"), text)
                 ) from exc
             if exc.response.status_code not in _RETRYABLE_HTTP_CODES:
                 raise RuntimeError(

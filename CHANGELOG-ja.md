@@ -7,6 +7,133 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.6.1 — 2026-10-25
+
+### 修正
+
+- **Qdrant server での vector 検索が、取りこぼしていた近い点に届くように
+  なりました。** 検索は Qdrant の既定の HNSW の探索幅(graph の
+  `ef_construct`、100)で送られていました。1 枚の graph にまとまった 3 万点の
+  corpus で測ると、この探索幅は厳密検索の top 10 の 8% を違えて
+  返し、探索幅 1600 からは厳密検索の top 10 と完全に一致しました。10 万点でも
+  増える時間は数 ms です。すべての vector 検索が探索幅 1600 を指定します。既定の
+  local mode は全 vector を総当たりするので探索幅を使わず、結果は変わりません。
+  総当たりされる小さい server の segment も同じです。index の作り直しは要りません。
+
+---
+
+## 1.6.0 — 2026-10-24
+
+### 追加
+
+- **埋め込みモデルの task prefix。** 省略可能な 2 つの profile 設定
+  `embedding.query_prefix` と `embedding.document_prefix` で、モデルが埋め込む
+  テキストの前に決まった文字列を置けるようになりました。query prefix は検索
+  クエリの前に置きます(`vector`、`hybrid` と `parent_child` の vector 側、
+  `mrag eval`)。keyword 側は書かれたままのクエリで検索し、保存済みの vector は
+  この設定に依存しないので、変えても何も作り直しません。document prefix は
+  index が埋め込むすべてのチャンクの前に(contextual の context よりさらに前に)
+  置き、中の `{title}` は拡張子を除いたファイル名(無ければ `none`)になります。
+  設定すると index identity に含まれます。どちらも 1〜256 文字で、`{title}` は
+  document prefix の中にだけ 1 回まで書けます。保存される variant、FTS5 の
+  index、検索結果にはどちらも入りません。未設定なら(既存の profile はすべて
+  そうです)テキストは書かれたまま埋め込まれ、index identity も変わりません。
+  [task prefix](docs/retrieval-strategies-ja.md#task-prefix) を参照してください。
+- **`mrag doctor` が Ollama の版を表示し**、EmbeddingGemma 2 を動かせる最初の版
+  である 0.40.4 より古いと警告します。
+
+### 変更
+
+- **新しいプロジェクトは EmbeddingGemma 2 で埋め込みます。** `mrag init` は
+  `embedding.model: embeddinggemma-2:740m-q8_0` と、モデルが学習時に使った
+  `query_prefix: "task: search result | query: "` を書き込みます。prefix を
+  付けずに測った 2 つのコーパスでは、どちらも `bge-m3` を下回りました。この tag は
+  どの OS でも GGUF の `Q8_0` 版です(`latest` は Apple Silicon では vector の
+  異なる MLX 版に解決されます)。prefix 付きで日本語の文書を測ったところ、1 つの
+  コーパスで `bge-m3` と同等、別のコーパスで上回り、人が判定した質問では
+  下回りました。埋め込みにかかる時間は Apple Silicon の Mac で 4 分の 1 から
+  3 分の 1 短く、NVIDIA RTX 4090 では 7% 長くなりました。Ollama 0.40.4 以降と
+  `ollama pull embeddinggemma-2:740m-q8_0` が必要です。model を書いていない
+  profile は引き続き `bge-m3` を意味します。
+
+### 修正
+
+- **名前が変わった document を次の index が作り直すようになりました。**
+  `mrag documents sync` が document を新しいパスへ移した後(または
+  `mrag documents rebind` が別のファイルを指させた後)、document の一覧は
+  それを `stale` と報告するのに、`mrag index` と `documents sync --index` は
+  最新と判定して飛ばしていました。そのため `mrag reindex` するまで `stale` の
+  ままでした。index の計画が一覧と同じ規則を使い、別の名前で index された
+  document を作り直します。名前を記録する前に index された行は、一覧と同じく
+  判定しません。
+- **Ollama に無い埋め込みモデルを traceback ではなくエラーとして報告します。**
+  profile の model に Ollama が HTTP 404 を返すと、`mrag index` と
+  `mrag reindex` は traceback で終わり、`mrag search` は 404 をそのまま表示して
+  いました。エラーは endpoint と model を示し、`Pull it with: ollama pull <model>`
+  と案内し(EmbeddingGemma 2 なら Ollama 0.40.4 以降が要ることも添えます)、
+  コマンドは exit 1 で終わります。
+- **API サーバーと `mrag eval` が `mrag search` と同じ形でクエリを埋め込みます。**
+  どちらも埋め込みの client を自前で作り、`embedding.max_input_tokens` を渡して
+  いませんでした。そのためサーバーの既定 profile と `mrag eval` の要求には
+  `num_ctx`/`num_batch` が無く、`mrag search`・MCP・index の要求にはありました。
+  Ollama の既定の batch より長いクエリは経路によって扱いが変わることがあり、
+  2 種類の要求が交互に来るたびに Ollama はモデルを読み直していました。どの経路も
+  profile の設定を送るようになりました。
+
+### 互換性
+
+- 既存のプロジェクトには影響しません。profile が model を書いており、prefix を
+  設定しておらず、index identity も変わりません。既存のプロジェクトを
+  EmbeddingGemma 2 に移すには上の 2 行を設定します(index は作り直しになります)。
+  新しいプロジェクトで `bge-m3` を使うには `model: bge-m3` にして
+  `query_prefix` を消します(`bge-m3` は prefix を取りません)。
+- 1.3.0〜1.5.6 で名前を変えた document があるプロジェクトでは、次の
+  `mrag index` でその document が作り直されます。
+
+---
+
+## 1.5.6 — 2026-10-21
+
+### 修正
+
+- **mrag が実装していない provider を、profile を読む時点で拒否するように
+  なりました。** `embedding.provider`・`augmentation.provider`・
+  `keyword.provider` は、どこからも参照されない自由な文字列でした。
+  `provider: lm_studio` と書いた profile も読み込まれ、mrag はその endpoint に
+  別の名前のまま Ollama として要求を送っていました — index の identity だけは
+  その文字列で変わっていました。それぞれ mrag が持つ実装(`ollama`・`ollama`・
+  `sqlite_fts5`)だけを受け付け、ほかの値ではコマンドが、欄の名前と受け付ける
+  値を示す `Error:`(`embedding.provider` / `Input should be 'ollama'`)で止まります。
+  実装済みの provider を書いた profile や、書いていない profile は従来どおり
+  読み込まれ、index の identity も変わりません。`rerank.provider` は以前から
+  使用時に拒否されていました。
+- **`mrag search` と `mrag profiles show` が、検証に通らない profile を
+  エラーとして報告するようになりました。** どちらも profile が無い場合しか
+  捕まえていなかったため、無効な profile — `retrieval.fusion: harmonic_mean`
+  のように欄が受け付けない値 — では traceback で終わっていました。
+  `mrag index` や `mrag serve` と同じく、理由を `Error:` として表示し exit 1 で
+  終わります。
+
+---
+
+## 1.5.5 — 2026-10-21
+
+### 修正
+
+- **Ollama 0.40.6 で、窓より長いとして拒否された prompt を認識するように
+  なりました。** `augmentation.context_window_tokens` を設定すると、Ollama 0.34.4
+  はそのような prompt を `exceed_context_size_error` と token 数を含む HTTP 400 で
+  拒否していました。0.40.6 は `request (N tokens) exceeds the available context
+  size (W tokens), try increasing it` という文だけを返します。この拒否はただの
+  HTTP 400 として扱われていたため、`raw_fallback` のチャンクは
+  `N-token prompt exceeds augmentation.context_window_tokens (W)` ではなく
+  サーバーの応答本文を理由として fallback し、`fail_document` も同じ一般的な
+  メッセージで失敗していました。この文も認識し、token 数の欄が無いときは文から
+  読むようにしました。チャンクを文脈なしで残す動作は変わらず、変わるのは理由だけ
+  です。
+
+---
+
 ## 1.5.4 — 2026-10-20
 
 ### 修正

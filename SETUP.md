@@ -206,15 +206,17 @@ $env:MRAG_VAPORETTO_LIB = "C:\path\to\sqlite_vaporetto.dll"
 ### Embedding model (required for all projects)
 
 ```bash
-ollama pull bge-m3
+ollama pull embeddinggemma-2:740m-q8_0
 ```
 
-`bge-m3` is a multilingual 1024-dim model (~1.2 GB). The download may take several minutes depending on network speed.
+`embeddinggemma-2:740m-q8_0` is EmbeddingGemma 2 (multilingual, 768 dimensions, ~1.3 GB), the model `mrag init` writes into a new project. It needs Ollama 0.40.4 or later — `mrag doctor` warns when the running Ollama is older. Pull this tag, not `latest`: on Apple Silicon `latest` resolves to an MLX build whose vectors differ from other machines'. The download may take several minutes depending on network speed.
+
+A project created before mrag 1.6.0, or one whose profile sets `embedding.model: bge-m3`, needs `ollama pull bge-m3` instead (1024 dimensions, ~1.2 GB). Check `profiles/default.yaml` → `embedding.model`.
 
 **Verification:**
 
 ```bash
-ollama list | grep bge-m3   # must appear in the list
+ollama list | grep embeddinggemma-2:740m-q8_0   # must appear in the list
 ```
 
 ### Generation model (required only for contextual augmentation)

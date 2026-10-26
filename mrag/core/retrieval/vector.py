@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from mrag.core.embedding.base import BaseEmbeddingProvider
+from mrag.core.embedding.prefix import query_input
 from mrag.core.retrieval.base import RetrievalResult, fetch_chunks
 from mrag.db.exclusions import active_document_ids
 from mrag.db.qdrant import search as qdrant_search
@@ -15,8 +16,9 @@ def vector_search(
     qdrant_client,
     col_name: str,
     top_k: int = 10,
+    query_prefix: str | None = None,
 ) -> list[RetrievalResult]:
-    query_vector = embedding_provider.embed([query_text])[0]
+    query_vector = embedding_provider.embed([query_input(query_text, query_prefix)])[0]
     excluded_document_ids = active_document_ids(db_path, profile_name)
     hits = qdrant_search(
         qdrant_client,

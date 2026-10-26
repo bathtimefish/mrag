@@ -106,7 +106,7 @@ def search(
 
     try:
         load_profile(profile_name, project_dir)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 

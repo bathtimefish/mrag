@@ -57,6 +57,7 @@ from mrag.core.ingestion.sync_plan import (
     resolve_sync_scope,
 )
 from mrag.core.interrupt import CANCELLED_EXIT, Interrupt
+from mrag.core.ollama_client import OllamaModelNotFoundError
 from mrag.db.connection import db_connection, find_db
 from mrag.db.exclusions import active_exclusions_by_document, create_exclusion, revoke_exclusions
 from mrag.extractors import detect_source_type
@@ -549,7 +550,7 @@ def _index_after_apply(project_dir: Path, config: ProjectConfig, targets: list[s
         started = datetime.now()
         try:
             result = run_index(project_dir=project_dir, config=config, profile_name=name)
-        except (FileNotFoundError, ConnectionError, ValueError) as error:
+        except (FileNotFoundError, ConnectionError, ValueError, OllamaModelNotFoundError) as error:
             profiles.append({"profile": name, "status": "failed", "error": {"code": "index_failed", "message": str(error)}})
             unfinished.append(f"mrag index --profile {name}")
             continue
