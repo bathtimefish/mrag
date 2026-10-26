@@ -1,7 +1,9 @@
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from mrag.core.retrieval.base import RetrievalResult, fetch_chunk_metadata, fetch_chunks
+from mrag.db.apsw_compat import ApswConnection
 from mrag.db.connection import open_fts_connection
 from mrag.db.exclusions import exclusions_schema_exists
 from mrag.db.tokenizer import TOKENIZER_TRIGRAM, TOKENIZER_VAPORETTO
@@ -30,18 +32,74 @@ JAPANESE_STOP_SEGMENTS = frozenset(
 )
 
 
-def keyword_search(
-    query_text: str,
+class _HeldFtsConnection:
+    """One thread for every Vaporetto keyword search, and one FTS connection
+    kept on it for the life of the process when that is safe.
+
+    The sqlite-vaporetto extension deserializes its segmentation model — about
+    2.6 s on a 2026 workstation — in two caches that never meet: the FTS5
+    tokenizer builds one per connection, the first time the connection touches
+    the table, and `vaporetto_split` builds one per thread, the first time the
+    thread calls it. A search that opened a connection per call paid both every
+    time (5.2 s per request on the API server, which runs handlers on a pool of
+    threads). Running every search on this one thread pays the second once;
+    holding the connection pays the first once. Each statement is its own read,
+    so the held connection still sees what a later `mrag index` commits.
+
+    Only a connection of Python's own sqlite3 is held. An apsw connection runs
+    a second SQLite in the process, beside the sqlite3 connections the rest of
+    mrag opens on the same catalog, and on POSIX the close of one of those
+    deletes the WAL files a held apsw connection still maps, after which it no
+    longer sees commits (see `vaporetto_runtime`). So where sqlite3 cannot load
+    the extension, each search opens and closes its connection as before, on
+    this thread, and pays the first model only.
+
+    The connection follows the catalog last searched: a search of another
+    catalog closes it and opens that one, so a process that touches many
+    catalogs — a test run — holds one model, not one per catalog. A server and
+    a command search one catalog, and never pay for the switch.
+    """
+
+    def __init__(self) -> None:
+        self._key: tuple[str, str] | None = None
+        self._conn = None
+        self._thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mrag-keyword")
+
+    def run(self, db_path: Path, tokenizer: str, work):
+        """Runs `work(conn)` on the connection to `db_path`, on the one thread."""
+        key = (str(Path(db_path).resolve()), tokenizer)
+        return self._thread.submit(self._on_thread, key, db_path, tokenizer, work).result()
+
+    def _on_thread(self, key, db_path, tokenizer, work):
+        if self._key != key:
+            if self._conn is not None:
+                self._conn.close()
+            self._conn = None
+            self._key = None
+            conn = open_fts_connection(db_path, tokenizer)
+            if isinstance(conn, ApswConnection):
+                try:
+                    return work(conn)
+                finally:
+                    conn.close()
+            self._conn = conn
+            self._key = key
+        return work(self._conn)
+
+
+_HELD = _HeldFtsConnection()
+
+
+def _match_rows(
+    conn,
+    normalized: str,
     knowledge_id: str,
     profile_name: str,
-    db_path: Path,
-    top_k: int = 20,
-    tokenizer: str = TOKENIZER_TRIGRAM,
-) -> list[RetrievalResult]:
-    """FTS5 MATCH search. BM25 is negated so higher = better. tokenizer selects
-    the FTS5 tokenizer (vaporetto uses apsw + loaded extension)."""
-    normalized = unicodedata.normalize("NFKC", query_text)
-    conn = open_fts_connection(db_path, tokenizer)
+    top_k: int,
+    tokenizer: str,
+) -> list:
+    """The FTS5 MATCH on an open connection: the query prepared for the
+    tokenizer, exclusions honoured, rows in BM25 order."""
     try:
         if tokenizer == TOKENIZER_VAPORETTO:
             fts_query = _prepare_segmented_query(normalized, lambda text: _vaporetto_segments(conn, text))
@@ -61,7 +119,7 @@ def keyword_search(
                 "AND (e.profile_name IS NULL OR e.profile_name=fts_chunks.profile_name)"
                 ") "
             )
-        rows = conn.execute(
+        return conn.execute(
             "SELECT chunk_id, document_id, bm25(fts_chunks) AS bm25_score "
             "FROM fts_chunks "
             "WHERE fts_chunks MATCH ? AND knowledge_id=? AND profile_name=? "
@@ -71,13 +129,37 @@ def keyword_search(
             (fts_query, knowledge_id, profile_name, top_k),
         ).fetchall()
     except Exception as exc:
-        # sqlite3.OperationalError (stdlib) and apsw.SQLError (vaporetto) both
+        # sqlite3.OperationalError (stdlib) and apsw.SQLError (apsw) both
         # signal FTS5 syntax errors — degrade to empty result; re-raise others.
         if type(exc).__name__ not in ("OperationalError", "SQLError"):
             raise
-        rows = []
-    finally:
-        conn.close()
+        return []
+
+
+def keyword_search(
+    query_text: str,
+    knowledge_id: str,
+    profile_name: str,
+    db_path: Path,
+    top_k: int = 20,
+    tokenizer: str = TOKENIZER_TRIGRAM,
+) -> list[RetrievalResult]:
+    """FTS5 MATCH search. BM25 is negated so higher = better. tokenizer selects
+    the FTS5 tokenizer (vaporetto loads its extension, and searches on one
+    thread kept for the process; see `_HeldFtsConnection`).
+    """
+    normalized = unicodedata.normalize("NFKC", query_text)
+    if tokenizer == TOKENIZER_VAPORETTO:
+        rows = _HELD.run(
+            db_path, tokenizer,
+            lambda conn: _match_rows(conn, normalized, knowledge_id, profile_name, top_k, tokenizer),
+        )
+    else:
+        conn = open_fts_connection(db_path, tokenizer)
+        try:
+            rows = _match_rows(conn, normalized, knowledge_id, profile_name, top_k, tokenizer)
+        finally:
+            conn.close()
 
     if not rows:
         return []

@@ -295,6 +295,60 @@ def test_doctor_names_apsw_when_library_is_found_but_cannot_load(tmp_path, monke
 
 
 @pytest.mark.parametrize(
+    ("runtime", "badge", "expected"),
+    [
+        ("sqlite3", "OK", "Python's sqlite3"),
+        ("apsw", "WARN", "builds Vaporetto's model again"),
+    ],
+)
+def test_doctor_names_the_sqlite_that_runs_vaporetto(tmp_path, monkeypatch, runtime, badge, expected):
+    import mrag.db.connection as connection
+
+    library = tmp_path / "libsqlite_vaporetto.dylib"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mrag.db.tokenizer.find_vaporetto_lib", lambda: library)
+    monkeypatch.setattr(connection, "_vaporetto_runtimes", {str(library): runtime})
+    if runtime == "apsw":
+        pytest.importorskip("apsw")
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    line = next(l for l in result.output.splitlines() if "sqlite-vaporetto runs on" in l)
+    assert badge in line
+    # Rich wraps a long line at the console's width.
+    assert expected in result.output.replace("\n", " ").replace("  ", " ")
+
+
+def test_doctor_prints_the_apsw_install_command_with_its_extra(tmp_path, monkeypatch):
+    # Before 1.6.2 Rich took `[vaporetto]` for markup and printed
+    # `uv pip install -e '.'`, which installs no apsw.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_doctor_module(), "_apsw_version", lambda: None)
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    assert "uv pip install -e '.[vaporetto]'" in result.output.replace("\n", "")
+
+
+def test_doctor_says_nothing_of_a_runtime_when_the_library_is_ambiguous(tmp_path, monkeypatch):
+    # The library line already reports the ambiguity; a runtime line would
+    # only repeat it.
+    from mrag.db.tokenizer import VaporettoLibraryAmbiguityError
+
+    def ambiguous():
+        raise VaporettoLibraryAmbiguityError("ambiguous fixture")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mrag.db.tokenizer.find_vaporetto_lib", ambiguous)
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    assert "ambiguous fixture" in result.output
+    assert "runs on" not in result.output
+
+
+def test_doctor_says_nothing_of_a_runtime_without_the_library(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("mrag.db.tokenizer.find_vaporetto_lib", lambda: None)
+    result = runner.invoke(app, ["doctor"], catch_exceptions=False)
+    assert "runs on" not in result.output
+
+
+@pytest.mark.parametrize(
     ("version", "badge", "expected"),
     [
         ("0.40.7", "OK", "0.40.7"),

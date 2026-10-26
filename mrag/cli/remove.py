@@ -75,7 +75,7 @@ def remove(
         return
 
     # --force: hard delete
-    # FTS delete uses tokenizer-aware connection (vaporetto needs ApswConnection)
+    # FTS delete uses tokenizer-aware connection (vaporetto needs its extension loaded)
     try:
         with fts_db_connection(db_path, config.fts_tokenizer) as fts_conn:
             fts_conn.execute("DELETE FROM fts_chunks WHERE document_id = ?", (document_id,))
