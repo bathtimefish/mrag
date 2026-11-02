@@ -137,6 +137,16 @@ retrieval:
 - A sum of zero or less is a validation error
 - `weights` is a retrieval-time parameter, so changing it does not require re-indexing
 
+### Equal fused scores
+
+Both methods produce exact ties as a matter of course: the `vector` list's top
+hit and the `keyword` list's top hit, when neither appears in the other list,
+score exactly the same. Since 1.7.0 such a tie goes first to the result whose
+document **both lists returned** (any chunk of it), and only then to the result
+the `vector` list, then the `keyword` list, ranked first. Before 1.7.0 only the
+second rule applied, so every such tie went to the `vector` side. Ties never
+depend on IDs, so the same files rank the same way in every project.
+
 
 ## `parent_child` — score on the child, return the parent
 

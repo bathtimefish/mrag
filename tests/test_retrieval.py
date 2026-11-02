@@ -395,8 +395,22 @@ def test_search_cli_returns_profile_top_k_results(indexed_project):
 # 6-3: Fusion
 # ---------------------------------------------------------------------------
 
-def _r(chunk_id: str, score: float, content: str = "c") -> RetrievalResult:
-    return RetrievalResult(chunk_id=chunk_id, document_id="d", content=content, score=score)
+def _r(chunk_id: str, score: float, content: str = "c", document_id: str = "d") -> RetrievalResult:
+    return RetrievalResult(chunk_id=chunk_id, document_id=document_id, content=content, score=score)
+
+
+def _single_list_tops() -> list[list[RetrievalResult]]:
+    """Each list's top hit appears in that list only, so the two tie exactly.
+
+    The keyword-side top hit is from a document the vector-side list also
+    returned (its second hit); the vector-side top hit's document appears in
+    no other list. Arrival order, and the chunk IDs, would both put the
+    vector-side hit first.
+    """
+    vector = [_r("aa-vector-only", 0.9, document_id="doc-vector"),
+              _r("bb-vector-second", 0.8, document_id="doc-both")]
+    keyword = [_r("zz-keyword-best", 7.0, document_id="doc-both")]
+    return [vector, keyword]
 
 
 class TestRrfFusion:
@@ -440,6 +454,21 @@ class TestRrfFusion:
         ids = [r.chunk_id for r in fused]
         assert ids.count("c1") == 1
 
+    def test_a_tie_goes_to_the_document_both_lists_returned(self):
+        fused = rrf_fusion(_single_list_tops())
+        assert fused[0].score == fused[1].score
+        assert [r.chunk_id for r in fused] == ["zz-keyword-best", "aa-vector-only", "bb-vector-second"]
+
+    def test_a_tie_the_lists_agree_on_equally_keeps_arrival_order(self):
+        # Swapped places: both chunks are in both lists, so both documents were
+        # returned by both, and the chunk seen first walking the lists leads.
+        # The IDs are chosen to sort the other way round.
+        list_a = [_r("zeta", 0.9, document_id="d1"), _r("alpha", 0.8, document_id="d2")]
+        list_b = [_r("alpha", 7.0, document_id="d2"), _r("zeta", 6.0, document_id="d1")]
+        fused = rrf_fusion([list_a, list_b])
+        assert fused[0].score == fused[1].score
+        assert [r.chunk_id for r in fused] == ["zeta", "alpha"]
+
 
 class TestWeightedFusion:
     def test_empty_lists(self):
@@ -456,6 +485,13 @@ class TestWeightedFusion:
         # Both c1 and c2 share equal normalized total
         scores = {r.chunk_id: r.score for r in fused}
         assert abs(scores["c1"] - scores["c2"]) < 1e-9
+
+    def test_a_tie_goes_to_the_document_both_lists_returned(self):
+        # Each list's best normalizes to 1.0, so with even weights both tops
+        # score 0.5: the same structural tie as under RRF.
+        fused = weighted_fusion(_single_list_tops())
+        assert fused[0].score == fused[1].score
+        assert [r.chunk_id for r in fused][:2] == ["zz-keyword-best", "aa-vector-only"]
 
     def test_weighted_respects_weights(self):
         # list_a heavily weighted; c1 is top in list_a
