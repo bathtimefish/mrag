@@ -7,6 +7,49 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.6.2 — 2026-10-27
+
+### Changed
+
+- **sqlite-vaporetto runs on Python's own `sqlite3` when it can load
+  extensions, and on apsw only where it cannot.** One process now uses one
+  SQLite for a Vaporetto project, the index writes as well as the searches.
+  Two SQLite copies must not share a database in one process: on macOS and
+  Linux the locks belong to the process, so when a connection of one copy
+  closes, that copy takes itself for the last, checkpoints, and deletes the
+  `-wal` and `-shm` files under a connection the other copy still has open,
+  which then no longer sees commits. uv's Python builds load extensions;
+  `mrag doctor` names the SQLite that runs the extension. `mrag init` still
+  chooses Vaporetto only with apsw installed (the `vaporetto` extra), and a
+  Vaporetto project now opens without apsw wherever `sqlite3` can load the
+  extension. Nothing is re-indexed.
+
+### Fixed
+
+- **A Vaporetto keyword search on `mrag serve` no longer rebuilds the
+  segmentation model on every request**, where `sqlite3` runs the extension.
+  The extension deserializes its model — 2 to 2.6 s on the machines measured
+  — in caches that never meet: the FTS5 tokenizer keeps one per connection,
+  and `vaporetto_split` keeps one per thread. `keyword_search` opened a
+  connection per call on whichever thread asked, so the server paid at least
+  the first on every keyword request (2.1 s per request on one machine, 5.2 s
+  on another whose requests changed threads). Vaporetto searches now run
+  through one connection and one thread held for the life of the process:
+  measured on a one-document project, the first keyword request took 4.2 s
+  and every one after it 4 ms (hybrid 40 to 50 ms), and a document a separate
+  `mrag index` added while the server ran was found by the next search.
+  Where only apsw can load the extension, a search still opens its own
+  connection — held, an apsw connection is the second SQLite described above
+  — but on the same one thread, so it no longer pays the thread's model when
+  requests change threads. Trigram projects are unchanged, and so is
+  `mrag search` from the command line, which pays once per process either
+  way; only the extension could lower that.
+- **`mrag doctor` prints the apsw install command whole.** Rich took
+  `[vaporetto]` for markup, so the advice read `uv pip install -e '.'`,
+  which installs no apsw. Every check's message is now printed as written.
+
+---
+
 ## 1.6.1 — 2026-10-25
 
 ### Fixed

@@ -60,6 +60,94 @@ def test_vaporetto_connection_reports_missing_apsw(
         )
 
 
+def test_vaporetto_runs_on_python_sqlite3_when_it_loads_the_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One SQLite per process (1.6.2): the apsw-backed connection is only for
+    # an interpreter whose sqlite3 cannot load the extension.
+    lib_path = tmp_path / "libsqlite_vaporetto.so"
+    monkeypatch.setattr(connection, "find_vaporetto_lib", lambda: lib_path)
+    monkeypatch.setattr(connection, "_vaporetto_runtimes", {})
+    monkeypatch.setattr(connection, "_sqlite3_loads", lambda _lib: True)
+    loaded = []
+    monkeypatch.setattr(connection, "_load_vaporetto", lambda conn, lib: loaded.append(lib))
+    monkeypatch.setattr(
+        apsw_compat, "ApswConnection",
+        lambda *_args: pytest.fail("sqlite3 loads the extension, so apsw must not be opened"),
+    )
+
+    conn = connection.open_fts_connection(tmp_path / "mrag.db", TOKENIZER_VAPORETTO)
+    try:
+        assert isinstance(conn, sqlite3.Connection)
+        assert loaded == [lib_path]
+        # Configured as every other connection to the catalog is.
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_vaporetto_runs_on_apsw_when_python_sqlite3_cannot_load_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lib_path = tmp_path / "libsqlite_vaporetto.so"
+    monkeypatch.setattr(connection, "find_vaporetto_lib", lambda: lib_path)
+    monkeypatch.setattr(connection, "_vaporetto_runtimes", {})
+    monkeypatch.setattr(connection, "_sqlite3_loads", lambda _lib: False)
+    opened = []
+    monkeypatch.setattr(apsw_compat, "ApswConnection", lambda *args: opened.append(args) or "apsw")
+
+    assert connection.open_fts_connection(tmp_path / "mrag.db", TOKENIZER_VAPORETTO) == "apsw"
+    assert opened == [(tmp_path / "mrag.db", lib_path, "sqlite3_vaporetto_init")]
+
+
+def test_vaporetto_runtime_is_decided_once_per_library(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(connection, "_vaporetto_runtimes", {})
+    asked = []
+    monkeypatch.setattr(connection, "_sqlite3_loads", lambda lib: asked.append(lib) or False)
+
+    first = connection.vaporetto_runtime(Path("/x/libsqlite_vaporetto.so"))
+    again = connection.vaporetto_runtime(Path("/x/libsqlite_vaporetto.so"))
+
+    assert first == again == connection.VAPORETTO_RUNTIME_APSW
+    assert asked == [Path("/x/libsqlite_vaporetto.so")]
+
+
+def test_python_sqlite3_disables_extension_loading_after_a_failed_load(tmp_path: Path) -> None:
+    calls: list[object] = []
+
+    class Recording:
+        def enable_load_extension(self, enabled: bool) -> None:
+            calls.append(enabled)
+
+        def execute(self, sql: str, params: tuple) -> None:
+            calls.append(sql)
+            raise sqlite3.OperationalError("simulated extension load failure")
+
+    with pytest.raises(sqlite3.OperationalError, match="simulated"):
+        connection._load_vaporetto(Recording(), tmp_path / "libsqlite_vaporetto.so")
+
+    assert calls == [True, "SELECT load_extension(?, ?)", False]
+
+
+def test_python_sqlite3_without_extension_loading_is_not_chosen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A build compiled with OMIT_LOAD_EXTENSION has no enable_load_extension.
+    monkeypatch.setattr(
+        connection, "sqlite3",
+        SimpleNamespace(Connection=object, connect=lambda _path: pytest.fail("must not connect")),
+    )
+    assert connection._sqlite3_loads(tmp_path / "libsqlite_vaporetto.so") is False
+
+
+def test_python_sqlite3_that_fails_to_load_the_library_is_not_chosen(tmp_path: Path) -> None:
+    missing = tmp_path / "libsqlite_vaporetto.so"
+    if not hasattr(sqlite3.Connection, "enable_load_extension"):
+        pytest.skip("this interpreter's sqlite3 cannot load extensions at all")
+    assert connection._sqlite3_loads(missing) is False
+
+
 def test_trigram_connection_does_not_probe_for_vaporetto(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

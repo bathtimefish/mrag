@@ -97,7 +97,7 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 ## Notes
 
 - **No cross-compilation**: build per target OS / architecture.
-- **The vaporetto tokenizer is not included in the binary**: the Japanese morphological tokenizer's shared library is an external plugin loaded at runtime from `~/.mrag/extensions`, independent of packaging. This is intentional — it stays swappable even after freezing. To use vaporetto, place the extension on the target machine as usual (`apsw` must also be present; the script includes it automatically when available).
+- **The vaporetto tokenizer is not included in the binary**: the Japanese morphological tokenizer's shared library is an external plugin loaded at runtime from `~/.mrag/extensions`, independent of packaging. This is intentional — it stays swappable even after freezing. To use vaporetto, place the extension on the target machine as usual (`mrag init` needs `apsw` to choose vaporetto, and the extension runs on it where the frozen Python's `sqlite3` cannot load extensions; the script includes it automatically when available).
 - **External services still required**: mrag uses Ollama for embeddings and Qdrant for vector search. These are not embedded in the binary and are still needed at runtime (packaging freezes mrag itself, not its service dependencies).
 - **Version sync**: keep `version` in `pyproject.toml` and `_FALLBACK_VERSION` in `mrag/__init__.py` in agreement. The binary's reported version is based on this value.
 - **MIT**: mrag has no copyleft dependency, so the binary can be redistributed under the MIT License. If you bundle the sqlite-vaporetto model, include its BSD-3-Clause notice.

@@ -821,3 +821,194 @@ def test_vaporetto_keyword_search_answers_a_function_word_question_with_nothing(
 
     assert keyword.keyword_search("のは何ですか", "kb", "default", tmp_path / "x.db", tokenizer="vaporetto") == []
     assert opened == [1], "the connection is opened once and closed; no MATCH is run"
+
+
+def test_vaporetto_keyword_searches_share_one_connection_and_one_thread(tmp_path, monkeypatch):
+    # The extension builds its segmentation model per connection (the FTS5
+    # tokenizer) and per thread (`vaporetto_split`), about 2.6 s each, so a
+    # search that opened a connection on the calling thread paid both on every
+    # API request (1.6.2). Whichever thread asks, the search runs on one
+    # thread, over one connection opened once.
+    import threading
+    import mrag.core.retrieval.keyword as keyword
+
+    opened = []
+    segmented_on = []
+
+    def open_once(_path, _tokenizer):
+        opened.append(threading.get_ident())
+        connection = MagicMock()
+        connection.execute.return_value.fetchone.return_value = None
+        connection.execute.return_value.fetchall.return_value = []
+        return connection
+
+    monkeypatch.setattr(keyword, "open_fts_connection", open_once)
+    # Searching another catalog first: the held connection follows the catalog
+    # last searched, so this one is closed and the one under test opened.
+    keyword._HELD.run(tmp_path / "other.db", "vaporetto", lambda _conn: None)
+    opened.clear()
+
+    monkeypatch.setattr(
+        keyword, "_vaporetto_segments",
+        lambda _conn, text: segmented_on.append(threading.get_ident()) or ["Hello"],
+    )
+    db_path = tmp_path / "held.db"
+
+    asked_from = []
+
+    def search():
+        asked_from.append(threading.get_ident())
+        return keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="vaporetto")
+
+    assert search() == []
+    worker = threading.Thread(target=lambda: asked_from.append(("result", search())))
+    worker.start()
+    worker.join()
+
+    assert len(opened) == 1, "the connection is opened once for the process"
+    assert len(segmented_on) == 2 and len(set(segmented_on)) == 1, "every search ran on one thread"
+    assert segmented_on[0] == opened[0], "the connection was opened on that thread"
+    callers = [item for item in asked_from if not isinstance(item, tuple)]
+    assert len(callers) == 2 and segmented_on[0] not in callers, "and it is neither caller's thread"
+
+    # A trigram search still opens a connection per call, on the caller's thread.
+    monkeypatch.setattr(keyword, "_prepare_query", lambda text, tokenizer: '"Hello"')
+    keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="trigram")
+    keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="trigram")
+    assert opened[1:] == [threading.get_ident(), threading.get_ident()]
+
+
+def test_an_apsw_keyword_connection_is_closed_after_every_search(tmp_path, monkeypatch):
+    # An apsw connection is a second SQLite beside the process's sqlite3
+    # connections; held, it stops seeing commits on POSIX (1.6.2). It is opened
+    # per search, still on the one keyword thread.
+    import threading
+    import mrag.core.retrieval.keyword as keyword
+    from mrag.db.apsw_compat import ApswConnection
+
+    events = []
+
+    class FakeApsw(ApswConnection):
+        def __init__(self):
+            events.append(("open", threading.get_ident()))
+
+        def execute(self, sql, params=()):
+            return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: None)
+
+        def close(self):
+            events.append(("close", threading.get_ident()))
+
+    monkeypatch.setattr(keyword, "open_fts_connection", lambda _path, _tokenizer: FakeApsw())
+    monkeypatch.setattr(keyword, "_vaporetto_segments", lambda _conn, text: ["Hello"])
+    db_path = tmp_path / "apsw.db"
+
+    assert keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="vaporetto") == []
+    assert keyword.keyword_search("Hello", "kb", "default", db_path, tokenizer="vaporetto") == []
+
+    assert [kind for kind, _ in events] == ["open", "close", "open", "close"]
+    assert len({thread for _, thread in events}) == 1
+    assert events[0][1] != threading.get_ident()
+
+
+def test_a_keyword_connection_that_failed_to_open_is_opened_again(tmp_path, monkeypatch):
+    import mrag.core.retrieval.keyword as keyword
+    from mrag.db.connection import VaporettoDependencyError
+
+    attempts = []
+
+    def open_second_time(_path, _tokenizer):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise VaporettoDependencyError("simulated")
+        connection = MagicMock()
+        connection.execute.return_value.fetchall.return_value = []
+        return connection
+
+    # Hold one catalog, then fail to open another: the held connection is
+    # closed by the switch, so a search of the first must open it again
+    # rather than run on the connection it no longer has.
+    first = tmp_path / "first.db"
+    monkeypatch.setattr(keyword, "open_fts_connection", lambda _path, _tokenizer: MagicMock())
+    keyword._HELD.run(first, "vaporetto", lambda _conn: None)
+    monkeypatch.setattr(keyword, "open_fts_connection", open_second_time)
+    monkeypatch.setattr(keyword, "_vaporetto_segments", lambda _conn, text: ["Hello"])
+
+    with pytest.raises(VaporettoDependencyError):
+        keyword.keyword_search("Hello", "kb", "default", tmp_path / "second.db", tokenizer="vaporetto")
+    assert keyword.keyword_search("Hello", "kb", "default", first, tokenizer="vaporetto") == []
+    assert len(attempts) == 2
+
+
+def _vaporetto_library():
+    from mrag.db.tokenizer import VaporettoLibraryAmbiguityError, find_vaporetto_lib
+
+    try:
+        lib = find_vaporetto_lib()
+    except VaporettoLibraryAmbiguityError:
+        lib = None
+    if lib is None:
+        pytest.skip("the sqlite-vaporetto library is not installed")
+    return lib
+
+
+_COMMIT_FROM_ANOTHER_PROCESS = """
+import sys
+from mrag.db.connection import open_fts_connection
+conn = open_fts_connection(sys.argv[1], "vaporetto")
+with conn:
+    conn.execute("INSERT INTO t VALUES (?)", (sys.argv[2],))
+conn.close()
+"""
+
+
+@pytest.mark.parametrize("runtime", ["sqlite3", "apsw"])
+def test_a_vaporetto_search_sees_what_is_committed_after_it(tmp_path, monkeypatch, runtime):
+    # 1.6.2: a held apsw connection stopped seeing commits once a sqlite3
+    # connection of the same process closed — that SQLite took itself for the
+    # last connection and deleted the WAL files. Whichever SQLite runs the
+    # extension, a later search sees an index's commits from this process
+    # (written as an index writes: the FTS rows, then the catalog through
+    # plain sqlite3) and from another one.
+    import subprocess
+    import sys
+    import mrag.core.retrieval.keyword as keyword
+    import mrag.db.connection as connection
+
+    lib = _vaporetto_library()
+    if runtime == "apsw":
+        pytest.importorskip("apsw")
+    elif not connection._sqlite3_loads(lib):
+        pytest.skip("this interpreter's sqlite3 cannot load the extension")
+    monkeypatch.setattr(connection, "_vaporetto_runtimes", {str(lib): runtime})
+    db_path = tmp_path / "mrag.db"
+
+    conn = connection.open_fts_connection(db_path, "vaporetto")
+    with conn:
+        conn.execute("CREATE VIRTUAL TABLE t USING fts5(body, tokenize='vaporetto')")
+        conn.execute("CREATE TABLE catalog(x)")
+        conn.execute("INSERT INTO t VALUES ('りんごの収穫')")
+    conn.close()
+
+    def matches():
+        return keyword._HELD.run(
+            db_path, "vaporetto",
+            lambda held: held.execute("SELECT count(*) FROM t WHERE t MATCH 'りんご'").fetchone()[0],
+        )
+
+    assert matches() == 1
+
+    conn = connection.open_fts_connection(db_path, "vaporetto")
+    with conn:
+        conn.execute("INSERT INTO t VALUES ('りんご農家')")
+    conn.close()
+    catalog = open_connection(db_path)
+    catalog.execute("INSERT INTO catalog VALUES (1)")
+    catalog.commit()
+    catalog.close()
+    assert matches() == 2
+
+    subprocess.run(
+        [sys.executable, "-c", _COMMIT_FROM_ANOTHER_PROCESS, str(db_path), "秋のりんご"],
+        check=True, cwd=Path(__file__).resolve().parent.parent,
+    )
+    assert matches() == 3

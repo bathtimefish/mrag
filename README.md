@@ -45,7 +45,7 @@ This installs the standard configuration that includes Japanese morphological to
 
 ### Vaporetto native library
 
-The `vaporetto` extra installs `apsw` (for SQLite extension loading), but the native shared library must be placed separately.
+The `vaporetto` extra installs `apsw` (which `mrag init` needs to choose Vaporetto, and which loads the extension where Python's own `sqlite3` cannot), but the native shared library must be placed separately.
 
 1. Download the latest **`-with-model.tar.gz`** that matches your OS / architecture from [sqlite-vaporetto releases](https://github.com/hotchpotch/sqlite-vaporetto/releases) (use the model-bundled variant).
 2. Extract the archive and place the shared library under `~/.mrag/extensions/`:

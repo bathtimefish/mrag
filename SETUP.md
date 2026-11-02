@@ -79,7 +79,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv pip install -e ".[vaporetto,reranker]"
 ```
 
-- `vaporetto`: Japanese morphological tokenization. Installs `apsw`, which provides SQLite extension loading (the built-in `sqlite3` module does not support it on macOS or Windows). The native shared library must also be placed separately — see §3.
+- `vaporetto`: Japanese morphological tokenization. Installs `apsw`, which `mrag init` needs before it chooses Vaporetto for a new project, and which loads the extension where Python's built-in `sqlite3` cannot (a build compiled without extension loading). Where `sqlite3` can — uv's Python builds among them — mrag runs the extension on it, so one process uses one SQLite; `mrag doctor` shows which. The native shared library must also be placed separately — see §3.
 - `reranker`: CrossEncoder reranking via `sentence-transformers`.
 
 **Verification:**
