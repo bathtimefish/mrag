@@ -7,6 +7,24 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.0 — 2026-11-02
+
+### Changed
+
+- **An exact tie in a hybrid search goes to the result whose document both
+  lists returned.** Fused scores tie as a matter of course: when the vector
+  list's top hit and the keyword list's top hit each appear in their own list
+  only, both score `1/61` under `rrf` and the same under even `weighted`
+  weights, and the same holds at every rank. Such a tie was ordered by arrival
+  — the vector list, then the keyword list — so it always went to the vector
+  side. It now goes first to the result for which more lists returned any
+  chunk of its document, and only then by arrival, under both fusion methods.
+  Measured on three labelled sets (a synthetic one, PDFs, mostly spreadsheets) with
+  two embedding models, this was the only rule of four never below arrival
+  order, and it was above it on the last. Results whose documents
+  the lists agree on equally keep their order. Only the order of tied results
+  changes: no score, setting, or index does, and nothing is re-indexed.
+
 ## 1.6.2 — 2026-10-27
 
 ### Changed
