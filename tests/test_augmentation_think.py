@@ -120,7 +120,8 @@ class TestCapabilityProbe:
         with patch("httpx.post", side_effect=_fake_post):
             assert "thinking" in model_capabilities("http://localhost:11434", "m")
 
-        assert seen[0][0] == "http://localhost:11434/api/show"
+        # A `localhost` endpoint is asked at 127.0.0.1 first (test_ollama_loopback).
+        assert seen[0][0] == "http://127.0.0.1:11434/api/show"
         assert seen[0][1] == {"model": "m"}
 
     def test_result_is_cached_per_endpoint_and_model(self):

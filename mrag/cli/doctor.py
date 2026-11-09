@@ -163,8 +163,12 @@ def _vaporetto_library_present() -> bool:
 def _check_ollama() -> tuple[bool, str]:
     """Simple alive check against the default Ollama endpoint."""
     import httpx
+
+    from mrag.core.ollama_client import send_preferring_ipv4_loopback
     try:
-        resp = httpx.get(f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0)
+        resp = send_preferring_ipv4_loopback(
+            httpx.get, f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0
+        )
         resp.raise_for_status()
         return True, f"running at {_OLLAMA_DEFAULT_ENDPOINT}"
     except Exception as e:
@@ -178,7 +182,11 @@ def _check_ollama_version() -> tuple[bool, str]:
     project may name it."""
     import httpx
 
-    version = httpx.get(f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0).json()["version"]
+    from mrag.core.ollama_client import send_preferring_ipv4_loopback
+
+    version = send_preferring_ipv4_loopback(
+        httpx.get, f"{_OLLAMA_DEFAULT_ENDPOINT}/api/version", timeout=3.0
+    ).json()["version"]
     match = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
     required = ".".join(map(str, _EMBEDDINGGEMMA_2_OLLAMA))
     if match is None:

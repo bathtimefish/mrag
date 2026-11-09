@@ -7,6 +7,35 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.1 — 2026-11-09
+
+### 修正
+
+- **`localhost` と書いた Ollama の endpoint が、Windows で呼び出しごとに約 2 秒
+  待たなくなりました。** Windows は `localhost` を `127.0.0.1` より先に `::1` に
+  解決し、Windows の Ollama は `127.0.0.1` で待ち受け、Windows は `::1` への接続を
+  断るのに 1 回あたり約 2 秒かけます。mrag は呼び出しごとに接続を開くため、
+  embedding、生成、疎通確認のすべてが待っていました。Windows 11 と Ollama 0.40.15 で、
+  1,638 chunk の `mrag index` が 30.8 秒ではなく 142.5 秒、`mrag search` が 1.1 秒では
+  なく 3.1 秒かかっていました。今後は `localhost` の endpoint にまず `127.0.0.1` で
+  問い合わせ、そこが接続を断ったときだけ書かれたとおりの `localhost` に問い合わせます。
+  答えた側を process の終わりまで先に使うので、`::1` だけで待ち受ける Ollama が払うのは
+  断られる 1 回だけです。`mrag doctor` も同じ順で確かめます。profile は変わらず、
+  再 index も要りません。これを得るために `endpoint` を `127.0.0.1` に書き換えないで
+  ください: endpoint は index identity に含まれるので、書き換えると全文書が再 index
+  されます。macOS と Linux はこのような接続を即座に断るので待ちは起きないはずですが、
+  測ったのは Windows だけです。
+- **`mrag serve` は、起動時の provider を、その元の profile が編集されたら使わなく
+  なりました。** server は起動時の profile の embedding provider と reranker を 1 度だけ
+  作り、profile は要求ごとに読み直します。そのため serve 中の編集は strategy や `top_k`
+  には効いても provider には効かず、`embedding.endpoint` を閉じた port に向けても
+  native と Dify の経路は古い endpoint から答え、`rerank.enabled` を切っても rerank が
+  続いていました。今後は、起動時の provider を、それを作った設定(embedding の model・
+  endpoint・retry・`max_input_tokens`、rerank の `enabled`・provider・model・
+  `max_length`)が要求の読んだ設定と同じ間だけ使い、違えば、ほかの profile の要求と
+  同じく要求ごとに作ります。Dify の経路も native の経路と同じく `--no-rerank` と、
+  起動後に有効にした reranker に従います。
+
 ## 1.7.0 — 2026-11-02
 
 ### 変更
