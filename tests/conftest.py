@@ -7,6 +7,16 @@ import pytest
 from mrag.db.migrate import apply_schema
 
 
+@pytest.fixture(autouse=True)
+def _forget_loopback_choice():
+    """Each test starts with `localhost` asked at 127.0.0.1 first."""
+    from mrag.core.ollama_client import reset_loopback_choice
+
+    reset_loopback_choice()
+    yield
+    reset_loopback_choice()
+
+
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> Path:
     """Empty mrag project directory structure (no mrag.yaml or mrag.db yet)."""

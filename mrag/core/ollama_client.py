@@ -17,16 +17,73 @@ Retry policy:
   - "exceed_context_size_error" or "exceeds the available context size"
                             → NOT retried, whatever the status; raised as
                               OllamaPromptExceedsWindowError immediately
+
+An endpoint named `localhost` is tried at 127.0.0.1 first; see
+send_preferring_ipv4_loopback().
 """
 from __future__ import annotations
 
 import re
 import time
 from typing import Callable
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 _RETRYABLE_HTTP_CODES = {500, 502, 503, 504}
+
+# Windows resolves `localhost` to ::1 before 127.0.0.1, and Ollama on Windows
+# listens on 127.0.0.1 only. Windows answers a refused connection by sending the
+# SYN again rather than giving up, so each connection to ::1 took about 2 s to be
+# refused before 127.0.0.1 was tried, and httpx opens one per call: `mrag index`
+# of 1,638 chunks took 142.5 s instead of 30.8 s, and a search 3.1 s instead of
+# 1.1 s (Windows 11, Ollama 0.40.15). macOS and Linux refuse at once.
+_LOCALHOST = "localhost"
+_IPV4_LOOPBACK = "127.0.0.1"
+# The address family that answered, per configured `localhost` netloc, so that
+# an Ollama listening on ::1 only pays for the refused IPv4 attempt once per
+# process rather than on every call.
+_CONFIGURED_ANSWERED: dict[str, bool] = {}
+
+
+def _localhost_candidates(url: str) -> list[str]:
+    """The URLs to try for `url`: 127.0.0.1 first when its host is `localhost`."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() != _LOCALHOST:
+        return [url]
+    userinfo, _, _ = parts.netloc.rpartition("@")
+    host = _IPV4_LOOPBACK if parts.port is None else f"{_IPV4_LOOPBACK}:{parts.port}"
+    ipv4 = urlunsplit(parts._replace(netloc=f"{userinfo}@{host}" if userinfo else host))
+    if _CONFIGURED_ANSWERED.get(parts.netloc.lower()):
+        return [url, ipv4]
+    return [ipv4, url]
+
+
+def send_preferring_ipv4_loopback(send: Callable[..., httpx.Response], url: str, **kwargs) -> httpx.Response:
+    """Call `send(url, **kwargs)`, trying 127.0.0.1 first when `url` names `localhost`.
+
+    Only a refused connection moves on to the next address; any other failure
+    is the caller's, as before. When every address is refused, the last refusal
+    is raised, and callers name the endpoint as configured. `send` is httpx.post
+    or httpx.get, looked up by the caller at call time.
+    """
+    candidates = _localhost_candidates(url)
+    for index, candidate in enumerate(candidates):
+        try:
+            response = send(candidate, **kwargs)
+        except httpx.ConnectError:
+            if index == len(candidates) - 1:
+                raise
+            continue
+        if len(candidates) > 1:
+            _CONFIGURED_ANSWERED[urlsplit(url).netloc.lower()] = candidate == url
+        return response
+    raise AssertionError("unreachable: the candidate list is never empty")
+
+
+def reset_loopback_choice() -> None:
+    """Forget which address answered for `localhost` (tests)."""
+    _CONFIGURED_ANSWERED.clear()
 
 # A llama.cpp server refuses a prompt that does not fit its physical batch with
 # "input (N tokens) is too large to process. increase the physical batch size",
@@ -140,8 +197,8 @@ def model_capabilities(endpoint: str, model: str, timeout: float = 10.0) -> froz
         return cached
 
     try:
-        response = httpx.post(
-            f"{key[0]}/api/show", json={"model": model}, timeout=timeout
+        response = send_preferring_ipv4_loopback(
+            httpx.post, f"{key[0]}/api/show", json={"model": model}, timeout=timeout
         )
         response.raise_for_status()
         capabilities = frozenset(response.json().get("capabilities") or [])
@@ -165,7 +222,7 @@ def probe_connection(endpoint: str, timeout: float = 10.0) -> None:
     """
     url = f"{endpoint.rstrip('/')}/api/version"
     try:
-        httpx.get(url, timeout=timeout)
+        send_preferring_ipv4_loopback(httpx.get, url, timeout=timeout)
     except httpx.ConnectError as exc:
         raise ConnectionError(
             f"Cannot connect to Ollama at {endpoint}. "
@@ -219,7 +276,7 @@ def ollama_post(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            resp = httpx.post(url, json=payload, timeout=timeout)
+            resp = send_preferring_ipv4_loopback(httpx.post, url, json=payload, timeout=timeout)
             resp.raise_for_status()
             data = resp.json()
             if validate is not None:
