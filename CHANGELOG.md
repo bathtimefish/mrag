@@ -7,6 +7,38 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.1 — 2026-11-09
+
+### Fixed
+
+- **An Ollama endpoint named `localhost` no longer waits about 2 seconds per
+  call on Windows.** Windows resolves `localhost` to `::1` before `127.0.0.1`,
+  Ollama on Windows listens on `127.0.0.1`, and Windows takes about 2 seconds
+  to refuse each connection to `::1`; mrag opens a connection per call, so
+  every embedding, generation and probe waited. On Windows 11 with Ollama
+  0.40.15, `mrag index` of 1,638 chunks took 142.5 s instead of 30.8 s, and
+  `mrag search` 3.1 s instead of 1.1 s. A `localhost` endpoint is now asked at
+  `127.0.0.1` first, and at `localhost` as written when that address refuses;
+  whichever answered is asked first for the rest of the process, so an Ollama
+  listening on `::1` alone pays for one refused attempt. `mrag doctor` probes
+  the same way. Profiles are not changed and nothing is re-indexed. Do not edit
+  `endpoint` to `127.0.0.1` to get this: the endpoint is part of the index
+  identity, so the edit would re-index every document. macOS and Linux refuse
+  such a connection at once, so the wait is not expected there; it was measured
+  on Windows only.
+- **`mrag serve` stops using its startup providers once the profile they were
+  built from is edited.** The server builds the startup profile's embedding
+  provider and reranker once and reads the profile on every request, so an edit
+  made while serving took effect for the strategy and `top_k` but not for the
+  providers: with `embedding.endpoint` pointed at a closed port, the native and
+  Dify routes still answered from the old endpoint, and turning
+  `rerank.enabled` off kept reranking. A startup provider is now used only while
+  the settings it was built from (embedding model, endpoint, retry and
+  `max_input_tokens`; rerank `enabled`, provider, model and `max_length`) are
+  the ones the request read; otherwise the request builds its own, as a request
+  for any other profile always has. The Dify route also follows `--no-rerank`
+  and a reranker enabled after startup, as the native route does.
+
 ## 1.7.0 — 2026-11-02
 
 ### Changed

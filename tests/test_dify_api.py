@@ -97,7 +97,15 @@ def test_dify_reranked_keyword_records_carry_the_reranker_score(dify_client, mon
         SimpleNamespace(document_id="d1", chunk_id="c1", content="relevant", score=0.737014, metadata={}),
         SimpleNamespace(document_id="d2", chunk_id="c2", content="unrelated", score=0.500044, metadata={}),
     ]
-    monkeypatch.setattr(router, "load_profile", lambda *_: SimpleNamespace(retrieval=SimpleNamespace(strategy="keyword")))
+    # The real profile with the keyword strategy: the route reads the profile's
+    # providers as well as its strategy (mrag/api/startup_providers.py).
+    real_load_profile = router.load_profile
+
+    def keyword_profile(*args):
+        profile = real_load_profile(*args)
+        return profile.model_copy(update={"retrieval": profile.retrieval.model_copy(update={"strategy": "keyword"})})
+
+    monkeypatch.setattr(router, "load_profile", keyword_profile)
     monkeypatch.setattr(router, "run_retrieval", lambda **_: SimpleNamespace(results=results, reranked=True))
     monkeypatch.setattr(router, "fetch_filename_map", lambda *_: {"d1": "one.md", "d2": "two.md"})
 

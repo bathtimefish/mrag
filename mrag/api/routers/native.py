@@ -10,6 +10,7 @@ from mrag.api.models import (
     RetrieveRequest,
     RetrieveResponse,
 )
+from mrag.api.startup_providers import startup_providers
 from mrag.config.profile import load_profile
 from mrag.core.ingestion.inventory import (
     InventoryError,
@@ -39,12 +40,15 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     profile_name = req.profile or config.default_profile
 
     try:
-        load_profile(profile_name, state.project_dir)
+        profile = load_profile(profile_name, state.project_dir)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     try:
-        uses_startup_profile = profile_name == state.profile_name
+        # A startup provider is valid only for the profile that created it, as
+        # it read then. Other profiles, and an edited one, resolve their own
+        # model and endpoint.
+        embedding_provider, reranker = startup_providers(state, profile_name, profile)
         run = run_retrieval(
             query=req.query,
             project_dir=state.project_dir,
@@ -52,17 +56,10 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
             profile_name=profile_name,
             strategy=req.strategy,
             top_k=req.top_k,
-            # The startup provider is valid only for the profile that created
-            # it.  Other profiles must resolve their own model and endpoint.
-            embedding_provider=(
-                state.embedding_provider if uses_startup_profile else None
-            ),
+            embedding_provider=embedding_provider,
             qdrant_client=state.qdrant_client,
-            reranker=state.reranker if uses_startup_profile else None,
-            load_reranker=(
-                state.reranking_allowed
-                and (not uses_startup_profile or state.reranker is None)
-            ),
+            reranker=reranker,
+            load_reranker=state.reranking_allowed and reranker is None,
             no_rerank=not state.reranking_allowed,
         )
     except ValueError as e:

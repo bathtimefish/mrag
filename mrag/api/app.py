@@ -16,6 +16,8 @@ from mrag.config.profile import load_profile, validate_effective_tokenizer
 from mrag.config.project import ProjectConfig
 from mrag.core.embedding.base import BaseEmbeddingProvider
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
+from mrag.core.reranking import reranker_key
+from mrag.core.retrieval.runner import embedding_provider_key
 from mrag.db.connection import find_db
 from mrag.db.qdrant import make_client, normalize_name
 from mrag.db.qdrant_migrate import resolve_collection
@@ -77,6 +79,11 @@ def create_app(
         app.state.col_name = col
         app.state.reranker = reranker
         app.state.reranking_allowed = reranking_allowed
+        # What the two providers above were built from; a request reuses them
+        # only while its reading of the profile still says the same
+        # (mrag/api/startup_providers.py).
+        app.state.embedding_key = embedding_provider_key(prof)
+        app.state.reranker_key = reranker_key(prof.rerank)
 
         yield
 

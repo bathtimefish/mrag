@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from mrag.api.startup_providers import startup_providers
 from mrag.config.profile import load_profile
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 
@@ -141,6 +142,9 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
     top_k = req.retrieval_setting.top_k
     score_threshold = req.retrieval_setting.score_threshold
     compiled_filter = _compile_filter(req.metadata_condition)
+    # The same rule as the native route: the startup providers serve only the
+    # profile as it read at startup, and `--no-rerank` holds here too.
+    embedding_provider, reranker = startup_providers(state, state.profile_name, prof)
     run = run_retrieval(
         query=req.query,
         project_dir=state.project_dir,
@@ -148,9 +152,11 @@ async def dify_retrieve(req: DifyRetrieveRequest, request: Request) -> DifyRetri
         profile_name=state.profile_name,
         strategy=strategy,
         top_k=min(top_k * 4, 400) if compiled_filter is not None else top_k,
-        embedding_provider=state.embedding_provider,
+        embedding_provider=embedding_provider,
         qdrant_client=state.qdrant_client,
-        reranker=state.reranker,
+        reranker=reranker,
+        load_reranker=state.reranking_allowed and reranker is None,
+        no_rerank=not state.reranking_allowed,
     )
     results = run.results
     filename_map = fetch_filename_map(state.db_path, results)

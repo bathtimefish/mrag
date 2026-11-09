@@ -50,6 +50,26 @@ def fetch_filename_map(db_path: Path, results: list[RetrievalResult]) -> dict[st
     return {r["id"]: r["filename"] for r in rows}
 
 
+def embedding_provider_key(profile: ProfileConfig) -> tuple:
+    """Every setting _make_provider builds from.
+
+    A provider built for one reading of a profile serves a later reading only
+    while this is the same; a server that kept its startup provider after the
+    endpoint or model was edited searched with the old one.
+    """
+    embedding = profile.embedding
+    return (
+        embedding.provider,
+        embedding.model,
+        embedding.endpoint,
+        embedding.retry.max_attempts,
+        embedding.retry.initial_delay_seconds,
+        embedding.retry.backoff_multiplier,
+        embedding.retry.max_delay_seconds,
+        embedding.max_input_tokens,
+    )
+
+
 def _make_provider(profile: ProfileConfig) -> OllamaEmbeddingProvider:
     return OllamaEmbeddingProvider(
         model=profile.embedding.model,
