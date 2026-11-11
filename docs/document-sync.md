@@ -34,7 +34,9 @@ mrag documents sync ./corpus --apply --json
 
 The directory may be inside the project (named by its project-relative path)
 or anywhere else. The project's own `data/` and the reserved `identities/`
-directory are refused. `--include`, `--exclude`, `--hidden`, `--follow-symlinks`
+directory are refused, as are `profiles/`, `qdrant/`, `logs/` and `cache/`; a
+sync of the project root passes all of them by, together with `mrag.yaml`,
+`kb_information.yaml` and `mrag.db`. `--include`, `--exclude`, `--hidden`, `--follow-symlinks`
 and `.mragignore` select files exactly as they do for
 [`mrag add --recursive`](recursive-add.md); a sync and a recursive add over
 the same selection see the same files.
@@ -146,7 +148,7 @@ the log cannot be written the changes stand and the report says `degraded`.
 |---:|---|
 | `0` | The plan was shown, or applied with no failed item. |
 | `3` | At least one item failed, a scan issue was reported, a rebuild failed, or the audit log could not be written. The other items stand. |
-| `2` | Invalid usage: the directory does not exist or is a file, `data/` or `identities/`, `--profile` without `--index`, an unknown profile, or a catalog whose identities need `mrag catalog migrate-identities` first. |
+| `2` | Invalid usage: the directory does not exist or is a file, one of the project's own directories (`data/`, `identities/`, `profiles/`, `qdrant/`, `logs/`, `cache/`), `--profile` without `--index`, an unknown profile, or a catalog whose identities need `mrag catalog migrate-identities` first. |
 | `1` | Not inside an initialised project. |
 | `130` | Interrupted; see below. |
 

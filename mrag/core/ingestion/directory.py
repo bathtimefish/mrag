@@ -12,6 +12,22 @@ from mrag.core.ingestion.source_identity import is_reserved
 
 _MAX_IGNORE_BYTES = 1024 * 1024
 
+# What a project keeps for itself directly under its root: its configuration,
+# its catalog, and the directories mrag writes to. `identities/` is the other
+# one; it has its own, case-insensitive rule (source_identity.is_reserved).
+_PROJECT_OWNED_ENTRIES = frozenset(
+    {
+        "mrag.yaml",
+        "kb_information.yaml",
+        "mrag.db",
+        "data",
+        "profiles",
+        "qdrant",
+        "logs",
+        "cache",
+    }
+)
+
 
 @dataclass(frozen=True)
 class DirectoryCandidate:
@@ -111,6 +127,8 @@ def scan_directory(
     project = project_dir.resolve(strict=False)
     if _in_reserved_namespace(canonical_root, project):
         raise ValueError("The project's identities/ directory is reserved and cannot be added")
+    if is_project_owned(canonical_root, project):
+        raise ValueError("A directory the project keeps for itself cannot be added recursively")
 
     path_filter = _PathFilter(source_root, include or [], exclude or [])
     scan = DirectoryScan()
@@ -174,7 +192,8 @@ def _walk(
             continue
         if stat.S_ISDIR(metadata.st_mode):
             canonical = Path(entry.path).resolve(strict=False)
-            if _within(canonical, project_data) or _in_reserved_namespace(canonical, project):
+            if (_within(canonical, project_data) or _in_reserved_namespace(canonical, project)
+                    or is_project_owned(canonical, project)):
                 continue
             identity = _directory_identity(entry, metadata)
             if identity is None:
@@ -216,7 +235,7 @@ def _walk(
             )
             continue
         if (_within(canonical, project_data) or _in_reserved_namespace(canonical, project)
-                or canonical in seen_files):
+                or is_project_owned(canonical, project) or canonical in seen_files):
             continue
         seen_files.add(canonical)
         scan.candidates.append(DirectoryCandidate(canonical, relative))
@@ -249,6 +268,30 @@ def _in_reserved_namespace(canonical: Path, project: Path) -> bool:
         return False
     parts = canonical.relative_to(project).parts
     return bool(parts) and is_reserved(parts[0])
+
+
+def owns_root_entry(name: str) -> bool:
+    """Whether a name directly under the project root is the project's own.
+
+    The catalog counts with the files SQLite keeps beside it (``mrag.db-wal``,
+    ``mrag.db-shm``, ``mrag.db-journal``). The name is compared as written,
+    which is how mrag writes it; only ``identities`` ignores ASCII case.
+    """
+    return name in _PROJECT_OWNED_ENTRIES or name.startswith("mrag.db-") or is_reserved(name)
+
+
+def is_project_owned(canonical: Path, project: Path) -> bool:
+    """Whether a canonical path is, or lies in, something the project keeps for itself.
+
+    A project is often the directory its documents are in, and a walk over it
+    is for those documents. The project's own files are not among them: its
+    configuration and catalog would be counted as sources no extractor reads,
+    and its context prompt, being text, would be ingested as a document.
+    """
+    if not canonical.is_relative_to(project):
+        return False
+    parts = canonical.relative_to(project).parts
+    return bool(parts) and owns_root_entry(parts[0])
 
 
 def _load_ignore(root: Path) -> list[_IgnoreRule]:

@@ -89,6 +89,15 @@ The ignore file itself is never ingested.
   inside it is rejected, and a single file inside it is refused with
   `source_identity_reserved_path`. `mrag init` puts a README there; if the
   directory is missing, the next `add` that writes recreates it.
+- Everything else the project keeps for itself at its root is skipped too,
+  silently: `mrag.yaml`, `kb_information.yaml`, `mrag.db` (and the `mrag.db-*`
+  files beside it) and the directories `profiles/`, `qdrant/`, `logs/` and
+  `cache/`. So `mrag add . --recursive` in a project that is also the directory
+  your documents are in takes the documents and nothing else. The names are the
+  project's own only at its root (`docs/profiles/` is an ordinary directory),
+  and a source root inside one of them is rejected. Before 1.7.3 these files
+  were counted as failed sources and `profiles/context_prompt.txt` was
+  ingested as a document.
 - Non-regular files are ignored.
 
 ## Duplicates and replacement

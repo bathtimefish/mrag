@@ -23,7 +23,7 @@ from rich.console import Console
 from mrag.config.profile import load_profile
 from mrag.config.project import ProjectConfig, load_project_config
 from mrag.core.indexing.pipeline import run_index, write_index_log
-from mrag.core.ingestion.directory import scan_directory
+from mrag.core.ingestion.directory import owns_root_entry, scan_directory
 from mrag.core.ingestion.document import (
     DuplicateDocumentError,
     hash_document,
@@ -118,6 +118,8 @@ def _locate_directory(project_dir: Path, directory: Path, registered: set[str], 
             raise CommandError("sync_directory_is_project_data", "the project's data/ directory holds mrag's own artifacts and cannot be synced", USAGE_EXIT)
         if first and is_reserved(prefix):
             raise CommandError("sync_directory_is_reserved", "the project's identities/ directory is reserved and cannot be synced", USAGE_EXIT)
+        if owns_root_entry(first):
+            raise CommandError("sync_directory_is_project_internal", "a directory the project keeps for itself cannot be synced", USAGE_EXIT)
         return DirectoryFacts(ProjectDirectory(prefix), canonical, {}, prefix or ".", "project_relative")
     key = root_key(canonical)
     ancestor_roots: dict[str, str] = {}

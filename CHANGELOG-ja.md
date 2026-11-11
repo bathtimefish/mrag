@@ -7,6 +7,32 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.3 — 2026-11-11
+
+### 修正
+
+- **project rootでの`mrag add . --recursive`と`mrag documents sync .`が、project自身の
+  fileを拾わなくなりました。** 走査が読み飛ばしていたのは`data/`と`identities/`だけでした。
+  initした直後のprojectで`mrag add . --recursive`を実行すると、`mrag.yaml`・
+  `kb_information.yaml`・`mrag.db`・`profiles/default.yaml`を失敗したsource
+  (`unsupported_source`)として数えてexit 3になり、`profiles/context_prompt.txt`を文書として
+  取り込んでいました。indexの後は`qdrant/`・`logs/`・`cache/`配下のfileも加わります。
+  走査は、projectがrootに自分のために置いているものをすべて黙って読み飛ばすようになりました:
+  `mrag.yaml`、`kb_information.yaml`、`mrag.db`(と並びの`mrag.db-*`)、ディレクトリの
+  `data/`・`identities/`・`profiles/`・`qdrant/`・`logs/`・`cache/`です。これらの名前が
+  projectのものであるのはroot直下だけです(`docs/profiles/`は普通のディレクトリです)。
+- これらのディレクトリをrootに指定すると拒否します: `mrag add profiles --recursive`は失敗し、
+  `mrag documents sync profiles`は新しいcode `sync_directory_is_project_internal`でexit 2に
+  なります(`data/`と`identities/`は`sync_directory_is_project_data`と
+  `sync_directory_is_reserved`のままです)。
+
+### アップグレード時の注意
+
+- 以前の版がこれらのpathから取り込んだ文書はcatalogに残ります。project rootのsyncは
+  それを`out_of_scope`として報告し(fileは在るので)、削除しません。文書にするつもりが
+  なかったものは`mrag remove`で削除してください。
+- file名を指定した単独の追加(`mrag add profiles/context_prompt.txt`)は変わりません。
+
 ## 1.7.2 — 2026-11-11
 
 ### 修正

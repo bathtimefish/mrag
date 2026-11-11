@@ -79,6 +79,13 @@ ignore file自体は取り込まれません。
   います。常にskipし、その配下をsource rootにする指定は拒否し、配下のfileを単独で追加すると
   `source_identity_reserved_path`で拒否します。`mrag init`がREADMEを置き、ディレクトリが
   無い場合は書き込みを伴う次の`add`が作り直します。
+- projectがrootに自分のために置いているものも、常に黙ってskipします: `mrag.yaml`、
+  `kb_information.yaml`、`mrag.db`(と並びの`mrag.db-*`)、ディレクトリの`profiles/`・
+  `qdrant/`・`logs/`・`cache/`です。文書を置いているディレクトリがそのままprojectでも
+  ある場合に`mrag add . --recursive`を実行すると、文書だけが取り込まれます。これらの名前が
+  projectのものであるのはroot直下だけで(`docs/profiles/`は普通のディレクトリです)、
+  その配下をsource rootにする指定は拒否します。1.7.3より前は、これらのfileを失敗した
+  sourceとして数え、`profiles/context_prompt.txt`を文書として取り込んでいました。
 - regular file以外は無視します。
 
 ## duplicateと置換

@@ -273,6 +273,11 @@ def test_the_data_and_identities_directories_are_refused(tmp_path: Path, monkeyp
     assert code == 2
     assert report["error"]["code"] == "sync_directory_is_reserved"
 
+    for owned in ["profiles", "logs", "qdrant", "cache/embeddings"]:
+        code, report = _invoke(["documents", "sync", owned])
+        assert code == 2, owned
+        assert report["error"]["code"] == "sync_directory_is_project_internal", owned
+
     code, report = _invoke(["documents", "sync", "nowhere"])
     assert code == 2
     assert report["error"]["code"] == "sync_directory_not_found"
