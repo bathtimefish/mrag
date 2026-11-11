@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mrag.cli import app
-from mrag.core.ingestion.directory import scan_directory
+from mrag.core.ingestion.directory import owns_root_entry, scan_directory
 from mrag.db.connection import find_db, open_connection
 
 runner = CliRunner()
@@ -198,6 +198,51 @@ def test_recursive_project_root_never_reingests_data(tmp_path: Path):
         report = json.loads(result.stdout)
         assert [item["source"] for item in report["items"]] == ["notes.txt"]
         assert _document_count(project) == 1
+
+
+def test_the_project_owns_its_root_entries_and_nothing_else():
+    for owned in [
+        "mrag.yaml", "kb_information.yaml", "mrag.db", "mrag.db-wal", "mrag.db-shm", "mrag.db-journal",
+        "data", "profiles", "qdrant", "logs", "cache", "identities", "Identities",
+    ]:
+        assert owns_root_entry(owned), owned
+    for free in ["docs", "notes.md", "mrag.dbx", "mrag.yaml.bak", "documents", "Profiles", ""]:
+        assert not owns_root_entry(free), free
+
+
+def test_recursive_project_root_passes_by_what_the_project_keeps_for_itself(tmp_path: Path):
+    """A freshly initialized project can be added from its root as it stands.
+
+    Before 1.7.3 the walk skipped data/ and identities/ only: mrag.yaml,
+    kb_information.yaml, mrag.db and profiles/default.yaml were counted as
+    failed sources (exit 3), and profiles/context_prompt.txt was ingested.
+    """
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.chdir(tmp_path)
+        project = _init_project(tmp_path)
+        assert (project / "profiles" / "context_prompt.txt").is_file()
+        (project / "notes.md").write_text("# notes\n\nbody\n", encoding="utf-8")
+        (project / "logs" / "20261111-index.json").write_text("{}", encoding="utf-8")
+        (project / "qdrant" / "meta.json").write_text("{}", encoding="utf-8")
+        (project / "cache" / "embeddings" / "entry.txt").write_text("cached", encoding="utf-8")
+        (project / "docs" / "profiles").mkdir()
+        (project / "docs" / "profiles" / "kept.md").write_text("# kept\n\nbody\n", encoding="utf-8")
+        monkeypatch.chdir(project)
+
+        planned = runner.invoke(app, ["add", ".", "--recursive", "--dry-run", "--json"], catch_exceptions=False)
+
+        assert planned.exit_code == 0, planned.output
+        report = json.loads(planned.stdout)
+        assert [item["source"] for item in report["items"]] == ["docs/profiles/kept.md", "notes.md"]
+        assert report["summary"]["failed"] == 0
+
+        scan = scan_directory(project, project)
+        assert [candidate.relative_path for candidate in scan.candidates] == ["docs/profiles/kept.md", "notes.md"]
+        assert scan.issues == []
+
+        for owned in ["profiles", "logs", "qdrant", "cache/embeddings"]:
+            with pytest.raises(ValueError, match="keeps for itself"):
+                scan_directory(project, project / owned)
 
 
 def test_recursive_rejects_conversion_required_sources_without_blocking_plain_text(tmp_path: Path):

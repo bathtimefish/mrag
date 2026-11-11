@@ -7,6 +7,36 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.3 — 2026-11-11
+
+### Fixed
+
+- **`mrag add . --recursive` and `mrag documents sync .` at the project root no
+  longer pick up the project's own files.** The walk skipped `data/` and
+  `identities/` and nothing else. In a freshly initialized project,
+  `mrag add . --recursive` counted `mrag.yaml`, `kb_information.yaml`, `mrag.db`
+  and `profiles/default.yaml` as failed sources (`unsupported_source`) and
+  exited 3, and ingested `profiles/context_prompt.txt` as a document; after
+  indexing, the files under `qdrant/`, `logs/` and `cache/` joined them. The
+  walk now passes by, silently, everything the project keeps for itself at its
+  root: `mrag.yaml`, `kb_information.yaml`, `mrag.db` (and the `mrag.db-*`
+  files beside it) and the directories `data/`, `identities/`, `profiles/`,
+  `qdrant/`, `logs/` and `cache/`. The names are the project's own only at its
+  root — `docs/profiles/` is an ordinary directory.
+- Naming one of those directories as the root is refused: `mrag add profiles
+  --recursive` fails, and `mrag documents sync profiles` exits 2 with the new
+  code `sync_directory_is_project_internal` (`data/` and `identities/` keep
+  `sync_directory_is_project_data` and `sync_directory_is_reserved`).
+
+### Upgrade notes
+
+- A document that an earlier version ingested from one of these paths stays in
+  the catalog. A sync of the project root reports it as `out_of_scope` — its
+  file is still there — and does not remove it; remove it with
+  `mrag remove` if it was never meant to be a document.
+- Adding a single file by name (`mrag add profiles/context_prompt.txt`) is
+  unchanged.
+
 ## 1.7.2 — 2026-11-11
 
 ### Fixed

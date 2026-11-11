@@ -32,7 +32,9 @@ mrag documents sync ./corpus --apply --json
 ```
 
 ディレクトリは project 内（project 相対パスで表される）でも、それ以外の場所でも構いません。
-project 自身の `data/` と予約済みの `identities/` は拒否されます。`--include`、`--exclude`、
+project 自身の `data/` と予約済みの `identities/` は拒否されます。`profiles/`・`qdrant/`・
+`logs/`・`cache/` も同じです。project root を sync すると、これらと `mrag.yaml`・
+`kb_information.yaml`・`mrag.db` は読み飛ばします。`--include`、`--exclude`、
 `--hidden`、`--follow-symlinks`、`.mragignore` によるファイルの選択は
 [`mrag add --recursive`](recursive-add-ja.md) とまったく同じで、同じ条件なら sync と
 再帰追加は同じファイルを見ます。
@@ -137,7 +139,7 @@ item の `status` は、計画では `planned` か `reported`、`--apply` 後は
 |---:|---|
 | `0` | 計画を表示した、または failed item なしで適用した。 |
 | `3` | 1 件以上の item が失敗、scan issue が報告された、再構築が失敗した、または監査ログを書けなかった。他の item は有効。 |
-| `2` | 使用方法が不正: ディレクトリが存在しない／ファイルである／`data/` か `identities/`、`--index` なしの `--profile`、未知の profile、`mrag catalog migrate-identities` が先に必要な catalog。 |
+| `2` | 使用方法が不正: ディレクトリが存在しない／ファイルである／project 自身のディレクトリ(`data/`・`identities/`・`profiles/`・`qdrant/`・`logs/`・`cache/`)、`--index` なしの `--profile`、未知の profile、`mrag catalog migrate-identities` が先に必要な catalog。 |
 | `1` | 初期化済み project の中ではない。 |
 | `130` | 中断された。下記参照。 |
 
