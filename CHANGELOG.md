@@ -7,6 +7,28 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.2 — 2026-11-11
+
+### Fixed
+
+- **A Qdrant server named `localhost` no longer costs seconds per command on
+  Windows.** With `qdrant.mode: server` and `host: localhost` (also the value
+  when `host` is left out), every command that reaches Qdrant connected to
+  `::1` first. A Qdrant listening on `127.0.0.1` alone — a container published
+  with `-p 127.0.0.1:6333:6333`, for one — does not answer there, and Windows
+  takes about 2 seconds to refuse each such connection. A command opens several:
+  on Windows 11 with Qdrant 1.18.3, `mrag search --strategy vector` took 7.30 s
+  instead of 1.23 s. A `localhost` host is now tried at `127.0.0.1` first, and
+  at `localhost` as written when that address refuses; whichever answered is
+  tried first for the rest of the process, so a Qdrant listening on `::1` alone
+  pays for one refused attempt per command. A container published on every
+  interface (`docker run -p 6333:6333`, as the error message suggests) answers
+  on both addresses and was not affected. The host is not part of a
+  collection's name, so writing `host: 127.0.0.1` has the same effect and
+  re-indexes nothing. When no Qdrant is running, the error now takes about 2
+  seconds longer to appear on Windows. macOS and Linux refuse such a connection
+  at once; this was measured on Windows only.
+
 ## 1.7.1 — 2026-11-09
 
 ### Fixed

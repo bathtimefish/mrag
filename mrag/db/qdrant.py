@@ -1,5 +1,6 @@
 import hashlib
 import re
+import socket
 import uuid
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,53 @@ def collection_name(kb_id: str, profile_name: str, model_normalized: str) -> str
     return f"mrag_{kb}_{profile}_{model}_{fingerprint}"
 
 
+# Windows resolves `localhost` to ::1 before 127.0.0.1, and a Qdrant listening
+# on IPv4 alone (a container published with -p 127.0.0.1:6333:6333, for one)
+# does not answer there. Windows answers a refused connection by sending the SYN
+# again rather than giving up, so each new connection waited about 2 s before
+# 127.0.0.1 was tried, and a command opens several: `mrag search --strategy
+# vector` took 7.30 s instead of 1.23 s (Windows 11, Qdrant 1.18.3,
+# qdrant-client 1.18.0). macOS and Linux refuse at once. The same reasoning as
+# an Ollama endpoint's, in mrag.core.ollama_client.
+_LOCALHOST = "localhost"
+_IPV4_LOOPBACK = "127.0.0.1"
+# Bounds the connection test of an address that is tried before another. A
+# refusal on Windows takes about 2 s; this only bounds a dropped SYN.
+_PROBE_TIMEOUT_SECONDS = 5.0
+# Whether the host as written answered, per (host, port), so a Qdrant on ::1
+# alone pays for the refused IPv4 attempt once per process.
+_CONFIGURED_ANSWERED: dict[tuple[str, int], bool] = {}
+
+
+def _host_candidates(host: str, port: int) -> list[str]:
+    """The hosts to try for `host`: 127.0.0.1 first when it is `localhost`."""
+    if host.lower() != _LOCALHOST:
+        return [host]
+    if _CONFIGURED_ANSWERED.get((host.lower(), port)):
+        return [host, _IPV4_LOOPBACK]
+    return [_IPV4_LOOPBACK, host]
+
+
+def _accepts(host: str, port: int) -> bool:
+    """Whether `host:port` accepts a TCP connection.
+
+    Asked before a client is built for any address but the last one to try.
+    Building a QdrantClient starts a thread that asks the server's version and
+    warns when it cannot, so a client built at a refused 127.0.0.1 would warn
+    about a server that `localhost` then reaches.
+    """
+    try:
+        socket.create_connection((host, port), timeout=_PROBE_TIMEOUT_SECONDS).close()
+    except OSError:
+        return False
+    return True
+
+
+def reset_loopback_choice() -> None:
+    """Forget which address answered for `localhost` (tests)."""
+    _CONFIGURED_ANSWERED.clear()
+
+
 def make_client(
     mode: str = "server",
     host: str = "localhost",
@@ -81,15 +129,21 @@ def make_client(
     if mode == "local":
         qdrant_path = path or Path("./qdrant")
         return QdrantClient(path=str(qdrant_path))
+    candidates = _host_candidates(host, port)
+    # Every address but the last is used only if it accepts a connection; the
+    # last is used regardless, and its failure is the error, as before.
+    chosen = next((c for c in candidates[:-1] if _accepts(c, port)), candidates[-1])
     try:
-        client = QdrantClient(host=host, port=port)
+        client = QdrantClient(host=chosen, port=port)
         client.get_collections()
-        return client
     except Exception as e:
         raise ConnectionError(
             f"Cannot connect to Qdrant at {host}:{port}. "
             "Is Qdrant running? (docker run -p 6333:6333 qdrant/qdrant)"
         ) from e
+    if len(candidates) > 1:
+        _CONFIGURED_ANSWERED[(host.lower(), port)] = chosen == host
+    return client
 
 
 def ensure_collection(
