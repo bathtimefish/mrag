@@ -7,6 +7,33 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.4 — 2026-11-11
+
+### Fixed
+
+- **A profile the project does not store gets one answer from every command
+  that reads or builds an index.** `--profile` with a name that has no file
+  under `profiles/` was answered four ways: `mrag inspect document` printed
+  "No profiles have indexed this document." and exited 0, `mrag inspect chunks`
+  listed 0 chunks and exited 0, `mrag inspect sections` said the profile had no
+  section structure because `preserve_heading_path` was disabled and exited 1,
+  and `mrag search`, `mrag index` and `mrag reindex` exited 1 naming the file
+  that was not there (`index` after printing "Indexing profile …"). All six now
+  refuse it before reading or building anything, with exit 2 and
+  `profile_not_found: no profile named '<name>' is stored in the project
+  (available: <the stored profiles>)` — the code `mrag documents sync --profile`
+  already used.
+- `mrag inspect` asks the catalog first: a profile that indexed the document is
+  still read after its file is removed, and a stored profile that has indexed
+  nothing is answered as before.
+
+### Upgrade notes
+
+- A script that checked for exit 1 after `mrag search`, `mrag index` or
+  `mrag reindex` with an unknown `--profile` sees exit 2. The same holds when
+  `default_profile` in `mrag.yaml` names a profile with no file.
+- `mrag eval`, `mrag serve` and `mrag exclusions` are unchanged.
+
 ## 1.7.3 — 2026-11-11
 
 ### Fixed

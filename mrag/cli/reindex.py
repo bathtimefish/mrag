@@ -5,6 +5,7 @@ import typer
 from rich.console import Console
 
 from mrag.core.ollama_client import OllamaModelNotFoundError
+from mrag.config.profile import ProfileNotFoundError, require_stored_profile
 from mrag.config.project import load_project_config
 from mrag.core.indexing.pipeline import (
     reconcile_profile_vectors,
@@ -40,6 +41,11 @@ def reindex(
         raise typer.Exit(1)
 
     profile_name = profile or config.default_profile
+    try:
+        require_stored_profile(profile_name, project_dir)
+    except ProfileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(2)
 
     skip_ids: set[str] = set()
     if skip_list_json:

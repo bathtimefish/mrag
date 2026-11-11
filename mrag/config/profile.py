@@ -318,6 +318,41 @@ def validate_effective_tokenizer(
     return project_tokenizer
 
 
+class ProfileNotFoundError(FileNotFoundError):
+    """A profile the project does not store, with the ones it does."""
+
+    code = "profile_not_found"
+
+    def __init__(self, profile_name: str, available: list[str]) -> None:
+        self.profile_name = profile_name
+        self.available = available
+        names = ", ".join(available) if available else "none"
+        super().__init__(
+            f"profile_not_found: no profile named '{profile_name}' is stored in "
+            f"the project (available: {names})"
+        )
+
+
+def stored_profile_names(project_dir: Path) -> list[str]:
+    """The profiles the project stores: the files under ``profiles/``."""
+    profiles_dir = project_dir / "profiles"
+    if not profiles_dir.is_dir():
+        return []
+    return sorted(path.stem for path in profiles_dir.glob("*.yaml") if path.is_file())
+
+
+def require_stored_profile(profile_name: str, project_dir: Path) -> None:
+    """Refuse a profile the project does not store, naming the ones it does.
+
+    Every command that takes ``--profile`` and reads or builds an index asks
+    here first, so an unknown name gets one answer whichever command was
+    asked: ``profile_not_found``, exit 2 at the CLI.
+    """
+    available = stored_profile_names(project_dir)
+    if profile_name not in available:
+        raise ProfileNotFoundError(profile_name, available)
+
+
 def load_profile(profile_name: str, project_dir: Path | None = None) -> ProfileConfig:
     if project_dir is None:
         project_dir = Path.cwd()

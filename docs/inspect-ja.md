@@ -43,6 +43,8 @@ mrag inspect document <doc-id> --profile default
 
 `--profile` を省略すると、そのドキュメントをインデックスしている**すべてのプロファイル**が表示されます。
 
+> 存在しないプロファイル：projectが保持していない（`profiles/` にfileの無い）`--profile` は、`inspect document`・`inspect chunks`・`inspect sections` のいずれでも exit 2 と、保持しているプロファイルを挙げた `profile_not_found` で拒否されます。`mrag search`・`mrag index`・`mrag reindex` と同じ答えです。catalogを先に見るので、ドキュメントをインデックスしたプロファイルは、そのfileを消した後も表示されます。保持していて何もインデックスしていないプロファイルはエラーではなく、`inspect document` はどのプロファイルもインデックスしていないと表示します。
+
 
 ## `mrag inspect chunks` — チャンク一覧
 

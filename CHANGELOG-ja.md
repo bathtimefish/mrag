@@ -7,6 +7,30 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.4 — 2026-11-11
+
+### 修正
+
+- **projectが保持していないprofileへの答えを、indexを読む・作るcommandのあいだで1つに
+  しました。** `profiles/`にfileの無い名前を`--profile`に渡すと、答えが4通りに分かれて
+  いました。`mrag inspect document`は「No profiles have indexed this document.」でexit 0、
+  `mrag inspect chunks`は0件のchunkを表示してexit 0、`mrag inspect sections`は
+  `preserve_heading_path`が無効なので見出し構造が無いと言ってexit 1、`mrag search`・
+  `mrag index`・`mrag reindex`は無いfileのpathを示してexit 1(`index`は
+  「Indexing profile …」を先に表示)でした。6つとも、何かを読む・作る前に、exit 2と
+  `profile_not_found: no profile named '<name>' is stored in the project
+  (available: <保持しているprofile>)`で拒否します。`mrag documents sync --profile`が既に
+  使っていたcodeです。
+- `mrag inspect`はcatalogを先に見ます。文書をindexしたprofileは、そのfileを消した後も
+  読めます。保持していて何もindexしていないprofileへの答えは変わりません。
+
+### アップグレード時の注意
+
+- 存在しない`--profile`を渡した`mrag search`・`mrag index`・`mrag reindex`のexit 1を
+  見ていたscriptには、exit 2が返ります。`mrag.yaml`の`default_profile`がfileの無い
+  profileを指しているときも同じです。
+- `mrag eval`・`mrag serve`・`mrag exclusions`は変わりません。
+
 ## 1.7.3 — 2026-11-11
 
 ### 修正

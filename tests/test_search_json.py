@@ -162,11 +162,13 @@ class TestStdoutCleanlinessForPiping:
 
 
 class TestErrorHandling:
-    def test_missing_profile_exits_nonzero(self, searchable_project):
+    def test_missing_profile_is_refused_with_the_stored_profiles(self, searchable_project):
         result = runner.invoke(
             app, ["search", "Hello", "--profile", "nonexistent", "--json"],
         )
-        assert result.exit_code != 0
+        # A usage error since 1.7.4, as in every command that takes --profile.
+        assert result.exit_code == 2
+        assert "profile_not_found" in result.stderr
 
     def test_outside_project_exits_nonzero(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
