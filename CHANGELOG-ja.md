@@ -7,6 +7,27 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.2 — 2026-11-11
+
+### 修正
+
+- **`localhost` と書いた Qdrant server が、Windows で command ごとに数秒待たなく
+  なりました。** `qdrant.mode: server` で `host: localhost`(`host` を省いたときも
+  この値)のとき、Qdrant に接続する command はすべて先に `::1` に接続していました。
+  `127.0.0.1` だけで待ち受ける Qdrant(たとえば `-p 127.0.0.1:6333:6333` で公開した
+  container)はそこで応答せず、Windows はそのような接続を断るのに 1 回あたり約 2 秒
+  かけます。command は接続を何度か開くので、Windows 11 と Qdrant 1.18.3 で
+  `mrag search --strategy vector` が 1.23 秒ではなく 7.30 秒かかっていました。今後は
+  `localhost` の host にまず `127.0.0.1` で接続し、そこが接続を断ったときだけ書かれた
+  とおりの `localhost` に接続します。答えた側を process の終わりまで先に使うので、
+  `::1` だけで待ち受ける Qdrant が払うのは command ごとに断られる 1 回だけです。
+  全 interface に公開した container(エラーの文言が案内する
+  `docker run -p 6333:6333`)は両方の address で応答するので、影響を受けていません
+  でした。host は collection 名に含まれないので、`host: 127.0.0.1` と書いても同じ
+  効果があり、再 index は要りません。Qdrant が動いていないときは、Windows でエラーが
+  出るまでが約 2 秒長くなります。macOS と Linux はこのような接続を即座に断りますが、
+  測ったのは Windows だけです。
+
 ## 1.7.1 — 2026-11-09
 
 ### 修正

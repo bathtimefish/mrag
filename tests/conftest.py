@@ -11,10 +11,13 @@ from mrag.db.migrate import apply_schema
 def _forget_loopback_choice():
     """Each test starts with `localhost` asked at 127.0.0.1 first."""
     from mrag.core.ollama_client import reset_loopback_choice
+    from mrag.db.qdrant import reset_loopback_choice as reset_qdrant_loopback_choice
 
     reset_loopback_choice()
+    reset_qdrant_loopback_choice()
     yield
     reset_loopback_choice()
+    reset_qdrant_loopback_choice()
 
 
 @pytest.fixture
