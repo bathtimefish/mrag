@@ -692,10 +692,20 @@ def _emit_rebind(report: dict[str, Any], json_output: bool) -> None:
     verb = {"rebind": ("Would rebind", "Rebound"), "update": ("Would update", "Updated"), "restore": ("Would restore", "Restored"), "noop": ("Nothing to do for", "Nothing to do for")}
     planned, done = verb[report["action"]]
     where = f" (from {report['previous_identity']})" if report["moves_identity"] else ""
-    console.print(f"{done if report['applied'] else planned} {report['document_id']} → {report['source_identity']}{where}")
+    status = report["status"]
+    # A plan and a run that completed say what they would do or did. A run that
+    # failed, whole or part way, did not do what either verb says, so it gets
+    # its error alone: "Updated" over an update that was not made, or "Would
+    # update ... Run again with --apply" after --apply, would both mislead.
+    if status == "planned":
+        console.print(f"{planned} {report['document_id']} → {report['source_identity']}{where}")
+    elif status in ("applied", "unchanged", "degraded"):
+        console.print(f"{done} {report['document_id']} → {report['source_identity']}{where}")
     if report.get("error"):
         err_console.print(f"[red]Failed[/red] {report['error']['message']}")
-    if not report["applied"] and report["action"] != "noop":
+        if status == "partial":
+            err_console.print("Steps before the failure were kept; run the command again to finish.")
+    if status == "planned" and report["action"] != "noop":
         console.print("Run again with --apply to make this change.")
     if report.get("audit_log"):
         console.print(f"Audit log: {report['audit_log']}")
@@ -780,20 +790,34 @@ def rebind(
                     )
                     _register_root_for(conn, canonical, project_dir, catalog.registered, None, catalog.labels)
                 revoke_exclusions(conn, plan.revoke_exclusions)
+            # Whether the transaction changed anything: an update of content
+            # alone moves nothing and lifts nothing, so if that content then
+            # fails, the run changed nothing at all.
+            progressed = plan.moves_identity or bool(plan.revoke_exclusions)
             if plan.new_revision:
                 try:
                     persist_prepared_document(prepare_document(canonical, file_hash=content.content_hash), project_dir, config, force=True)
                 except (OSError, ValueError, DuplicateDocumentError) as error:
-                    report["status"] = "partial"
+                    report["status"] = "partial" if progressed else "failed"
+                    report["new_revision"] = False
                     report["error"] = {"code": "rebind_content_not_ingested", "message": str(error)}
     except (OSError, ValueError) as error:
+        # The transaction rolled back: no step was carried out.
         report["status"] = "failed"
+        report["new_revision"] = False
+        report["revoke_exclusions"] = 0
         report["error"] = {"code": "rebind_failed", "message": str(error)}
-    try:
-        report["audit_log"] = _write_audit_log(project_dir, "documents-rebind", report, started)
-    except OSError as error:
-        if report["status"] in ("applied", "unchanged"):
-            report["status"] = "degraded"
-        report["warning"] = f"the rebind was applied, but its audit log could not be written: {error}"
+    # The report says what was done, not what was planned. A run that changed
+    # nothing is `failed` with `applied: false` and, having no change to record,
+    # writes no audit log; it used to say `applied: true`, write the log, and
+    # call an update whose only step failed `partial` (MRAG Plus TODO-M15-065 D5).
+    report["applied"] = report["status"] != "failed"
+    if report["applied"]:
+        try:
+            report["audit_log"] = _write_audit_log(project_dir, "documents-rebind", report, started)
+        except OSError as error:
+            if report["status"] in ("applied", "unchanged"):
+                report["status"] = "degraded"
+            report["warning"] = f"the rebind was applied, but its audit log could not be written: {error}"
     _emit_rebind(report, json_output)
     raise typer.Exit({"applied": 0, "unchanged": 0, "partial": DEGRADED_EXIT, "degraded": DEGRADED_EXIT}.get(report["status"], 1))

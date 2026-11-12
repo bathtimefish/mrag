@@ -43,6 +43,8 @@ Main fields in the output:
 
 When `--profile` is omitted, the command reports **every profile** under which the document has been indexed.
 
+> Unknown profile: a `--profile` the project does not store (no file under `profiles/`) is refused by `inspect document`, `inspect chunks` and `inspect sections` alike, with exit 2 and `profile_not_found` naming the profiles it does store — the same answer `mrag search`, `mrag index` and `mrag reindex` give. The catalog is asked first, so a profile that indexed the document is still shown after its file is removed. A stored profile that has indexed nothing is not an error: `inspect document` says no profile has indexed the document.
+
 
 ## `mrag inspect chunks` — chunk list
 

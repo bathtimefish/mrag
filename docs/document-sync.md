@@ -190,7 +190,11 @@ or `identities/` — exit 2.
 An applied rebind writes `logs/<timestamp>-documents-rebind.json`. If the path
 was updated but the new content could not be read afterwards, the document is
 left at its new path with its previous content and the command exits 3 with
-`status: "partial"`; running it again finishes the job.
+`status: "partial"`; running it again finishes the job. A run that changed
+nothing — an update whose new content could not be read, with no path to move
+and no exclusion to lift — exits 1 with `status: "failed"` and
+`applied: false`, and writes no log. The report's `new_revision` is whether the
+content was taken, not whether the plan meant to take it.
 
 Neither command rebuilds the index on its own; `--index` on the sync, or
 `mrag index`, does. A moved or rebound document counts as changed: the document

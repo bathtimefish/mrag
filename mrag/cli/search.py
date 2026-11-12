@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from mrag.config.profile import load_profile
+from mrag.config.profile import ProfileNotFoundError, load_profile, require_stored_profile
 from mrag.config.project import load_project_config
 from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
@@ -103,6 +103,12 @@ def search(
         raise typer.Exit(1)
 
     profile_name = profile or config.default_profile
+
+    try:
+        require_stored_profile(profile_name, project_dir)
+    except ProfileNotFoundError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(2)
 
     try:
         load_profile(profile_name, project_dir)

@@ -7,6 +7,52 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.5 — 2026-11-12
+
+### 修正
+
+- **`mrag documents rebind --apply`が、計画ではなく実際に行ったことを報告します。**
+  新しい内容が唯一の段である`update`(pathを動かさず、除外も解除しない)で、その内容を
+  取り込めなかったとき、「Updated <id> → <file>」と表示し、`status: "partial"`・
+  `applied: true`・`new_revision: true`、exit 3で監査logを書いていました。catalogも
+  保存済みのoriginalも変わっていませんでした。今後は`status: "failed"`・
+  `applied: false`・`new_revision: false`、exit 1で、監査logを書きません。最初の
+  transactionが失敗した実行も同じで、`revoke_exclusions: 0`を返します。
+- 内容の失敗より前にpathを動かした、またはsyncの除外を解除した実行は、これまでどおり
+  `partial`・exit 3で監査logを書きます。`new_revision`は`false`になります。
+- 失敗した実行とpartialの実行の人向け出力はerrorだけです。「Updated」「Rebound」の
+  見出しも「Run again with --apply」も出しません。partialでは、失敗より前の段は残した
+  ことを添えます。MRAG Plusが先に同じ変更をしました。
+
+### アップグレード時の注意
+
+- 内容だけのrebindの失敗でexit 3を見ていたscriptには、exit 1が返ります。適用した
+  reportの`new_revision`は実際に行った段を表します。
+
+## 1.7.4 — 2026-11-11
+
+### 修正
+
+- **projectが保持していないprofileへの答えを、indexを読む・作るcommandのあいだで1つに
+  しました。** `profiles/`にfileの無い名前を`--profile`に渡すと、答えが4通りに分かれて
+  いました。`mrag inspect document`は「No profiles have indexed this document.」でexit 0、
+  `mrag inspect chunks`は0件のchunkを表示してexit 0、`mrag inspect sections`は
+  `preserve_heading_path`が無効なので見出し構造が無いと言ってexit 1、`mrag search`・
+  `mrag index`・`mrag reindex`は無いfileのpathを示してexit 1(`index`は
+  「Indexing profile …」を先に表示)でした。6つとも、何かを読む・作る前に、exit 2と
+  `profile_not_found: no profile named '<name>' is stored in the project
+  (available: <保持しているprofile>)`で拒否します。`mrag documents sync --profile`が既に
+  使っていたcodeです。
+- `mrag inspect`はcatalogを先に見ます。文書をindexしたprofileは、そのfileを消した後も
+  読めます。保持していて何もindexしていないprofileへの答えは変わりません。
+
+### アップグレード時の注意
+
+- 存在しない`--profile`を渡した`mrag search`・`mrag index`・`mrag reindex`のexit 1を
+  見ていたscriptには、exit 2が返ります。`mrag.yaml`の`default_profile`がfileの無い
+  profileを指しているときも同じです。
+- `mrag eval`・`mrag serve`・`mrag exclusions`は変わりません。
+
 ## 1.7.3 — 2026-11-11
 
 ### 修正
