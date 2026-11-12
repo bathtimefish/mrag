@@ -7,6 +7,28 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.5 — 2026-11-12
+
+### 修正
+
+- **`mrag documents rebind --apply`が、計画ではなく実際に行ったことを報告します。**
+  新しい内容が唯一の段である`update`(pathを動かさず、除外も解除しない)で、その内容を
+  取り込めなかったとき、「Updated <id> → <file>」と表示し、`status: "partial"`・
+  `applied: true`・`new_revision: true`、exit 3で監査logを書いていました。catalogも
+  保存済みのoriginalも変わっていませんでした。今後は`status: "failed"`・
+  `applied: false`・`new_revision: false`、exit 1で、監査logを書きません。最初の
+  transactionが失敗した実行も同じで、`revoke_exclusions: 0`を返します。
+- 内容の失敗より前にpathを動かした、またはsyncの除外を解除した実行は、これまでどおり
+  `partial`・exit 3で監査logを書きます。`new_revision`は`false`になります。
+- 失敗した実行とpartialの実行の人向け出力はerrorだけです。「Updated」「Rebound」の
+  見出しも「Run again with --apply」も出しません。partialでは、失敗より前の段は残した
+  ことを添えます。MRAG Plusが先に同じ変更をしました。
+
+### アップグレード時の注意
+
+- 内容だけのrebindの失敗でexit 3を見ていたscriptには、exit 1が返ります。適用した
+  reportの`new_revision`は実際に行った段を表します。
+
 ## 1.7.4 — 2026-11-11
 
 ### 修正

@@ -566,3 +566,130 @@ def test_rebind_to_the_documents_own_file_is_a_noop_and_to_same_content_elsewher
     assert report["action"] == "rebind"
     assert report["new_revision"] is False
     assert _documents(project)[notes_id]["source_identity"] == "corpus/moved.txt"
+
+
+def _refuse_content(monkeypatch) -> None:
+    def refuse(*args, **kwargs):
+        raise OSError("the stored original is read-only")
+
+    monkeypatch.setattr("mrag.cli.documents.persist_prepared_document", refuse)
+
+
+def _rebind_logs(project: Path) -> list[Path]:
+    return sorted((project / "logs").glob("*-documents-rebind.json"))
+
+
+def test_rebind_whose_only_step_fails_says_nothing_was_applied(tmp_path: Path, monkeypatch):
+    project = _init_project(tmp_path, monkeypatch)
+    _write_corpus(project / "corpus")
+    _, added = _invoke(["documents", "sync", "corpus", "--apply"])
+    notes_id = next(item["document_id"] for item in added["items"] if item["source_identity"] == "corpus/notes.txt")
+    (project / "corpus" / "notes.txt").write_text("plain notes, revised\n", encoding="utf-8")
+    before = _documents(project)[notes_id]
+    _refuse_content(monkeypatch)
+
+    code, report = _invoke(["documents", "rebind", notes_id, "corpus/notes.txt", "--apply"])
+
+    # An update moves nothing and lifts nothing; its content was the only step.
+    assert code == 1, report
+    assert report["action"] == "update"
+    assert report["status"] == "failed"
+    assert report["applied"] is False
+    assert report["new_revision"] is False
+    assert report["audit_log"] is None
+    assert report["error"]["code"] == "rebind_content_not_ingested"
+    assert _documents(project)[notes_id] == before
+    assert _rebind_logs(project) == []
+
+    result = runner.invoke(app, ["documents", "rebind", notes_id, "corpus/notes.txt", "--apply"], catch_exceptions=False)
+    assert result.exit_code == 1
+    assert "Failed" in result.stderr
+    assert "read-only" in result.stderr
+    # Neither what it did ("Updated") nor a plan to run with --apply again.
+    assert "Updated" not in result.output
+    assert "Would" not in result.output
+    assert "--apply" not in result.output
+    assert _rebind_logs(project) == []
+
+
+def test_rebind_whose_content_fails_after_the_path_moved_is_partial(tmp_path: Path, monkeypatch):
+    project = _init_project(tmp_path, monkeypatch)
+    _write_corpus(project / "corpus")
+    _, added = _invoke(["documents", "sync", "corpus", "--apply"])
+    notes_id = next(item["document_id"] for item in added["items"] if item["source_identity"] == "corpus/notes.txt")
+    old_hash = _documents(project)[notes_id]["file_hash"]
+    (project / "corpus" / "notes.txt").rename(project / "corpus" / "moved.txt")
+    (project / "corpus" / "moved.txt").write_text("plain notes, moved and revised\n", encoding="utf-8")
+    _refuse_content(monkeypatch)
+
+    code, report = _invoke(["documents", "rebind", notes_id, "corpus/moved.txt", "--apply"])
+
+    assert code == 3, report
+    assert report["action"] == "rebind"
+    assert report["status"] == "partial"
+    assert report["applied"] is True
+    # What happened, not the plan: the path moved, the content did not land.
+    assert report["new_revision"] is False
+    assert report["error"]["code"] == "rebind_content_not_ingested"
+    document = _documents(project)[notes_id]
+    assert document["source_identity"] == "corpus/moved.txt"
+    assert document["file_hash"] == old_hash
+    assert (project / report["audit_log"]).exists()
+
+    (project / "corpus" / "moved.txt").rename(project / "corpus" / "again.txt")
+    result = runner.invoke(app, ["documents", "rebind", notes_id, "corpus/again.txt", "--apply"], catch_exceptions=False)
+    assert result.exit_code == 3
+    assert "Rebound" not in result.output
+    assert "Failed" in result.stderr
+    assert "Steps before the failure were kept" in result.stderr
+
+
+def test_update_whose_content_fails_after_lifting_the_syncs_exclusion_is_partial(tmp_path: Path, monkeypatch):
+    project = _init_project(tmp_path, monkeypatch)
+    _write_corpus(project / "corpus")
+    _, added = _invoke(["documents", "sync", "corpus", "--apply"])
+    notes_id = next(item["document_id"] for item in added["items"] if item["source_identity"] == "corpus/notes.txt")
+    (project / "corpus" / "notes.txt").unlink()
+    _invoke(["documents", "sync", "corpus", "--apply"])  # excludes the missing file
+    (project / "corpus" / "notes.txt").write_text("plain notes, back and revised\n", encoding="utf-8")
+    _refuse_content(monkeypatch)
+
+    code, report = _invoke(["documents", "rebind", notes_id, "corpus/notes.txt", "--apply"])
+
+    # Lifting the exclusion is a step that was carried out.
+    assert code == 3, report
+    assert report["action"] == "update"
+    assert report["status"] == "partial"
+    assert report["applied"] is True
+    assert report["new_revision"] is False
+    assert report["revoke_exclusions"] == 1
+    assert _query(project, "SELECT COUNT(*) FROM document_exclusions WHERE revoked_at IS NULL") == [(0,)]
+    assert len(_rebind_logs(project)) == 1
+
+
+def test_rebind_whose_first_transaction_fails_changes_nothing_and_says_so(tmp_path: Path, monkeypatch):
+    project = _init_project(tmp_path, monkeypatch)
+    _write_corpus(project / "corpus")
+    _, added = _invoke(["documents", "sync", "corpus", "--apply"])
+    notes_id = next(item["document_id"] for item in added["items"] if item["source_identity"] == "corpus/notes.txt")
+    (project / "elsewhere").mkdir()
+    (project / "corpus" / "notes.txt").rename(project / "elsewhere" / "notes.txt")
+    _invoke(["documents", "sync", "corpus", "--apply"])  # excludes the missing file
+    before = _documents(project)[notes_id]
+
+    def refuse(*args, **kwargs):
+        raise OSError("the root could not be recorded")
+
+    monkeypatch.setattr("mrag.cli.documents._register_root_for", refuse)
+
+    code, report = _invoke(["documents", "rebind", notes_id, "elsewhere/notes.txt", "--apply"])
+    assert report["action"] == "rebind"
+
+    assert code == 1, report
+    assert report["status"] == "failed"
+    assert report["applied"] is False
+    assert report["revoke_exclusions"] == 0
+    assert report["error"]["code"] == "rebind_failed"
+    assert _documents(project)[notes_id] == before
+    assert _query(project, "SELECT COUNT(*) FROM document_exclusions WHERE revoked_at IS NULL") == [(1,)]
+    assert _rebind_logs(project) == []

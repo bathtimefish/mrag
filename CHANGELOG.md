@@ -7,6 +7,32 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.5 — 2026-11-12
+
+### Fixed
+
+- **`mrag documents rebind --apply` says what it did, not what it planned.**
+  When the new content was the only step — an `update`, which moves no path and
+  lifts no exclusion — and that content could not be ingested, the command
+  printed "Updated <id> → <file>", reported `status: "partial"`,
+  `applied: true` and `new_revision: true`, exited 3 and wrote an audit log,
+  although the catalog and the stored original were unchanged. It now reports
+  `status: "failed"`, `applied: false` and `new_revision: false`, exits 1 and
+  writes no audit log. A run whose first transaction fails does the same, with
+  `revoke_exclusions: 0`.
+- When the path moved, or the sync's exclusion was lifted, before the content
+  failed, the run is still `partial` with exit 3 and an audit log, and
+  `new_revision` is now `false`.
+- The human output of a failed or partial run is its error alone: no
+  "Updated"/"Rebound" headline, and no "Run again with --apply". A partial run
+  adds that the steps before the failure were kept. MRAG Plus made the same
+  change first.
+
+### Upgrade notes
+
+- A script that read exit 3 after a failed content-only rebind sees exit 1, and
+  `new_revision` in an applied report is the step that happened.
+
 ## 1.7.4 — 2026-11-11
 
 ### Fixed

@@ -179,6 +179,10 @@ rebind は sync が手を付けない場合のためのものです。移動 *�
 適用した rebind は `logs/<timestamp>-documents-rebind.json` を書きます。パスは更新できたが
 その後に新しい内容を読めなかった場合、document は新しいパスに以前の内容のまま残り、
 コマンドは `status: "partial"` で exit 3 を返します。もう一度実行すれば完了します。
+何も変えなかった実行 — 動かすパスも解除する除外も無い update で、新しい内容を読めなかった
+場合 — は `status: "failed"`・`applied: false` で exit 1 を返し、log を書きません。
+report の `new_revision` は、計画が取り込むつもりだったかではなく、内容を取り込めたかを
+表します。
 
 どちらのコマンドも単独では index を再構築しません。sync の `--index` か `mrag index` が
 行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧は
