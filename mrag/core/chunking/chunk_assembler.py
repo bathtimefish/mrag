@@ -11,6 +11,26 @@ if TYPE_CHECKING:
     from mrag.core.chunking.base import BaseChunker
 
 
+def _joined_lines(group: list[BlockData]) -> list[int | None]:
+    """The source line of each line of the group's blocks joined by blank lines."""
+    out: list[int | None] = []
+    for at, block in enumerate(group):
+        if at:
+            out.append(None)
+        out.extend(block.start_line + k for k in range(len(block.content.split("\n"))))
+    return out
+
+
+def _lines_within(joined: str, joined_lines: list[int | None], start: int, content: str) -> list[int | None]:
+    """The source lines of `content`, found at `start` of `joined`."""
+    first = joined.count("\n", 0, start)
+    count = content.count("\n") + 1
+    return [
+        joined_lines[first + k] if first + k < len(joined_lines) else None
+        for k in range(count)
+    ]
+
+
 def _make_section_id(heading_path: list[str]) -> str:
     parts = [re.sub(r"[^\w]+", "-", h.lower()).strip("-") for h in heading_path]
     return "/".join(parts)
@@ -126,6 +146,21 @@ class ChunkAssembler:
         contains_code = any(b.block_type == BLOCK_CODE for b in group)
 
         sub_chunks = text_chunker.chunk(joined, base_metadata)
+        joined_lines = _joined_lines(group)
+        # Every piece an inner chunker cuts is a run of `joined`, in order; a
+        # child is a run of its parent. Found from where the last one began.
+        cursor = {"parent": 0, "chunk": 0, "child": 0}
+        for sc in sub_chunks:
+            kind = sc.chunk_type if sc.chunk_type in cursor else "chunk"
+            at = joined.find(sc.content, cursor[kind])
+            if at < 0:
+                at = joined.find(sc.content)
+            if at < 0:
+                continue
+            cursor[kind] = at + 1
+            if kind == "parent":
+                cursor["child"] = at
+            sc.source_lines = _lines_within(joined, joined_lines, at, sc.content)
         for i, sc in enumerate(sub_chunks):
             sc.chunk_index = start_idx + i
             sc.metadata.setdefault("block_types", block_types)
@@ -184,6 +219,7 @@ class ChunkAssembler:
             chunk_type="chunk",
             parent_chunk_id=None,
             metadata=metadata,
+            source_lines=_joined_lines(group),
         )
 
     def _split_atomic(
@@ -217,23 +253,29 @@ class ChunkAssembler:
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
 
         parts: list[list[str]] = []
+        part_lines: list[list[int]] = []
         current: list[str] = []
-        for data_line in data_lines:
+        current_lines: list[int] = []
+        for row, data_line in enumerate(data_lines):
             candidate = header_block + "\n" + "\n".join(current + [data_line])
             if current and len(candidate) > self.chunk_size:
                 parts.append(current)
+                part_lines.append(current_lines)
                 current = [data_line]
+                current_lines = [block.start_line + 2 + row]
             else:
                 current.append(data_line)
+                current_lines.append(block.start_line + 2 + row)
         if current:
             parts.append(current)
+            part_lines.append(current_lines)
 
         total = len(parts)
         heading_path = block.heading_path
         heading_path_text = " > ".join(heading_path) if heading_path else ""
 
         chunks: list[ChunkData] = []
-        for part_idx, rows in enumerate(parts, 1):
+        for part_idx, (rows, row_lines) in enumerate(zip(parts, part_lines), 1):
             label = (
                 f"[Table: {heading_path_text} ({part_idx}/{total})]"
                 if heading_path_text
@@ -263,6 +305,8 @@ class ChunkAssembler:
                 chunk_type="chunk",
                 parent_chunk_id=None,
                 metadata=metadata,
+                # The label and the blank line under it are the chunker's own.
+                source_lines=[None, None, block.start_line, block.start_line + 1, *row_lines],
             ))
         return chunks
 

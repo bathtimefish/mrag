@@ -20,6 +20,7 @@ from mrag.core.ingestion.inventory import (
     validate_offset,
 )
 from mrag.core.retrieval.reference import fetch_references
+from mrag.core.retrieval.structure_fields import fetch_structure
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
@@ -72,8 +73,12 @@ def _result_payload(
     filename_map: dict[str, str],
     content_max_chars: int,
     references: dict[str, dict[str, Any]] | None = None,
+    structure: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from mrag.core.retrieval.structure_fields import decorate
+
     references = references or {}
+    structure = structure or {}
     entries = []
     for i, r in enumerate(results, 1):
         content, trunc = _truncate_text(r.content, content_max_chars)
@@ -90,7 +95,7 @@ def _result_payload(
         }
         if "retrieval_score" in entry["metadata"]:
             entry["retrieval_score"] = float(entry["metadata"]["retrieval_score"])
-        entries.append(entry)
+        entries.append(decorate(entry, structure.get(r.chunk_id)))
 
     score_stats = None
     doc_distribution: dict[str, int] = {}
@@ -162,6 +167,7 @@ def search_tool(
         filename_map=filename_map,
         content_max_chars=cfg.limits.content_max_chars,
         references=fetch_references(ctx.db_path, run.results),
+        structure=fetch_structure(ctx.db_path, [r.chunk_id for r in run.results]),
     )
 
 

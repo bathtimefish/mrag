@@ -1,0 +1,194 @@
+{
+  "markdown": "## Spacing\n\nGaps by crop\n\n| Beans | from 10 to 15 | weekly |\n| Kale | curly | 40 |\n|  | flat | 45 |\n| Chard | 30 |  |\n\n| Crop | Gap |  |\n|  | row | plant |\n| --- | --- | --- |\n| Leeks | 30 | 15 |\n\nWater each bed with at least 10 litres.\n",
+  "headings": [
+    [
+      2,
+      "Spacing",
+      1
+    ]
+  ],
+  "tables": [
+    {
+      "caption": "Gaps by crop",
+      "group_caption": null,
+      "header_rows": 0,
+      "lines": [
+        3,
+        8
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "",
+        "",
+        ""
+      ],
+      "rendered_rows": [
+        "・Beans: from 10 to 15；weekly",
+        "・Kale > curly: 40",
+        "・Kale > flat: 45",
+        "| Chard | 30 |  |"
+      ]
+    },
+    {
+      "caption": null,
+      "group_caption": null,
+      "header_rows": 2,
+      "lines": [
+        10,
+        13
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "Crop",
+        "Gap・row",
+        "Gap・plant"
+      ],
+      "rendered_rows": [
+        null,
+        null,
+        "・Leeks: 「Gap・row」= 30；「Gap・plant」= 15"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "value": "10 to 15",
+      "limit": "range",
+      "unit": "cm",
+      "quantity": null,
+      "anchor": null,
+      "line": 5,
+      "table_caption": "Gaps by crop",
+      "table_group_caption": null,
+      "row_labels": [
+        "Beans"
+      ],
+      "column_labels": [],
+      "heading": "Spacing",
+      "page": 2,
+      "page_label": "12"
+    },
+    {
+      "value": "40",
+      "limit": "min",
+      "unit": "cm",
+      "quantity": null,
+      "anchor": null,
+      "line": 6,
+      "table_caption": "Gaps by crop",
+      "table_group_caption": null,
+      "row_labels": [
+        "Kale",
+        "curly"
+      ],
+      "column_labels": [],
+      "heading": "Spacing",
+      "page": 2,
+      "page_label": "12"
+    },
+    {
+      "value": "plant",
+      "limit": "exact",
+      "unit": null,
+      "quantity": null,
+      "anchor": null,
+      "line": 11,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [
+        "Gap"
+      ],
+      "heading": "Spacing",
+      "page": 3,
+      "page_label": "13"
+    },
+    {
+      "value": "Leeks",
+      "limit": null,
+      "unit": null,
+      "quantity": null,
+      "anchor": null,
+      "line": 13,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [
+        "Crop"
+      ],
+      "heading": "Spacing",
+      "page": 3,
+      "page_label": "13"
+    },
+    {
+      "value": "15",
+      "limit": "max",
+      "unit": "cm",
+      "quantity": "gap in a row",
+      "anchor": null,
+      "line": 13,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [
+        "Leeks"
+      ],
+      "column_labels": [
+        "Gap",
+        "plant"
+      ],
+      "heading": "Spacing",
+      "page": 3,
+      "page_label": "13"
+    },
+    {
+      "value": "10",
+      "limit": "min",
+      "unit": "L",
+      "quantity": null,
+      "anchor": null,
+      "line": 15,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [],
+      "heading": "Spacing",
+      "page": 3,
+      "page_label": "13"
+    }
+  ],
+  "pages": [
+    [
+      1,
+      1,
+      null
+    ],
+    [
+      2,
+      3,
+      "12"
+    ],
+    [
+      3,
+      10,
+      "13"
+    ]
+  ],
+  "line_pages": [
+    null,
+    null,
+    "12",
+    "12",
+    "12",
+    "12",
+    "12",
+    "12",
+    "12",
+    "13",
+    "13",
+    "13",
+    "13",
+    "13",
+    "13"
+  ],
+  "structured_content": "## Spacing\n\nGaps by crop\n\n・Beans: from 10 to 15；weekly\n・Kale > curly: 40\n・Kale > flat: 45\n| Chard | 30 |  |\n\n・Leeks: 「Gap・row」= 30；「Gap・plant」= 15\n\nWater each bed with at least 10 litres."
+}

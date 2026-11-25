@@ -19,16 +19,33 @@ class ProjectSection(BaseModel):
     name: str
 
 
+class ConversionConfig(BaseModel):
+    """Which converter reads a format (experimental branch exp/html-structure).
+
+    ``converter: {html: html-structure}`` lets ``mrag add`` read ``.html`` and
+    ``.htm`` with the built-in ``html-structure`` extractor; without it they
+    are refused as before.
+    """
+
+    converter: dict[str, str] = Field(default_factory=dict)
+
+
 class ProjectConfig(BaseModel):
     project: ProjectSection
     knowledge_base: KnowledgeBaseConfig
     default_profile: str = "default"
     fts_tokenizer: str = "trigram"
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
+    conversion: ConversionConfig = Field(default_factory=ConversionConfig)
 
     @property
     def knowledge_id(self) -> str:
         return self.knowledge_base.id
+
+    @property
+    def converts_html(self) -> bool:
+        """Whether the project reads HTML with ``html-structure``."""
+        return self.conversion.converter.get("html") == "html-structure"
 
 
 def load_project_config(project_dir: Path | None = None) -> ProjectConfig:

@@ -36,6 +36,10 @@ class SearchReference(BaseModel):
     resource: str = Field(description="The MCP resource that serves the stored original.")
     revision_id: str | None = Field(description="Always null: a document keeps one extraction.")
     location: SearchLocation
+    page_start: int | None = Field(description="The page of the original the text begins on, counted from 1; not the printed number. Null without pages on record (exp/html-structure).")
+    page_end: int | None = Field(description="The page it ends on.")
+    page_label_start: str | None = Field(description="The page number printed on page_start: what a citation names.")
+    page_label_end: str | None = Field(description="The page number printed on page_end.")
 
 
 class ChunkResult(BaseModel):
@@ -46,6 +50,9 @@ class ChunkResult(BaseModel):
     content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     reference: SearchReference
+    structured_content: str | None = Field(default=None, description="The text with every table row written out under its headers; null when it holds no such row, and for a document without a structure record (exp/html-structure).")
+    criteria: list[dict[str, Any]] = Field(default_factory=list, description="The values the document marks as criteria on the result's lines, at most 15, each with its limit, unit, quantity, the labels a table puts it under, the heading above it and its page.")
+    criteria_omitted: int = Field(default=0, description="Criterion values the result holds beyond the 15 given.")
 
 
 class RetrieveResponse(BaseModel):

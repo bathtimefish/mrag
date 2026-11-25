@@ -1,0 +1,33 @@
+{
+  "markdown": "plum\n\npear\n\n| fig | lime |\n",
+  "headings": [],
+  "tables": [
+    {
+      "caption": null,
+      "group_caption": null,
+      "header_rows": 0,
+      "lines": [
+        5,
+        5
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "",
+        ""
+      ],
+      "rendered_rows": [
+        "| fig | lime |"
+      ]
+    }
+  ],
+  "criteria": [],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "structured_content": null
+}

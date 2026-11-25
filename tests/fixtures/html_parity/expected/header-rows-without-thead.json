@@ -1,0 +1,32 @@
+{
+  "markdown": "| Fruit | Count |\n| --- | --- |\n| plum | four |\n",
+  "headings": [],
+  "tables": [
+    {
+      "caption": null,
+      "group_caption": null,
+      "header_rows": 1,
+      "lines": [
+        1,
+        3
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "Fruit",
+        "Count"
+      ],
+      "rendered_rows": [
+        null,
+        "・: 「Fruit」= plum；「Count」= four"
+      ]
+    }
+  ],
+  "criteria": [],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null
+  ],
+  "structured_content": "・: 「Fruit」= plum；「Count」= four"
+}

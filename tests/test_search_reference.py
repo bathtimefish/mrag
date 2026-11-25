@@ -36,6 +36,11 @@ REFERENCE_KEYS = {
     "resource",
     "revision_id",
     "location",
+    # exp/html-structure: the pages of the original, null without pages on record.
+    "page_start",
+    "page_end",
+    "page_label_start",
+    "page_label_end",
 }
 
 

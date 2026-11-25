@@ -1,0 +1,78 @@
+{
+  "markdown": "# Pantry handbook\n\n## Terms\n\njar A glass container with a lid.\n\n## Shelves\n\nEvery jar sits on a shelf. See the stock table and the old list.\n\n3. Wipe the shelf.\n\n  - Use a dry cloth.\n\n4. Label each jar.\n\nStock by shelf\n\nSpring\n\n| Shelf | Row | Jars |  |\n|  |  | Full | Empty |\n| --- | --- | --- | --- |\n| Upper | Front | seven［注a)］ | two |\n|  | Back | ask the keeper ／ each week |  |\n\na) Counted on the first day.\n\nA crate here means a wooden box of twelve jars.\n",
+  "headings": [
+    [
+      1,
+      "Pantry handbook",
+      1
+    ],
+    [
+      2,
+      "Terms",
+      3
+    ],
+    [
+      2,
+      "Shelves",
+      7
+    ]
+  ],
+  "tables": [
+    {
+      "caption": "Spring",
+      "group_caption": "Stock by shelf",
+      "header_rows": 2,
+      "lines": [
+        19,
+        25
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "Shelf",
+        "Row",
+        "Jars・Full",
+        "Jars・Empty"
+      ],
+      "rendered_rows": [
+        null,
+        null,
+        "・Upper > Front: 「Jars・Full」= seven［注a)］；「Jars・Empty」= two",
+        "・Upper > Back: 「Jars・Full」= ask the keeper ／ each week"
+      ]
+    }
+  ],
+  "criteria": [],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "structured_content": "# Pantry handbook\n\n## Terms\n\njar A glass container with a lid.\n\n## Shelves\n\nEvery jar sits on a shelf. See the stock table and the old list.\n\n3. Wipe the shelf.\n\n  - Use a dry cloth.\n\n4. Label each jar.\n\nStock by shelf\n\nSpring\n\n・Upper > Front: 「Jars・Full」= seven［注a)］；「Jars・Empty」= two\n・Upper > Back: 「Jars・Full」= ask the keeper ／ each week\n\na) Counted on the first day.\n\nA crate here means a wooden box of twelve jars."
+}

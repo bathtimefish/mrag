@@ -1,0 +1,49 @@
+{
+  "markdown": "A row is one line of plants.\n\nRows of 12 per row, each a bed\n\n| Crop | Kale |\n",
+  "headings": [],
+  "tables": [
+    {
+      "caption": "Rows of 12 per row, each a bed",
+      "group_caption": null,
+      "header_rows": 0,
+      "lines": [
+        3,
+        5
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "",
+        ""
+      ],
+      "rendered_rows": [
+        "・Crop: Kale"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "value": "12",
+      "limit": "max",
+      "unit": null,
+      "quantity": null,
+      "anchor": "cv-rows",
+      "line": 3,
+      "table_caption": "Rows of 12 per row, each a bed",
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [],
+      "heading": null,
+      "page": null,
+      "page_label": null
+    }
+  ],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "structured_content": "A row is one line of plants.\n\nRows of 12 per row, each a bed\n\n・Crop: Kale"
+}

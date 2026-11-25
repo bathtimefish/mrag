@@ -1,0 +1,48 @@
+{
+  "markdown": "## Cellar cask\n\nA cask is a barrel.\n\nA spile is a peg.\n\nTap the cask slowly, then the big one, and the bung.\n\n| Row | Holds |\n| --- | --- |\n| Back | one cask |\n\nSee the definition and its use: cask, nothing, cask.\n",
+  "headings": [
+    [
+      2,
+      "Cellar cask",
+      1
+    ]
+  ],
+  "tables": [
+    {
+      "caption": null,
+      "group_caption": null,
+      "header_rows": 1,
+      "lines": [
+        9,
+        11
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "Row",
+        "Holds"
+      ],
+      "rendered_rows": [
+        null,
+        "・Back: 「Holds」= one cask"
+      ]
+    }
+  ],
+  "criteria": [],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "structured_content": "## Cellar cask\n\nA cask is a barrel.\n\nA spile is a peg.\n\nTap the cask slowly, then the big one, and the bung.\n\n・Back: 「Holds」= one cask\n\nSee the definition and its use: cask, nothing, cask."
+}

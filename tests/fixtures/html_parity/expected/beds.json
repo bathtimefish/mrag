@@ -1,0 +1,113 @@
+{
+  "markdown": "## Watering 2 times a day\n\nSoak each bed with at least 10 litres.\n\nSpacing\n\n| Crop | Gap |\n| --- | --- |\n| Beans | from 10 to 15 |\n\nAbout 3 and gap.\n\nA gap is the space between two plants.\n",
+  "headings": [
+    [
+      2,
+      "Watering 2 times a day",
+      1
+    ]
+  ],
+  "tables": [
+    {
+      "caption": "Spacing",
+      "group_caption": null,
+      "header_rows": 1,
+      "lines": [
+        5,
+        9
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "Crop",
+        "Gap"
+      ],
+      "rendered_rows": [
+        null,
+        "・Beans: 「Gap」= from 10 to 15"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "value": "2",
+      "limit": "max",
+      "unit": null,
+      "quantity": null,
+      "anchor": null,
+      "line": 1,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [],
+      "heading": "Watering 2 times a day",
+      "page": null,
+      "page_label": null
+    },
+    {
+      "value": "10",
+      "limit": "min",
+      "unit": "L",
+      "quantity": "water per bed",
+      "anchor": "cv-soak",
+      "line": 3,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [],
+      "heading": "Watering 2 times a day",
+      "page": null,
+      "page_label": null
+    },
+    {
+      "value": "10 to 15",
+      "limit": "range",
+      "unit": "cm",
+      "quantity": null,
+      "anchor": null,
+      "line": 9,
+      "table_caption": "Spacing",
+      "table_group_caption": null,
+      "row_labels": [
+        "Beans"
+      ],
+      "column_labels": [
+        "Gap"
+      ],
+      "heading": "Watering 2 times a day",
+      "page": null,
+      "page_label": null
+    },
+    {
+      "value": "3",
+      "limit": null,
+      "unit": null,
+      "quantity": null,
+      "anchor": null,
+      "line": 11,
+      "table_caption": null,
+      "table_group_caption": null,
+      "row_labels": [],
+      "column_labels": [],
+      "heading": "Watering 2 times a day",
+      "page": null,
+      "page_label": null
+    }
+  ],
+  "pages": [],
+  "line_pages": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "structured_content": "## Watering 2 times a day\n\nSoak each bed with at least 10 litres.\n\nSpacing\n\n・Beans: 「Gap」= from 10 to 15\n\nAbout 3 and gap.\n\nA gap is the space between two plants."
+}

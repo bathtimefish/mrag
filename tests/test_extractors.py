@@ -60,10 +60,34 @@ def test_get_extractor_md_returns_plain():
     assert isinstance(get_extractor("md"), PlainTextExtractor)
 
 
-@pytest.mark.parametrize("source_type", ["pdf", "html", "docx"])
+@pytest.mark.parametrize("source_type", ["pdf", "docx"])
 def test_get_extractor_rejects_unsupported_source_type(source_type: str):
     with pytest.raises(ValueError, match="Unsupported source type"):
         get_extractor(source_type)
+
+
+def test_get_extractor_html_is_html_structure():
+    # exp/html-structure: `html` is a source type only when the project chose
+    # html-structure (detect_source_type decides); its extractor is that one.
+    pytest.importorskip("html5lib")
+    from mrag.extractors.html_structure import HtmlStructureExtractor
+
+    assert isinstance(get_extractor("html"), HtmlStructureExtractor)
+
+
+def test_get_extractor_html_without_html5lib_says_how_to_install(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without_html5lib(name, *args, **kwargs):
+        if name == "html5lib":
+            raise ImportError("no html5lib")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_html5lib)
+    with pytest.raises(ValueError, match=r"mrag\[html\]"):
+        get_extractor("html")
 
 
 # ---------------------------------------------------------------------------

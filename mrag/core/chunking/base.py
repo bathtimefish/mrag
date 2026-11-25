@@ -11,6 +11,11 @@ class ChunkData:
     chunk_type: str = "chunk"
     parent_chunk_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # For each line of `content`, the line of the chunked text it is (counted
+    # from 0), or None for a line the chunker wrote itself; None when not
+    # known. Not stored: the index reads a structure record through it
+    # (experimental branch exp/html-structure).
+    source_lines: list[int | None] | None = None
 
 
 class BaseChunker(ABC):

@@ -136,7 +136,7 @@ def _add_directory(
     if dry_run:
         for candidate in scan.candidates:
             try:
-                get_extractor(detect_source_type(candidate.source_path))
+                get_extractor(detect_source_type(candidate.source_path, config))
                 items[candidate.relative_path] = _item(candidate.relative_path, "planned")
             except ValueError as error:
                 items[candidate.relative_path] = _failed(candidate.relative_path, "unsupported_source", str(error))
@@ -149,6 +149,7 @@ def _add_directory(
             prepared[candidate.relative_path] = prepare_document(
                 candidate.source_path,
                 file_hash=file_hash,
+                config=config,
             )
         except (OSError, ValueError) as error:
             items[candidate.relative_path] = _failed(candidate.relative_path, "prepare_failed", str(error))

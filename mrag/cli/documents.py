@@ -230,6 +230,8 @@ class Prepared:
 
 
 def _prepare(project_dir: Path, directory: Path, options: dict[str, Any], conn) -> Prepared:
+    # Whether the project reads HTML decides which files are documents.
+    project_config = load_project_config(project_dir)
     catalog = _catalog_facts(conn)
     registered = catalog.registered
     facts = _locate_directory(project_dir, directory, registered, options["follow_symlinks"])
@@ -258,7 +260,7 @@ def _prepare(project_dir: Path, directory: Path, options: dict[str, Any], conn) 
             issues.append({"path": candidate.relative_path, "code": "source_identity_failed", "message": str(error)})
             continue
         try:
-            detect_source_type(candidate.source_path)
+            detect_source_type(candidate.source_path, project_config)
         except ValueError:
             # A format mrag does not ingest is reported, not failed: a corpus
             # directory holds files that are not documents.
@@ -366,7 +368,7 @@ def _apply_one(item: SyncPlanItem, prepared: Prepared, project_dir: Path, config
             raise CommandError("ingestion_source_changed", "the file changed between the plan and the write", reason="changed_during_sync")
         try:
             document_id, _warnings = persist_prepared_document(
-                prepare_document(scanned.path, file_hash=current),
+                prepare_document(scanned.path, file_hash=current, config=config),
                 project_dir,
                 config,
                 force=item.action == "update",
@@ -745,7 +747,7 @@ def rebind(
         if canonical.is_relative_to(project_data):
             raise CommandError("rebind_file_is_project_data", "the project's data/ directory holds mrag's own artifacts; a document cannot be bound to a file there", USAGE_EXIT)
         try:
-            detect_source_type(canonical)
+            detect_source_type(canonical, config)
         except ValueError as error:
             raise CommandError("rebind_source_unsupported", str(error), USAGE_EXIT) from error
         with db_connection(db_path) as conn:
@@ -796,7 +798,7 @@ def rebind(
             progressed = plan.moves_identity or bool(plan.revoke_exclusions)
             if plan.new_revision:
                 try:
-                    persist_prepared_document(prepare_document(canonical, file_hash=content.content_hash), project_dir, config, force=True)
+                    persist_prepared_document(prepare_document(canonical, file_hash=content.content_hash, config=config), project_dir, config, force=True)
                 except (OSError, ValueError, DuplicateDocumentError) as error:
                     report["status"] = "partial" if progressed else "failed"
                     report["new_revision"] = False

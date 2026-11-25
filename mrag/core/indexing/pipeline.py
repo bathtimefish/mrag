@@ -364,6 +364,15 @@ def _index_document(
         child_config=profile.chunking.child,
     )
     chunks = chunker.chunk(text, {"document_id": doc["id"], "profile_name": profile.name})
+    if source_format == "markdown":
+        # exp/html-structure: what the structure record html-structure kept
+        # beside the Markdown says of each chunk's lines.
+        from mrag.core.html_structure import attach_structure
+        from mrag.extractors.html_structure import load_record
+
+        record = load_record(resolve_stored(project_dir, rel_path).parent)
+        if record is not None:
+            attach_structure(record, text, chunks)
 
     if not chunks:
         # Empty document — nothing to index. Return (0, 0) so the caller's

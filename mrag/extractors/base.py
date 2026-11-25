@@ -10,6 +10,9 @@ class ExtractionResult:
     text: str                  # always populated; markdown stripped to plain text when needed
     warnings: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # A structure record kept beside the Markdown (`html-structure` only);
+    # written as `structure.json` next to `extracted.md`.
+    structure: dict[str, Any] | None = None
 
 
 class BaseExtractor(ABC):

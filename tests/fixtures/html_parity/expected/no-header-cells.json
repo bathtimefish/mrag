@@ -1,0 +1,31 @@
+{
+  "markdown": "| plum | pear |\n| fig | lime |\n",
+  "headings": [],
+  "tables": [
+    {
+      "caption": null,
+      "group_caption": null,
+      "header_rows": 0,
+      "lines": [
+        1,
+        2
+      ],
+      "grid_omitted": false,
+      "column_labels": [
+        "",
+        ""
+      ],
+      "rendered_rows": [
+        "| plum | pear |",
+        "| fig | lime |"
+      ]
+    }
+  ],
+  "criteria": [],
+  "pages": [],
+  "line_pages": [
+    null,
+    null
+  ],
+  "structured_content": null
+}

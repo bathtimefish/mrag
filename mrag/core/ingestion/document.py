@@ -56,9 +56,10 @@ def hash_document(file_path: Path) -> str:
 def prepare_document(
     file_path: Path,
     file_hash: str | None = None,
+    config: ProjectConfig | None = None,
 ) -> PreparedDocument:
     """Read and extract one source without changing project state."""
-    source_type = detect_source_type(file_path)
+    source_type = detect_source_type(file_path, config)
     extractor = get_extractor(source_type)
     return PreparedDocument(
         file_path=file_path,
@@ -80,7 +81,7 @@ def add_document(
     Returns (document_id, warnings).
     Raises FileExistsError if this source and its content are already registered.
     """
-    prepared = prepare_document(file_path)
+    prepared = prepare_document(file_path, config=config)
     return persist_prepared_document(
         prepared,
         project_dir,
@@ -105,7 +106,8 @@ def persist_prepared_document(
     result = prepared.extraction
     # Plain sources carry their own format, so one value serves both the metadata
     # sidecar and the catalog row.
-    output_format = "markdown" if source_type == "md" else "text"
+    output_format = "markdown" if source_type in ("md", "html") else "text"
+    provider = "html-structure" if result.structure is not None else "plain"
     with db_connection(db_path) as conn:
         scheme = conn.execute(
             "SELECT value FROM catalog_settings WHERE key = ?", (SCHEME_KEY,)
@@ -148,6 +150,15 @@ def persist_prepared_document(
     # it Windows writes CRLF while the hash below is taken over the LF text.
     md_path.write_text(result.markdown, encoding="utf-8", newline="\n")
     txt_path.write_text(result.text, encoding="utf-8", newline="\n")
+    # The structure record html-structure keeps beside the Markdown; a stale
+    # one is removed when the document is extracted again without it.
+    structure_path = doc_dir / "structure.json"
+    if result.structure is not None:
+        structure_path.write_text(
+            json.dumps(result.structure, ensure_ascii=False), encoding="utf-8", newline="\n"
+        )
+    elif structure_path.exists():
+        structure_path.unlink()
 
     # extracted_hash = SHA256 of text content (canonical for diff detection)
     extracted_hash = _sha256(result.text)
@@ -157,7 +168,7 @@ def persist_prepared_document(
     meta_path.write_text(
         json.dumps(
             {
-                "provider": "plain",
+                "provider": provider,
                 "output_format": output_format,
                 "source_type": source_type,
                 **result.metadata,
@@ -184,7 +195,7 @@ def persist_prepared_document(
         # and name: --force re-extracts it and never rebinds it to this path.
         filename = existing["filename"] if existing and not same_source else file_path.name
         fields = (filename, rel(original_dest), file_hash, source_type,
-                  "plain", output_format, rel(md_path), rel(txt_path), rel(meta_path),
+                  provider, output_format, rel(md_path), rel(txt_path), rel(meta_path),
                   extracted_hash, "extracted", None, now)
         if existing:
             conn.execute(

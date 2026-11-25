@@ -10,6 +10,7 @@ from rich.markup import escape
 from mrag.config.profile import ProfileNotFoundError, load_profile, require_stored_profile
 from mrag.config.project import load_project_config
 from mrag.core.retrieval.reference import fetch_references
+from mrag.core.retrieval.structure_fields import fetch_structure
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.cli.eval import print_score_stats_and_distribution
 from mrag.db.connection import find_db
@@ -27,9 +28,13 @@ def _build_json_payload(
     results: list,
     filename_map: dict,
     references: dict | None = None,
+    structure: dict | None = None,
 ) -> dict:
     """Build the structured JSON payload emitted by `mrag search --json`."""
+    from mrag.core.retrieval.structure_fields import decorate
+
     references = references or {}
+    structure = structure or {}
     result_entries = []
     for i, r in enumerate(results, 1):
         entry = {
@@ -45,7 +50,7 @@ def _build_json_payload(
         # retrieval_score is preserved by the reranker in metadata
         if "retrieval_score" in entry["metadata"]:
             entry["retrieval_score"] = float(entry["metadata"]["retrieval_score"])
-        result_entries.append(entry)
+        result_entries.append(decorate(entry, structure.get(r.chunk_id)))
 
     score_stats = None
     doc_distribution: dict = {}
@@ -153,6 +158,7 @@ def search(
             results=results,
             filename_map=filename_map,
             references=references,
+            structure=fetch_structure(db_path, [r.chunk_id for r in results]),
         )
         # Emit JSON to stdout (plain print, no rich formatting)
         print(json.dumps(payload, indent=2, ensure_ascii=False))

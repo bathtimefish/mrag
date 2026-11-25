@@ -20,6 +20,7 @@ from mrag.core.ingestion.inventory import (
     resolve_profile,
 )
 from mrag.core.retrieval.reference import fetch_references
+from mrag.core.retrieval.structure_fields import decorate, fetch_structure
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
 from mrag.core.stored_path import normalize_stored
 from mrag.db.connection import open_connection
@@ -70,16 +71,22 @@ async def retrieve(req: RetrieveRequest, request: Request) -> RetrieveResponse:
     results = run.results
     filename_map = fetch_filename_map(db_path, results)
     references = fetch_references(db_path, results)
+    structure = fetch_structure(db_path, [r.chunk_id for r in results])
 
     chunk_results = [
         ChunkResult(
-            chunk_id=r.chunk_id,
-            document_id=r.document_id,
-            filename=filename_map.get(r.document_id, r.document_id[:8]),
-            score=r.score,
-            content=r.content,
-            metadata=r.metadata,
-            reference=references[r.chunk_id],
+            **decorate(
+                {
+                    "chunk_id": r.chunk_id,
+                    "document_id": r.document_id,
+                    "filename": filename_map.get(r.document_id, r.document_id[:8]),
+                    "score": r.score,
+                    "content": r.content,
+                    "metadata": dict(r.metadata) if r.metadata else {},
+                    "reference": dict(references[r.chunk_id]),
+                },
+                structure.get(r.chunk_id),
+            )
         )
         for r in results
     ]
