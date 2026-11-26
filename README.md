@@ -2,6 +2,24 @@ English / [日本語](README-ja.md)
 
 # mrag — Micro RAG
 
+> [!WARNING]
+> **Experimental branch — `exp/html-structure`.** Not part of any release, and
+> not planned to be merged into `main` for now. What it adds may change or be
+> removed without notice.
+>
+> **The experiment:** reading HTML with its structure kept. A value in a table
+> row only means something with the headers above and beside it, and a chunk
+> often loses them. The `html-structure` extractor keeps them, so each search
+> result gives its table rows under their headers, the values the document marks
+> as criteria (`data-criterion`, with limit, unit and quantity), and the printed
+> page each result is on. It ports part of MRAG Plus's converter of the same
+> name, held to the same outputs by shared fixtures; Plus-only features such as
+> the criteria vocabulary (`inspect criteria`) are not included.
+>
+> Try it with `pip install 'mrag[html]'` and `conversion.converter.html:
+> html-structure` — see [docs/html-structure.md](docs/html-structure.md).
+> Feedback is welcome in Issues.
+
 **A lightweight, local-first retrieval runtime for building RAG pipelines.**
 
 mrag is a CLI for building and operating small-scale RAG knowledge bases. It provides everything from document indexing to search, with a variety of strategies for building custom RAG pipelines to fit your needs. Skills for AI agents let you expose your knowledge base to any AI agent.
