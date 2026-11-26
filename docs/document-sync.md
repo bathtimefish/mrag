@@ -51,15 +51,17 @@ finds there, becomes one item with an action:
 | `add` | a file with no document and content no document holds | registers it as a new document |
 | `update` | a document's file holds different content | stores the new content as the document's current version; the ID stays |
 | `move` | a document's file is gone and exactly one new file holds its content | points the document at the new path; the ID stays |
-| `exclude` | a document's file is gone and nothing holds its content | excludes the document from every profile (`reason: file_missing`) |
+| `exclude` | a document's file is gone and it was not paired with a new file as a move | excludes the document from every profile (`reason: file_missing`, or `ambiguous_move` when new files hold its content but could not be paired) |
 | `restore` | a file the sync had excluded is back with its content | lifts that exclusion |
 | `noop` | the document's file is where the catalog says, with the same content | nothing |
 | `duplicate` | a new file holds content another document already has, or several files could be the same move | nothing; the report names the document that holds the content |
 | `adopt_candidate` | a new file holds the content of a document migrated from an older catalog that never recorded a path | nothing; `documents rebind` adopts it when you say so |
 
 Moves are decided one to one. Two missing documents with the same content, or
-two new files with the same content, are never paired by guessing: each is
-reported as `duplicate` with `reason: ambiguous_move` and nothing is changed.
+two new files with the same content, are never paired by guessing. Each new
+file is reported as `duplicate` with `reason: ambiguous_move` and is left
+alone. Each missing document becomes an `exclude` with
+`reason: ambiguous_move`, and `--apply` excludes it like any other `exclude`.
 A rename that changes only letter case is a move, even on a case-insensitive
 file system.
 
@@ -75,14 +77,21 @@ at, so it is never excluded by a sync that did not see it.
 
 ### Exclusions the sync writes, and exclusions you write
 
-An `exclude` item writes a document exclusion like `mrag exclusions add` does,
-across every profile, marked `origin: sync` with the reason
-`source file missing at documents sync`. The sync lifts only its own exclusions,
+An `exclude` item writes the same kind of document exclusion rule that
+`mrag exclusions add` writes, across every profile, marked `origin: sync` with
+the reason `source file missing at documents sync`. It writes the rule only: it
+does not run the physical index cleanup that `mrag exclusions add` runs
+(removing the document's FTS rows, chunks and Qdrant points). The rule keeps
+the document out of search. The sync lifts only its own exclusions,
 and only when the file comes back or the document is moved or rebound. An
 exclusion a person wrote (`origin: user`) is never lifted by a sync, and a
-person's document whose file disappears is a `noop` with
-`reason: excluded_by_user` — you already said what you wanted. Moving such a
-document carries the exclusion with it.
+document a person excluded from every profile is a `noop` with
+`reason: excluded_by_user` when its file disappears — you already said what you
+wanted. Moving such a document carries the exclusion with it. An exclusion a
+person wrote for a single profile does not have this effect: when the file
+disappears, the document becomes an `exclude` like any other. A document the
+sync has already excluded, whose file is still gone, is a `noop` with
+`reason: already_excluded_by_sync`.
 
 `mrag exclusions list --json` shows the origin of each rule.
 
@@ -127,15 +136,25 @@ them under the directory it walks, and their ancestors are recorded then.
 }
 ```
 
-Item `status` is `planned` or `reported` in a plan, `applied`, `failed` or
-`cancelled` after `--apply`. The one failure the sync itself defines is
-`ingestion_source_changed`, with `reason: changed_during_sync`: a file's bytes
-changed between the plan and the write, and the next run picks them up. The
+Item `status` in a plan is `planned` for an item `--apply` would carry out and
+`reported` for one it would not (`noop`, `duplicate`, `adopt_candidate`). After
+`--apply` it is `applied`, `failed` or `cancelled`; the items with nothing to
+carry out are still `reported`. A failed item carries an `error` object with one
+of three codes: `ingestion_source_changed`, with `reason: changed_during_sync`
+(a file's bytes changed between the plan and the write, and the next run picks
+them up); `documents_sync_duplicate_appeared` (another document gained the
+content between the plan and the write); or `documents_sync_item_failed` (the
+file could not be read or stored). `scan_issues` lists the paths the scan could
+not read, each with `path`, `code` and `message`: the directory scan's own codes
+(such as `directory_walk_failed` or `directory_symlink_cycle`),
+`source_identity_failed` or `native_source_read_failed`. Each scan issue counts
+in `summary.failed`, in a plan as well. The
 `directory_binding` is `project_relative` or `external_root`. `blocked` is
 always 0: mrag ingests only Markdown and text, so nothing waits on a conversion.
 
 The `index` object appears with `--index`. In a plan it says `planned` with the
-profiles it would rebuild; after `--apply` it is `indexed`, `failed` (with the
+profiles it would rebuild, or `skipped` with `reason` `no_changes` or
+`no_indexed_profile`; after `--apply` it is `indexed`, `failed` (with the
 `mrag index --profile` command to run under `next_action`), or `skipped` with
 `reason` `no_changes`, `no_indexed_profile` (no profile has been indexed yet;
 name one with `--profile`) or `cancelled`. Each rebuild writes its own log under
@@ -146,9 +165,9 @@ the log cannot be written the changes stand and the report says `degraded`.
 
 | Exit code | Meaning |
 |---:|---|
-| `0` | The plan was shown, or applied with no failed item. |
-| `3` | At least one item failed, a scan issue was reported, a rebuild failed, or the audit log could not be written. The other items stand. |
-| `2` | Invalid usage: the directory does not exist or is a file, one of the project's own directories (`data/`, `identities/`, `profiles/`, `qdrant/`, `logs/`, `cache/`), `--profile` without `--index`, an unknown profile, or a catalog whose identities need `mrag catalog migrate-identities` first. |
+| `0` | The plan was shown, or applied, with no failed item and no scan issue. |
+| `3` | At least one item failed, a scan issue was reported (a plan without `--apply` exits 3 for this too), a rebuild failed, or the audit log could not be written. The other items stand. |
+| `2` | Invalid usage: the directory does not exist or is a file, one of the project's own directories (`data/`, `identities/`, `profiles/`, `qdrant/`, `logs/`, `cache/`), `--profile` without `--index`, an unknown profile, a scan that could not start (`sync_scan_failed`: an invalid `--include` or `--exclude` glob, an unusable `.mragignore`, or a symlinked directory without `--follow-symlinks`), or a catalog whose identities need `mrag catalog migrate-identities` first. |
 | `1` | Not inside an initialised project. |
 | `130` | Interrupted; see below. |
 
@@ -180,19 +199,28 @@ the document at the file you name and keeps the ID. A file holding different
 content becomes the document's new content — no `--force`, since you named both
 ends. The sync's own exclusions on the document are lifted; a person's stay.
 
-It refuses, with exit 1, when another document already lives at that path
-(`rebind_target_taken`) or already holds that content
-(`rebind_content_held_by_other_document`); the report names the document
-(`held_by`). Binding the document to its own file is a `noop`. Usage errors —
+It refuses, with exit 1, when no document has that ID (`document_not_found`),
+or when another document already lives at that path (`rebind_target_taken`) or
+already holds that content (`rebind_content_held_by_other_document`); for these
+two the report names the document (`held_by`). The report's `action` is `rebind`
+when the document's path changes, `update` when its own file holds different
+content, `restore` when its own file holds the same content and only the sync's
+exclusions are lifted, and `noop` when its own file holds the same content and
+there is no sync exclusion to lift. Usage errors —
 a missing file, a directory, a format mrag does not ingest, a file under `data/`
 or `identities/` — exit 2.
 
 An applied rebind writes `logs/<timestamp>-documents-rebind.json`. If the path
 was updated but the new content could not be read afterwards, the document is
 left at its new path with its previous content and the command exits 3 with
-`status: "partial"`; running it again finishes the job.
+`status: "partial"`; running it again finishes the job. A run that changed
+nothing — an update whose new content could not be read, with no path to move
+and no exclusion to lift — exits 1 with `status: "failed"` and
+`applied: false`, and writes no log. The report's `new_revision` is whether the
+content was taken, not whether the plan meant to take it.
 
 Neither command rebuilds the index on its own; `--index` on the sync, or
 `mrag index`, does. A moved or rebound document counts as changed: the document
-list reports it `stale` until then, and the next index rebuilds it under its new
+list (`GET /api/v1/documents` and the MCP `list_documents` tool) reports it
+`stale` until then, and the next index rebuilds it under its new
 name.

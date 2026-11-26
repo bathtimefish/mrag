@@ -7,6 +7,108 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.6 — 2026-11-26
+
+### Fixed
+
+- **`mrag kb-info show` prints the file as it is.** It printed through the
+  console's markup, so a flow list such as `tags: [iot, mqtt]` or
+  `preferred_profiles: [default]` came out empty and long lines were wrapped;
+  the output was no longer the YAML, and piping it to `yq` read the wrong
+  values. It now writes the file's text unchanged.
+- **`mrag exclusions list` says who wrote each rule.** A rule that
+  `mrag documents sync` wrote was listed with `origin: user`, in `--json` and
+  in the table: the listing did not read the column. The sync itself read it
+  through another query, so what it lifted and what it left alone were right.
+  Every read of a rule now carries its origin.
+- **A misspelt retrieval strategy is an error.** `--strategy keywrod`, a
+  request's `strategy` field or a profile's `retrieval.strategy` that names
+  none of `hybrid`, `vector`, `keyword`, `parent_child` ran as a hybrid search
+  and was reported under the misspelt name. `mrag search` and `mrag eval` now
+  exit 1 with `unknown retrieval strategy`, and `POST /api/v1/retrieve`
+  answers 400.
+- **`GET /api/v1/profiles` lists the project's profiles.** It listed only the
+  profiles the catalog had recorded, so a profile never indexed was missing
+  there while the MCP `list_profiles` tool showed it. Both now list every
+  `profiles/*.yaml` that loads.
+- **A browser can call the API when `MRAG_API_KEY` is set.** The auth check
+  answered the CORS preflight `401`, since a preflight carries no
+  `Authorization` header, so no cross-origin request could be sent. The
+  preflight is now answered without a key; the request it clears still needs
+  one.
+- `/` is no longer exempt from auth. It has no route, so the exemption only
+  produced an unauthenticated `404`; with a key set it now answers `401`. The
+  OpenAPI pages (`/docs`, `/openapi.json`, `/redoc`) stay exempt.
+- `packaging\build.bat` reads every option. It read only the first, so
+  `--with-reranker --onedir` built a lean onefile without a word, and an
+  unknown option after the first was never refused.
+- `mrag extract` would have raised `TypeError` on an extractor's warning
+  instead of printing it. No extractor in a release returns one; warnings now
+  go to stderr, and stdout stays the extracted text.
+- The `--strategy` help of `mrag search` and `mrag eval` names `parent_child`.
+
+### Documentation
+
+- The README, SETUP, AGENTS and the pages under `docs/` were checked against
+  the code and corrected where they had fallen behind: what `mrag init`
+  writes, how tables and code blocks larger than `chunk_size` are split, the
+  Native API's error shapes and its profile list, the Windows build script,
+  what `mrag documents sync` and `rebind` report, and the tutorial's example
+  output, among others. Both languages say the same.
+
+## 1.7.5 — 2026-11-12
+
+### Fixed
+
+- **`mrag documents rebind --apply` says what it did, not what it planned.**
+  When the new content was the only step — an `update`, which moves no path and
+  lifts no exclusion — and that content could not be ingested, the command
+  printed "Updated <id> → <file>", reported `status: "partial"`,
+  `applied: true` and `new_revision: true`, exited 3 and wrote an audit log,
+  although the catalog and the stored original were unchanged. It now reports
+  `status: "failed"`, `applied: false` and `new_revision: false`, exits 1 and
+  writes no audit log. A run whose first transaction fails does the same, with
+  `revoke_exclusions: 0`.
+- When the path moved, or the sync's exclusion was lifted, before the content
+  failed, the run is still `partial` with exit 3 and an audit log, and
+  `new_revision` is now `false`.
+- The human output of a failed or partial run is its error alone: no
+  "Updated"/"Rebound" headline, and no "Run again with --apply". A partial run
+  adds that the steps before the failure were kept. MRAG Plus made the same
+  change first.
+
+### Upgrade notes
+
+- A script that read exit 3 after a failed content-only rebind sees exit 1, and
+  `new_revision` in an applied report is the step that happened.
+
+## 1.7.4 — 2026-11-11
+
+### Fixed
+
+- **A profile the project does not store gets one answer from every command
+  that reads or builds an index.** `--profile` with a name that has no file
+  under `profiles/` was answered four ways: `mrag inspect document` printed
+  "No profiles have indexed this document." and exited 0, `mrag inspect chunks`
+  listed 0 chunks and exited 0, `mrag inspect sections` said the profile had no
+  section structure because `preserve_heading_path` was disabled and exited 1,
+  and `mrag search`, `mrag index` and `mrag reindex` exited 1 naming the file
+  that was not there (`index` after printing "Indexing profile …"). All six now
+  refuse it before reading or building anything, with exit 2 and
+  `profile_not_found: no profile named '<name>' is stored in the project
+  (available: <the stored profiles>)` — the code `mrag documents sync --profile`
+  already used.
+- `mrag inspect` asks the catalog first: a profile that indexed the document is
+  still read after its file is removed, and a stored profile that has indexed
+  nothing is answered as before.
+
+### Upgrade notes
+
+- A script that checked for exit 1 after `mrag search`, `mrag index` or
+  `mrag reindex` with an unknown `--profile` sees exit 2. The same holds when
+  `default_profile` in `mrag.yaml` names a profile with no file.
+- `mrag eval`, `mrag serve` and `mrag exclusions` are unchanged.
+
 ## 1.7.3 — 2026-11-11
 
 ### Fixed

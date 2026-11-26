@@ -6,7 +6,7 @@ mrag は `mrag serve` を起動するとデータ連携用 API サーバが起�
 
 Native API は mrag を直接プログラムから呼び出す用途を想定しており、検索だけでなく **ドキュメント / プロファイル一覧の参照**もカバーします。レスポンスは Dify API よりも詳細で、`chunk_id` / `document_id` / `reranked` フラグなどの内部情報がそのまま返ります。
 
-> 補足：Native API は mrag 固有の仕様です。FastAPI が自動生成する OpenAPI 仕様（`/openapi.json`）から型付きクライアントを生成する用途を想定しています。
+> 補足：Native API は mrag 固有の仕様で、OpenAI や Pinecone などのベンダー API には準拠していません。FastAPI が自動生成する OpenAPI 仕様（`/openapi.json`）から型付きクライアントを生成する用途を想定しています。
 
 > 前提：プロジェクトディレクトリの中（`mrag.yaml` がある場所）で `mrag serve` を起動します。ドキュメントを `mrag add` → `mrag index` 済みであることが前提です。
 
@@ -16,7 +16,7 @@ Native API は mrag を直接プログラムから呼び出す用途を想定し
 | Method | Path | 役割 |
 |---|---|---|
 | `POST` | `/api/v1/retrieve` | クエリを投げて関連チャンクを取得（`/api/v1/search` エイリアスあり） |
-| `GET` | `/api/v1/documents` | 登録済みドキュメントの一覧 |
+| `GET` | `/api/v1/documents` | 登録済みドキュメントの一覧と、その source / index / retrieval の状態 |
 | `GET` | `/api/v1/documents/{document_id}` | ドキュメント単体の詳細（チャンク数を含む） |
 | `GET` | `/api/v1/profiles` | プロファイル一覧 |
 | `GET` | `/api/v1/profiles/{profile_name}` | プロファイル単体の詳細 |
@@ -36,6 +36,8 @@ mrag serve --host 0.0.0.0 --port 8000
 ```
 
 `mrag serve` のオプション（`--profile` / `--no-rerank` など）と認証の挙動は Dify API と共通です。詳しい説明は [dify-api-ja.md](./dify-api-ja.md) の「mrag 側のセットアップ」節を参照してください。
+
+> 補足：`--profile` は `POST /api/v1/retrieve` が検索するプロファイルを決めません。リクエストで `profile` を省略すると、このエンドポイントは `--profile` の指定にかかわらず `mrag.yaml` の `default_profile` を使います。Native API で `--profile` が効くのは、`GET /api/v1/documents` の既定プロファイルだけです。
 
 
 ## `POST /api/v1/retrieve` — 検索
@@ -232,9 +234,9 @@ GET /api/v1/documents/{document_id} HTTP/1.1
   "id": "abcdef0123456789",
   "filename": "manual.md",
   "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "status": "indexed",
+  "status": "extracted",
   "created_at": "2026-05-22T10:00:00",
-  "extracted_text_path": "data/extracted/abcdef0123456789.md",
+  "extracted_text_path": "data/documents/abcdef0123456789/extracted.txt",
   "chunk_count": 42
 }
 ```
@@ -259,13 +261,13 @@ GET /api/v1/profiles HTTP/1.1
   {
     "name": "default",
     "strategy": "hybrid",
-    "embedding_model": "nomic-embed-text",
+    "embedding_model": "embeddinggemma-2:740m-q8_0",
     "chunking_strategy": "recursive"
   }
 ]
 ```
 
-`profiles/*.yaml` を読み込んだ結果が返ります。`mrag.yaml` 側に登録済みでも YAML ファイルが見つからないプロファイルは除外されます。
+一覧に載るのは project が定義するプロファイル、つまり読み込める `profiles/*.yaml` のすべてです（インデックス済みかどうかは問いません。MCP の `list_profiles` tool と同じ一覧です）。プロファイルとして読み込めないファイルは除外されます。1.7.6 より前は、インデックス済みのプロファイルだけが載っていました。各エントリの値はプロファイルの YAML ファイルから読み込みます。
 
 ### 詳細
 
@@ -279,12 +281,12 @@ GET /api/v1/profiles/{profile_name} HTTP/1.1
 {
   "name": "default",
   "strategy": "hybrid",
-  "embedding_model": "nomic-embed-text",
+  "embedding_model": "embeddinggemma-2:740m-q8_0",
   "chunking_strategy": "recursive",
   "chunk_size": 800,
   "overlap": 120,
-  "dense_top_k": 30,
-  "keyword_top_k": 30,
+  "dense_top_k": 20,
+  "keyword_top_k": 20,
   "fusion": "rrf"
 }
 ```
@@ -296,7 +298,7 @@ GET /api/v1/profiles/{profile_name} HTTP/1.1
 
 ## 認証
 
-`MRAG_API_KEY` 環境変数の設定は [Dify API](./dify-api-ja.md) と同じで現時点で簡易な仕様です。Native API の各エンドポイントでも `Authorization: Bearer <MRAG_API_KEY>` ヘッダが必須となります。
+`MRAG_API_KEY` 環境変数の設定は [Dify API](./dify-api-ja.md) と同じで現時点で簡易な仕様です。キーを設定している場合は、Native API の各エンドポイントでも `Authorization: Bearer <MRAG_API_KEY>` ヘッダが必須となります。
 
 > 重要：認証失敗時のエラー形式は **Dify API とは異なります**。
 > - Dify API（`/retrieval`）: `{"error_code": 1001, "error_msg": "..."}`
@@ -304,17 +306,36 @@ GET /api/v1/profiles/{profile_name} HTTP/1.1
 >
 > どちらも HTTP ステータスは `401` ですが、レスポンスボディの構造が違うのでクライアント側で分岐してください。
 
+CORS は全開放で、設定項目はありません。サーバーはすべての origin・メソッド・ヘッダを許可します（`Access-Control-Allow-Origin: *`）。`MRAG_API_KEY` を設定している場合も、ブラウザの preflight（`Access-Control-Request-Method` を持つ `OPTIONS` リクエスト。`Authorization` ヘッダを持ちません）にはキーなしで応答し、その後の本来のリクエストにはこれまでどおりキーが要ります。1.7.6 より前は preflight が `401` になっていました。
+
 
 ## エラーコード一覧
 
 | HTTP | 発生条件 |
 |---|---|
+| 400 | `GET /api/v1/documents`：未知のクエリパラメータ / パラメータ値の不正（後述のエラー envelope 形式）。`POST /api/v1/retrieve`：検索が拒否された場合。例：`strategy` が `hybrid` / `vector` / `keyword` / `parent_child` のどれでもない、プロファイルの `keyword.tokenizer` がプロジェクトのトークナイザと一致しない（`{"detail": "<原因>"}` 形式） |
 | 401 | 認証必須時の `Authorization` ヘッダ欠落 / 不一致（`{"detail": "Unauthorized"}` 形式） |
-| 404 | プロファイル名 / ドキュメント ID が存在しない |
+| 404 | プロファイル名 / ドキュメント ID が存在しない。`{"detail": "Not found"}` を返します。`GET /api/v1/documents` に存在しない `profile` を指定した場合は後述のエラー envelope を返します |
 | 422 | `query` フィールド欠落、`top_k` 範囲外、JSON 構造不正 |
+| 500 | 処理されなかった内部エラー。`{"detail": "Internal server error"}` を返します |
 | 503 | Qdrant / 内部リソース不到達。`{"detail": "<原因>"}` を返します（リトライ可能） |
 
-Native API のエラーレスポンスはすべて FastAPI のデフォルト形式（`{"detail": ...}`）に従います。
+Native API のエラーレスポンスは FastAPI のデフォルト形式（`{"detail": ...}`）に従いますが、一覧エンドポイント `GET /api/v1/documents` だけは例外で、エラー（400 と 404）を独自の envelope で返します：
+
+```json
+{
+  "schema_version": 1,
+  "status": "error",
+  "error": {
+    "code": "documents_query_unknown_parameter",
+    "kind": "validation",
+    "message": "this endpoint does not accept that query parameter",
+    "retryable": false
+  }
+}
+```
+
+`error.code` は `documents_query_unknown_parameter`、`documents_query_invalid`、`document_status_unknown`、`documents_page_invalid`（いずれも 400、`kind: "validation"`）、`profile_not_found`（404、`kind: "config"`）のいずれかです。`retryable` は常に `false` です。
 
 
 ## OpenAPI ドキュメント
@@ -327,7 +348,7 @@ Native API のエラーレスポンスはすべて FastAPI のデフォルト形
 | `http://<host>:<port>/redoc` | Redoc |
 | `http://<host>:<port>/openapi.json` | 生の OpenAPI 仕様 JSON |
 
-これらは `MRAG_API_KEY` を設定していても**認証の対象外**です（ローカルでの API 確認・ヘルスチェック用途を想定）。本番運用ではリバースプロキシ側でアクセス制限を掛けることを検討してください。
+これらは `MRAG_API_KEY` を設定していても**認証の対象外**です（ローカルでの API 確認用途を想定）。対象外はこの 3 つだけで、`/` にはルートが無く、キーを設定していると `GET /` は `401` になります（1.7.6 より前は対象外で `404` を返していました）。キーなしでサーバーの起動を確認するには、上の 3 つの URL のいずれかにリクエストしてください。本番運用ではリバースプロキシ側でアクセス制限を掛けることを検討してください。
 
 
 ## Tips
@@ -335,4 +356,5 @@ Native API のエラーレスポンスはすべて FastAPI のデフォルト形
 - **`reranked` フラグで挙動を切り分け**：CI で「リランキング有効プロファイルが期待通りに動いているか」を確認するなら、検索レスポンスの `reranked: true` を assert すると単純に検出できます
 - **`score` の絶対値は比較対象にしない**：戦略間で目盛が違うので、`hybrid` の `0.8` と `keyword` の `0.8` は意味が違います。クエリ間で順位を比較するならランクを使い、絶対値を使うならクライアント側で正規化してください
 - **検索戦略のリクエスト時上書き**：プロファイルを差し替えずに `strategy` だけ切り替えたい場合（同じインデックスで `hybrid` と `vector` を比較したい等）、リクエストの `strategy` フィールドが便利です
+- **エージェント向けの JSON が欲しいだけなら CLI でも足ります**：`mrag search "クエリ" --json` は、サーバーを起動しなくても同等の出力（`retrieval_score` を含む）を返します。サーバーを常駐させるほどではない場合に検討してください
 - **Dify ライクな `[0, 1]` 正規化が必要な場合**は Dify エンドポイントを使うか、クライアント側で実装してください（→ [dify-api-ja.md](./dify-api-ja.md) の「スコアの正規化」節）

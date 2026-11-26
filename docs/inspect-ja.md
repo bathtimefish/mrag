@@ -43,6 +43,8 @@ mrag inspect document <doc-id> --profile default
 
 `--profile` を省略すると、そのドキュメントをインデックスしている**すべてのプロファイル**が表示されます。
 
+> 存在しないプロファイル：projectが保持していない（`profiles/` にfileの無い）`--profile` は、`inspect document`・`inspect chunks`・`inspect sections` のいずれでも exit 2 と、保持しているプロファイルを挙げた `profile_not_found` で拒否されます。`mrag search`・`mrag index`・`mrag reindex` と同じ答えです。catalogを先に見るので、ドキュメントをインデックスしたプロファイルは、そのfileを消した後も表示されます。保持していて何もインデックスしていないプロファイルはエラーではなく、`inspect document` はどのプロファイルもインデックスしていないと表示します。
+
 
 ## `mrag inspect chunks` — チャンク一覧
 
@@ -69,6 +71,7 @@ mrag inspect chunks <doc-id> --profile default --show-context --json
 - `qdrant_collection` — このチャンクが属する Qdrant コレクション名
 - `augmentation_status` — `fallback_raw` / `null`
 - **`embedding_status`** — `fallback_no_vector` / `null`（v0.21.0+。`fallback_no_vector` のチャンクは vector 検索でヒットしない）
+- `embedding_error` — `embedding_status` が `fallback_no_vector` のときの、embedding が失敗した理由。それ以外は `null`
 - **`has_qdrant_point`** — `true` / `false`（v0.21.0+。fallback チャンクは `false`）
 
 > ページングの目安：数百チャンクを超える大型ドキュメントなどでは `--limit 50` でターミナルを溢れさせない運用がおすすめです。小〜中規模のドキュメントなら省略（全件出力）で問題ありません。

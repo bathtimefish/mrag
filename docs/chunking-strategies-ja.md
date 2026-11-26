@@ -11,9 +11,9 @@ mrag では `profiles/<profile-name>.yaml` の `chunking.strategy` フィール�
 
 | 戦略 | 想定するフォーマット | 説明 |
 |------|--------------|------------------|
-| `recursive` | プレーンテキスト | デフォルト。段落 → 行 → 文字の順に再帰的に分割 |
+| `recursive` | プレーンテキスト | デフォルト。段落 → 行 → 空白 → 文字の順に再帰的に分割 |
 | `markdown_recursive` | 見出しのある Markdown | 見出し境界を優先して分割 |
-| `block_aware` | 表やコードブロックを含む Markdown | 表・コード・段落を「ブロック」として認識し、表とコードは途中で分割しない |
+| `block_aware` | 表やコードブロックを含む Markdown | 表・コード・段落を「ブロック」として認識し、`chunk_size` に収まる表とコードは途中で分割しない |
 | `parent_child` | 検索精度と文脈量の両立が必要なケース | 小さな子チャンクでヒットさせ、表示は大きな親チャンクで返す |
 
 ざっくりとした選び方：
@@ -29,7 +29,7 @@ mrag では `profiles/<profile-name>.yaml` の `chunking.strategy` フィール�
 
 プレーンテキストや構造を持たないテキストに対する最も汎用的な戦略です。
 
-`mrag init --non-interactive` で作成したデフォルトプロファイルはこの設定です。
+`mrag init` で作成したデフォルトプロファイルは、この戦略と下記のサイズを使います。あわせて `source_format: markdown` と 3 つの `preserve_*` オプション（いずれも `true`）も書き出されるため、このページの後半で説明するブロック対応前処理が上乗せされます。
 
 ```yaml
 chunking:
@@ -42,7 +42,7 @@ chunking:
 
 1. まず段落（空行区切り）でテキストを分割しようとする
 2. `chunk_size` に収まらない段落はさらに行単位で分割
-3. 行でも収まらない場合は文字単位で分割
+3. 行でも収まらない場合は空白で分割し、空白のない並びがなお収まらない場合は文字単位で分割
 4. 隣り合うチャンクは `overlap` 文字分だけ重複させる
 
 「自然な区切り（段落 → 行）を優先しつつ、長文にも対応する」ため、汎用性が高いです。
@@ -70,7 +70,7 @@ chunking:
 
 ## `block_aware` — テーブル・コードブロックを保護
 
-Markdown 内の **表とコードブロックを途中で分割しない**戦略です。マニュアル・API リファレンス・データシートのように、表とコードが意味の中核を担うドキュメントに向きます。
+Markdown 内の **表とコードブロックを途中で分割しない**戦略です（`chunk_size` に収まる場合）。マニュアル・API リファレンス・データシートのように、表とコードが意味の中核を担うドキュメントに向きます。
 
 ```yaml
 chunking:
@@ -82,12 +82,12 @@ chunking:
 挙動：
 
 1. Markdown を「段落」「見出し」「テーブル」「コードブロック」など型付きブロックにパース
-2. テーブルとコードブロックは**それ単体で 1 チャンク**として扱う（`chunk_size` を超えていても分割しない）
+2. `chunk_size` に収まるテーブルとコードブロックは**分割しない**（前後のブロックと同じチャンクに入ることはある）。`chunk_size` を超えるものは分割する。テーブルは行単位で分割し、各分割に `[Table: H1 > H2 (n/N)]` のラベルを付けてヘッダー行を再掲する。コードブロックは複数の断片に分け、それぞれをコードフェンスで囲み直す
 3. それ以外のブロックは `recursive` と同じロジックで分割
 4. 各チャンクに見出しパス（`H1 > H2 > H3`）をメタデータとして付与
 
 
-> `block_aware`の機能は他のchunkingストラテジーのオプションとして`chunking.preserve_heading_path: true`, `chunking.preserve_tables: true`, `chunking.preserve_code_blocks: true`を設定することで他のストラテジーの前処理として実行することも可能です。
+> `block_aware`の機能は`chunking.source_format: markdown`（デフォルトは`text`）を設定することで他のストラテジーの前処理として実行することも可能です。どの機能を適用するかは`chunking.preserve_heading_path`, `chunking.preserve_tables`, `chunking.preserve_code_blocks`で選びます（デフォルトは3つとも`true`）。
 
 
 ## `parent_child` — 検索精度と文脈量の両立
@@ -128,14 +128,14 @@ retrieval:
 
 > 重要：`chunking.strategy: parent_child` と `retrieval.strategy: parent_child` は**必ずセットで指定**します。片方だけ設定するとプロファイル検証エラーになります。
 
-> 注意：`dense_top_k` / `keyword_top_k` は最終的に `top_k` まで絞り込まれるので、子チャンクで広めに拾うために `top_k × 3` 程度を確保することをおすすめします（複数の子が同じ親に集約される分、検索段階では多めにとる必要があるため）。
+> 注意：`dense_top_k` / `keyword_top_k` は最終的に `top_k` まで絞り込まれるので、子チャンクで広めに拾うために `top_k × 3` 程度を確保することをおすすめします（複数の子が同じ親に集約される分、検索段階では多めにとる必要があるため）。融合後の子チャンクは、親に置き換える前に上位 `top_k × 3` 件で打ち切られます。また、`dense_top_k`・`keyword_top_k` が `top_k` より小さいとプロファイル検証エラーになります。
 
 > 注意：`parent_child` プロファイルで `rerank.enabled: true` を併用すると、リランカーが約 3000 文字の親チャンクを 512 トークンに切り詰めるため、スコアの信頼性が低下します。`parent_child` を使う場合はこの点に留意してください。
 
 
 ## ブロック対応前処理（全戦略共通）
 
-`block_aware` で説明した「表とコードブロックを途中で割らない」挙動は、**任意の戦略**に追加できます。`source_format: markdown` と `preserve_*` オプションを有効にするだけです：
+`block_aware` で説明した表とコードブロックの扱い（`chunk_size` に収まれば分割せず、超えれば行単位またはフェンス付きの断片に分割）は、**任意の戦略**に追加できます。スイッチは `source_format` です。デフォルトは `text` で、`markdown` にすると前処理が有効になります。`preserve_*` オプションのデフォルトは `true` で、`false` にした項目だけが無効になります：
 
 ```yaml
 chunking:
@@ -144,9 +144,11 @@ chunking:
   chunk_size: 800
   overlap: 120
   preserve_heading_path: true     # チャンクに H1 > H2 > H3 のパンくずを付与
-  preserve_tables: true           # 表を絶対に途中で割らない
-  preserve_code_blocks: true      # フェンス付きコードブロックを絶対に途中で割らない
+  preserve_tables: true           # chunk_size に収まる表を途中で割らない
+  preserve_code_blocks: true      # chunk_size に収まるフェンス付きコードブロックを途中で割らない
 ```
+
+`parent_child` の場合、ここで適用される上限は `parent.max_chars` で、対象は親チャンクです。子チャンクは `child.chunk_size` で切られるため、表やコードブロックの途中で終わることがあります。
 
 これにより、`recursive` を使いつつ「表だけは保護したい」「見出しパスだけ欲しい」といった部分的な制御ができます。
 

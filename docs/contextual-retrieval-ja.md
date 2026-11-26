@@ -58,6 +58,8 @@ augmentation:
   model: gemma4:e2b              # 生成用 LLM。Embedding Model とは別に指定
   endpoint: http://localhost:11434
   think: false                   # 推論モデル向け。false（デフォルト） | true
+  max_context_tokens: 512        # 任意。mrag init が書き込む値
+  context_window_tokens: 16384   # 任意。mrag init が書き込む値
   retry:                         # 任意。以下は既定値
     max_attempts: 3
     initial_delay_seconds: 2.0
@@ -73,10 +75,11 @@ augmentation:
 - **`model`** — コンテキスト生成用の LLM。検索用の `embedding.model` とは別物
 - **`endpoint`** — コンテキスト生成用LLM APIエンドポイントの URL（デフォルト：`http://localhost:11434`）
 - **`think`** — 推論モデルに思考を許すかどうか。既定は無効です。思考トークンは応答から除去されるため、生成を遅くするだけだからです。`gemma4:e2b` の実測では、54文字の注記を返すのに390トークンを生成しており、`think: false` にすると1回の呼び出しが 6.5秒 → 3.4秒 になり、しかも注記は**より長く具体的**になりました。`thinking` capability を持たないモデルには影響しません（Ollama は非対応モデルへこのパラメータを送るとエラーを返すため、mrag はモデルごとに1回 `/api/show` を確認し、非対応なら送りません）
+- **`max_context_tokens`** / **`context_window_tokens`** — 生成するコンテキストの長さの上限と、モデルの context window。Ollama に `options.num_predict` と `options.num_ctx` として送られます（このページの冒頭を参照）。既定は未設定で、その場合はどちらも送りません
 - **`retry`** — コンテキスト生成失敗時（タイムアウトなど）に対するリトライ設定
 - **`failure_policy.mode`** — リトライしきっても失敗したチャンクの扱い（後述）
 
-> `augmentation.strategy` / `model` / `endpoint` / `think` およびコンテキストプロンプトを変更するとプロファイルハッシュが変わり、次回 `mrag index` 実行時に**そのプロファイルのインデックスが全件再構築**されます。いずれも生成されるコンテキストを変えるため、既存インデックスが設定と一致しなくなるからです。`retry` と `failure_policy` の変更はハッシュ対象外で、再インデックスは不要です。
+> `augmentation.strategy` / `model` / `endpoint` / `think` / `max_context_tokens` / `context_window_tokens` およびコンテキストプロンプトを変更するとプロファイルハッシュが変わり、次回 `mrag index` 実行時に**そのプロファイルのインデックスが全件再構築**されます。いずれも生成されるコンテキストを変えるため、既存インデックスが設定と一致しなくなるからです。`retry` と `failure_policy` の変更はハッシュ対象外で、再インデックスは不要です。
 
 
 ## コンテキストプロンプト（`context_prompt.txt`）

@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from mrag.config.profile import load_profile
+from mrag.config.profile import ProfileNotFoundError, load_profile, require_stored_profile
 from mrag.config.project import load_project_config
 from mrag.core.retrieval.reference import fetch_references
 from mrag.core.retrieval.runner import fetch_filename_map, run_retrieval
@@ -80,7 +80,7 @@ def search(
         None, "--top-k", "-k", help="Number of results (default: profile retrieval.top_k)"
     ),
     strategy: Optional[str] = typer.Option(
-        None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
+        None, "--strategy", "-s", help="hybrid | vector | keyword | parent_child (default: profile setting)"
     ),
     no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
     json_output: bool = typer.Option(
@@ -103,6 +103,12 @@ def search(
         raise typer.Exit(1)
 
     profile_name = profile or config.default_profile
+
+    try:
+        require_stored_profile(profile_name, project_dir)
+    except ProfileNotFoundError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(2)
 
     try:
         load_profile(profile_name, project_dir)

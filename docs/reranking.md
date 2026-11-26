@@ -94,7 +94,7 @@ Where it lives depends on the interface:
 
 - **`mrag search --json`** — emitted as a **top-level field** alongside `score` (the same value is also kept inside `metadata`)
 - **`mrag serve` API responses** — present under each result's **`metadata.retrieval_score`** (not lifted to the top level)
-- **`mrag eval`** and other human-readable output — shown in parentheses next to `score`, e.g. `score=0.81  (retrieval=0.42)`
+- **`mrag eval`** — shown in parentheses next to `score`, e.g. `score=0.81  (retrieval=0.42)`. The human-readable output of `mrag search` shows `score` only; use `--json` there
 
 Example of inspecting it from CLI `--json` output:
 
@@ -110,7 +110,7 @@ This lets you observe how a candidate that ranked 1st at retrieval time moved af
 
 ## Choosing `top_n`
 
-`rerank.top_n` is the number of candidates fetched for reranking. Default: **30**. It must be larger than the final result count (`retrieval.top_k`, default 8).
+`rerank.top_n` is the number of candidates fetched for reranking. Default: **30**. A search returns at most `top_n` results, so a `top_n` smaller than the final result count (`retrieval.top_k`, default 8) silently caps it; the profile is not rejected.
 
 Rules of thumb:
 

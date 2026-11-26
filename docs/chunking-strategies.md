@@ -11,9 +11,9 @@ In mrag, the strategy is selected via the `chunking.strategy` field in `profiles
 
 | Strategy | Intended format | Description |
 |----------|-----------------|-------------|
-| `recursive` | Plain text | Default. Splits recursively in the order paragraph → line → character |
+| `recursive` | Plain text | Default. Splits recursively in the order paragraph → line → space → character |
 | `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
-| `block_aware` | Markdown containing tables and code blocks | Recognizes paragraphs, tables, and code as typed "blocks"; tables and code are never split mid-block |
+| `block_aware` | Markdown containing tables and code blocks | Recognizes paragraphs, tables, and code as typed "blocks"; tables and code that fit within `chunk_size` are never split mid-block |
 | `parent_child` | Cases that need both precise retrieval and rich context | Small child chunks score the hit; the larger parent chunk is what gets returned |
 
 Quick selection guide:
@@ -29,7 +29,7 @@ Quick selection guide:
 
 The most general-purpose strategy for plain and unstructured text.
 
-The default profile created by `mrag init --non-interactive` uses this configuration.
+The default profile created by `mrag init` uses this strategy with the sizes below. It also writes `source_format: markdown` and sets the three `preserve_*` options to `true`, so the block-aware preprocessing described later on this page is applied on top of it.
 
 ```yaml
 chunking:
@@ -42,7 +42,7 @@ How it works:
 
 1. First tries to split on paragraphs (blank-line boundaries)
 2. Paragraphs that don't fit in `chunk_size` are split further by line
-3. Lines that still don't fit are split by character
+3. Lines that still don't fit are split at spaces, and a run without spaces that still doesn't fit is split by character
 4. Adjacent chunks overlap by `overlap` characters
 
 Because it prefers natural boundaries (paragraph → line) while still accommodating long text, this strategy is highly general-purpose.
@@ -70,7 +70,7 @@ How it works:
 
 ## `block_aware` — protect tables and code blocks
 
-A strategy that **does not split tables and code blocks mid-way** in Markdown. It suits documents like manuals, API references, and datasheets where tables and code carry the core meaning.
+A strategy that **does not split tables and code blocks mid-way** in Markdown, as long as they fit within `chunk_size`. It suits documents like manuals, API references, and datasheets where tables and code carry the core meaning.
 
 ```yaml
 chunking:
@@ -82,12 +82,12 @@ chunking:
 How it works:
 
 1. Parse the Markdown into typed blocks — paragraphs, headings, tables, code blocks, etc.
-2. Tables and code blocks are treated as **a single chunk each** (not split, even when they exceed `chunk_size`)
+2. A table or code block that fits within `chunk_size` is **never split** (it may share a chunk with neighbouring blocks). One that exceeds `chunk_size` is split: a table row by row, with the header rows repeated in every part under a `[Table: H1 > H2 (n/N)]` label, and a code block into pieces that are each wrapped in their own code fence
 3. Other blocks are split using the same logic as `recursive`
 4. Each chunk is annotated with its heading path (`H1 > H2 > H3`) as metadata
 
 
-> The features of `block_aware` can also be applied as preprocessing on top of other chunking strategies by setting `chunking.preserve_heading_path: true`, `chunking.preserve_tables: true`, and `chunking.preserve_code_blocks: true`.
+> The features of `block_aware` can also be applied as preprocessing on top of other chunking strategies by setting `chunking.source_format: markdown` (the default is `text`). `chunking.preserve_heading_path`, `chunking.preserve_tables`, and `chunking.preserve_code_blocks` select which parts apply; all three default to `true`.
 
 
 ## `parent_child` — precise retrieval with rich context
@@ -128,14 +128,14 @@ How it works:
 
 > Important: `chunking.strategy: parent_child` and `retrieval.strategy: parent_child` must be **set together**. Setting only one triggers a profile validation error.
 
-> Note: `dense_top_k` / `keyword_top_k` are eventually narrowed down to `top_k`, so set them to roughly `top_k × 3` to keep the candidate net wide at the child level (you need extra candidates at the retrieval stage because multiple children can collapse into the same parent).
+> Note: `dense_top_k` / `keyword_top_k` are eventually narrowed down to `top_k`, so set them to roughly `top_k × 3` to keep the candidate net wide at the child level (you need extra candidates at the retrieval stage because multiple children can collapse into the same parent). The fused child list is cut to its top `top_k × 3` before parents are resolved, and a `dense_top_k` or `keyword_top_k` below `top_k` is a profile validation error.
 
 > Note: combining a `parent_child` profile with `rerank.enabled: true` truncates the ~3000-character parent chunk down to 512 tokens at the reranker, which degrades the reliability of rerank scores. Keep this in mind when using `parent_child`.
 
 
 ## Block-aware preprocessing (cross-strategy)
 
-The "do not split tables and code blocks mid-way" behavior described under `block_aware` can be added to **any strategy**. Just enable `source_format: markdown` and the `preserve_*` options:
+The table and code block handling described under `block_aware` (kept whole up to `chunk_size`, split by row or into fenced pieces above it) can be added to **any strategy**. The switch is `source_format`: it defaults to `text`, and setting it to `markdown` turns the preprocessing on. The `preserve_*` options default to `true`; set one to `false` to turn that part off:
 
 ```yaml
 chunking:
@@ -144,9 +144,11 @@ chunking:
   chunk_size: 800
   overlap: 120
   preserve_heading_path: true     # attach the H1 > H2 > H3 breadcrumb to each chunk
-  preserve_tables: true           # never split tables mid-way
-  preserve_code_blocks: true      # never split fenced code blocks mid-way
+  preserve_tables: true           # keep tables whole while they fit within chunk_size
+  preserve_code_blocks: true      # keep fenced code blocks whole while they fit within chunk_size
 ```
+
+With `parent_child`, the limit that applies here is `parent.max_chars` and it governs the parent chunks; child chunks are still cut at `child.chunk_size`, so a child can end inside a table or code block.
 
 This lets you use `recursive` while still selectively asking "I just want tables protected" or "I just want the heading path".
 

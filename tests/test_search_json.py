@@ -162,13 +162,42 @@ class TestStdoutCleanlinessForPiping:
 
 
 class TestErrorHandling:
-    def test_missing_profile_exits_nonzero(self, searchable_project):
+    def test_missing_profile_is_refused_with_the_stored_profiles(self, searchable_project):
         result = runner.invoke(
             app, ["search", "Hello", "--profile", "nonexistent", "--json"],
         )
-        assert result.exit_code != 0
+        # A usage error since 1.7.4, as in every command that takes --profile.
+        assert result.exit_code == 2
+        assert "profile_not_found" in result.stderr
 
     def test_outside_project_exits_nonzero(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(app, ["search", "Hello", "--json"])
         assert result.exit_code != 0
+
+
+class TestUnknownStrategy:
+    def test_a_misspelt_strategy_is_refused(self, searchable_project):
+        """Before 1.7.6 it ran as hybrid and was reported under the misspelt name."""
+        result = runner.invoke(app, ["search", "Hello", "--strategy", "keywrod", "--json"])
+
+        assert result.exit_code == 1
+        assert "unknown retrieval strategy 'keywrod'" in result.output
+        assert "parent_child" in result.output
+
+    def test_a_misspelt_strategy_in_the_profile_is_refused(self, searchable_project):
+        profile = searchable_project / "profiles" / "default.yaml"
+        text = profile.read_text(encoding="utf-8")
+        assert "strategy: hybrid" in text
+        profile.write_text(text.replace("strategy: hybrid", "strategy: hybird"), encoding="utf-8")
+
+        result = runner.invoke(app, ["search", "Hello", "--json"])
+
+        assert result.exit_code == 1
+        assert "unknown retrieval strategy 'hybird'" in result.output
+
+    def test_eval_refuses_it_too(self, searchable_project):
+        result = runner.invoke(app, ["eval", "Hello", "--strategy", "keywrod"])
+
+        assert result.exit_code == 1
+        assert "unknown retrieval strategy 'keywrod'" in result.output

@@ -39,8 +39,10 @@ def kb_info_show() -> None:
             "Run 'mrag init' first."
         )
         raise typer.Exit(1)
-    # Print raw YAML so the user sees exactly what is on disk.
-    console.print(path.read_text(encoding="utf-8"))
+    # Print raw YAML so the user sees exactly what is on disk: no markup (a
+    # flow list such as `tags: [a, b]` reads as a style tag and vanishes), no
+    # wrapping and no highlighting, so the output is still the YAML.
+    console.out(path.read_text(encoding="utf-8"), highlight=False, end="")
 
 
 @kb_info_app.command("validate")

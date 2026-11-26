@@ -24,8 +24,10 @@ cd my-first-kb
 - `mrag.yaml` — プロジェクトのランタイム設定
 - `kb_information.yaml` — このナレッジベースが「何を含み、何に使えるか」を記述するメタデータ
 - `profiles/default.yaml` — 検索プロファイル（チャンク戦略・検索戦略をまとめた設定）
+- `profiles/context_prompt.txt` — contextual augmentation 用のプロンプトテンプレート
 - `mrag.db` — SQLite データベース（ドキュメントとチャンクの実体）
-- `data/` / `qdrant/` / `cache/` — 補助ディレクトリ
+- `data/` / `qdrant/` / `cache/` / `logs/` / `docs/` — 補助ディレクトリ
+- `identities/` — mrag の予約ディレクトリ（中身は `README.md` のみ）。ここに置いたファイルはドキュメントとして追加できません
 
 初期化時には、利用可能なトークナイザーが自動検出されます。vaporetto が見つかった場合は自動的に有効化され、次のような表示が出ます：
 
@@ -34,9 +36,13 @@ cd my-first-kb
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated profiles/context_prompt.txt
 ✓ Generated kb_information.yaml
+✓ Generated identities/README.md
 ✓ Initialized mrag.db
 ```
+
+このあとに、プロジェクトのディレクトリ・トークナイザー・次の手順をまとめたパネルが表示されます。
 
 これで「空のナレッジベース」ができました。
 
@@ -76,7 +82,7 @@ symlinkの制御、部分失敗の明示的reportをサポートします。完�
 
 1. sourceのテキストを読み込む
 2. 抽出結果を `data/documents/` に保存
-3. 中身のハッシュをとってドキュメント ID を割り当て、`mrag.db` に登録
+3. ドキュメント ID（ランダムな UUID）を割り当て、重複検出に使う中身のハッシュとともに `mrag.db` に登録
 
 この段階では各ドキュメントが登録されただけで、**まだ検索はできません**。検索可能にするには
 次のStep 3でインデックスを構築する必要があります。再帰modeを含め、`mrag add`が暗黙に
@@ -98,11 +104,11 @@ mrag index
 完了するとサマリが表示されます：
 
 ```
-✓ Indexed: 12  Up-to-date: 0  List-skipped: 0
-Log: logs/20260519101000-index.json
+✓ Indexed: 1  Up-to-date: 0  List-skipped: 0  Excluded: 0
+Log: /path/to/my-first-kb/logs/20260519101000-index.json
 ```
 
-「Indexed: 12」は、今回新規にインデックスされたチャンク数（ドキュメントの長さによって増減）を意味します。
+「Indexed: 1」は、今回新規にインデックスされたドキュメント数（チャンク数ではありません）を意味します。「Excluded」は、除外（Step 5 参照）によってスキップされたドキュメント数です。
 
 `logs/` に毎回 JSON ログが保存されます。`--output-log`でログの出力先を変更できます。
 一度`index`を実行したプロジェクトに新しいドキュメントを`add`して再び`index`を実行した場合は、すでにインデックス済みのドキュメントはスキップされ、新規追加分だけが処理されます。 
@@ -123,23 +129,29 @@ mrag search "キーワード"
 出力はこのような形になります：
 
 ```
-[1] score=6.39  doc=sample.md  chunk=eb0495d2...
+[1] score=0.0328  doc=sample.md  chunk=eb0495d2...
+    source: sample.md  original: data/documents/7c9e6679-7425-40de-944b-e07fc1f90ae7/original.md
+    section: Sample > Overview
     …本文の冒頭抜粋がここに表示されます…
 
-[2] score=5.81  doc=sample.md  chunk=3fa12c11...
+[2] score=0.0323  doc=sample.md  chunk=3fa12c11...
+    source: sample.md  original: data/documents/7c9e6679-7425-40de-944b-e07fc1f90ae7/original.md
+    section: Sample > Setup
     …次のチャンクの抜粋…
 
-Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
+Score stats:  min=0.0323  max=0.0328  mean=0.0325  σ=0.0004
 
 Document distribution:
-  sample.md   ████████████████████ 3
+  sample.md                                ████████████████████ 2
 ```
 
 各行の意味：
 
-- `score` — 関連度スコア（大きいほどクエリに近い）
+- `score` — 関連度スコア（大きいほどクエリに近い）。デフォルトのハイブリッド検索では順位融合（RRF）のスコアなので、値は小さくなります（最大でも約 0.033）
 - `doc` — ヒットしたドキュメント名
-- `chunk` — チャンクの ID（後で `mrag inspect chunk <id>` で深掘りできます）
+- `chunk` — チャンク ID の先頭 8 文字。`mrag inspect chunk <id>` で深掘りするには完全な ID が必要で、`mrag search --json`（`chunk_id`）や `mrag inspect chunks <document_id>` で確認できます
+- `source` / `original` — ソースの名前と、保存された原本のプロジェクト相対パス
+- `section` — チャンクの見出しパス（見出しパスを持つチャンクのみ表示）
 - `Score stats` — 上位結果のスコア分布。スコアが団子状か離散しているかを目視で確認できます
 - `Document distribution` — どのドキュメントから何件ヒットしたかの棒グラフ
 
@@ -224,14 +236,14 @@ Claude CodeなどのAIエージェントに[AGENTS.md](../AGENTS.md),[SKILL.md](
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
-      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+⏺ Bash(cd /home/user/tools/mrag/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../documents --recursive
       --include '**/*.md' --dry-run --json)
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
-      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+⏺ Bash(cd /home/user/tools/mrag/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../documents --recursive
       --include '**/*.md' --strict --json)
 
 ...

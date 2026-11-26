@@ -11,7 +11,11 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from mrag.config.profile import load_profile, validate_effective_tokenizer
+from mrag.config.profile import (
+    load_profile,
+    validate_effective_tokenizer,
+    validate_retrieval_strategy,
+)
 from mrag.config.project import load_project_config
 from mrag.core.embedding.ollama import OllamaEmbeddingProvider
 from mrag.core.retrieval.base import RetrievalResult
@@ -36,7 +40,7 @@ def _run_search(
 ) -> tuple[list[RetrievalResult], str, bool]:
     prof = load_profile(profile_name, project_dir)
     db_path = find_db(project_dir)
-    retrieval_strategy = strategy or prof.retrieval.strategy
+    retrieval_strategy = validate_retrieval_strategy(strategy or prof.retrieval.strategy)
     tokenizer = validate_effective_tokenizer(prof, config.fts_tokenizer)
 
     use_rerank = prof.rerank.enabled and not no_rerank
@@ -386,7 +390,7 @@ def eval_cmd(
     profile: List[str] = typer.Option([], "--profile", "-p", help="Profile name (repeatable for diff)"),
     top_k: int = typer.Option(10, "--top-k", "-k", help="Number of results per profile"),
     strategy: Optional[str] = typer.Option(
-        None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
+        None, "--strategy", "-s", help="hybrid | vector | keyword | parent_child (default: profile setting)"
     ),
     no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
 ) -> None:

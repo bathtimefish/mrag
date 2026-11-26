@@ -24,8 +24,10 @@ A `my-first-kb/` subdirectory is created in the current directory and the full m
 - `mrag.yaml` — runtime configuration for the project
 - `kb_information.yaml` — metadata describing what this knowledge base contains and what it can be used for
 - `profiles/default.yaml` — retrieval profile (bundles the chunking strategy and the retrieval strategy)
+- `profiles/context_prompt.txt` — prompt template for contextual augmentation
 - `mrag.db` — SQLite database (storage for documents and chunks)
-- `data/` / `qdrant/` / `cache/` — supporting directories
+- `data/` / `qdrant/` / `cache/` / `logs/` / `docs/` — supporting directories
+- `identities/` — directory reserved by mrag (contains only a `README.md`); files placed here cannot be added as documents
 
 During initialization, mrag auto-detects the available tokenizer. If vaporetto is found, it is enabled automatically and you will see output like this:
 
@@ -34,9 +36,13 @@ During initialization, mrag auto-detects the available tokenizer. If vaporetto i
 ✓ Created directory structure
 ✓ Generated mrag.yaml
 ✓ Generated profiles/default.yaml
+✓ Generated profiles/context_prompt.txt
 ✓ Generated kb_information.yaml
+✓ Generated identities/README.md
 ✓ Initialized mrag.db
 ```
+
+A panel with the project directory, the tokenizer, and the next steps follows.
 
 You now have an empty knowledge base.
 
@@ -77,7 +83,7 @@ The command performs the following in one go:
 
 1. Reads the source text
 2. Saves the extracted content under `data/documents/`
-3. Computes a content hash to assign a document ID and registers the entry in `mrag.db`
+3. Assigns a document ID (a random UUID) and registers the entry in `mrag.db`, together with a content hash that is used to detect duplicates
 
 At this stage each document is *registered* but **not yet searchable**. To make
 it searchable you need to build the index in Step 3. `mrag add` never starts
@@ -99,11 +105,11 @@ This command does the real work of making the knowledge base searchable. Specifi
 A summary is shown on completion:
 
 ```
-✓ Indexed: 12  Up-to-date: 0  List-skipped: 0
-Log: logs/20260519101000-index.json
+✓ Indexed: 1  Up-to-date: 0  List-skipped: 0  Excluded: 0
+Log: /path/to/my-first-kb/logs/20260519101000-index.json
 ```
 
-`Indexed: 12` is the number of chunks newly indexed in this run (varies depending on the document's length).
+`Indexed: 1` is the number of documents (not chunks) newly indexed in this run. `Excluded` is the number of documents skipped because of an exclusion (see Step 5).
 
 A JSON log is saved under `logs/` on every run. Use `--output-log` to change where the log is written.
 If you run `add` again on a project that has already been indexed and then re-run `index`, already-indexed documents are skipped and only the newly added ones are processed.
@@ -124,23 +130,29 @@ With the default profile, **hybrid search** runs (a combination of keyword searc
 The output looks like this:
 
 ```
-[1] score=6.39  doc=sample.md  chunk=eb0495d2...
+[1] score=0.0328  doc=sample.md  chunk=eb0495d2...
+    source: sample.md  original: data/documents/7c9e6679-7425-40de-944b-e07fc1f90ae7/original.md
+    section: Sample > Overview
     …the opening excerpt of the chunk body is shown here…
 
-[2] score=5.81  doc=sample.md  chunk=3fa12c11...
+[2] score=0.0323  doc=sample.md  chunk=3fa12c11...
+    source: sample.md  original: data/documents/7c9e6679-7425-40de-944b-e07fc1f90ae7/original.md
+    section: Sample > Setup
     …excerpt from the next chunk…
 
-Score stats:  min=5.81  max=6.39  mean=6.10  σ=0.0412
+Score stats:  min=0.0323  max=0.0328  mean=0.0325  σ=0.0004
 
 Document distribution:
-  sample.md   ████████████████████ 3
+  sample.md                                ████████████████████ 2
 ```
 
 What each line means:
 
-- `score` — relevance score (higher = closer to the query)
+- `score` — relevance score (higher = closer to the query). With the default hybrid search it is a rank-fusion (RRF) score, so the values are small (about 0.033 at most)
 - `doc` — document the hit came from
-- `chunk` — chunk ID (you can drill into it later with `mrag inspect chunk <id>`)
+- `chunk` — the first 8 characters of the chunk ID. To drill into a chunk with `mrag inspect chunk <id>` you need the full ID, which `mrag search --json` (`chunk_id`) and `mrag inspect chunks <document_id>` show
+- `source` / `original` — the name of the source and the project-relative path of the stored copy of the original
+- `section` — heading path of the chunk (shown only when the chunk has one)
 - `Score stats` — score distribution across the top results. Lets you visually check whether scores are clustered or spread out
 - `Document distribution` — a bar chart of how many hits came from which document
 
@@ -228,14 +240,14 @@ By having an AI agent like Claude Code read [AGENTS.md](../AGENTS.md) and [SKILL
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
-      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+⏺ Bash(cd /home/user/tools/mrag/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../documents --recursive
       --include '**/*.md' --dry-run --json)
 
 ...
 
-⏺ Bash(cd /home/user/tools/mrag/kbs/my-kb &&
-      /home/user/tools/mrag/.venv/bin/mrag add ../data --recursive
+⏺ Bash(cd /home/user/tools/mrag/my-kb &&
+      /home/user/tools/mrag/.venv/bin/mrag add ../documents --recursive
       --include '**/*.md' --strict --json)
 
 ...

@@ -21,6 +21,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from mrag.config.profile import ProfileNotFoundError, require_stored_profile
 from mrag.db.connection import find_db, open_connection
 from mrag.db.inspect_queries import (
     ChunkRow,
@@ -75,6 +76,20 @@ def _open_project_db() -> "sqlite3.Connection":  # noqa: F821
     return open_connection(db_path)
 
 
+def _require_stored_profile_or_exit(profile_name: str) -> None:
+    """Exit 2 with the stored profiles when the project does not store one.
+
+    Until 1.7.4 an unknown `--profile` was taken as a profile that had
+    indexed nothing: `inspect document` and `inspect chunks` exited 0 and
+    `inspect sections` said the profile kept no heading path.
+    """
+    try:
+        require_stored_profile(profile_name, Path.cwd())
+    except ProfileNotFoundError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(2)
+
+
 def _resolve_profile_or_exit(
     conn,
     document_id: str,
@@ -82,11 +97,17 @@ def _resolve_profile_or_exit(
 ) -> str:
     """Determine which profile to use for a per-profile inspect command.
 
-    - if `requested` is given, return it
+    - if `requested` is given and the document has chunks under it, return it;
+      a profile the project does not store is refused with exit 2
+      (`profile_not_found`), and one it stores is returned as before
     - else if document has exactly 1 indexed profile, auto-select it
     - else exit 1 with a candidate list (DESIGN_V18 §3.1.2 / Q#4)
     """
     if requested is not None:
+        # The catalog answers first: a profile that indexed the document
+        # is read even when its file has since been removed.
+        if requested not in list_profiles_for_document(conn, document_id):
+            _require_stored_profile_or_exit(requested)
         return requested
 
     profiles = list_profiles_for_document(conn, document_id)
@@ -237,6 +258,9 @@ def inspect_document(
             f"[red]Error:[/red] document_id '{document_id}' not found"
         )
         raise typer.Exit(1)
+
+    if profile is not None and not summary.profiles:
+        _require_stored_profile_or_exit(profile)
 
     if json_output:
         print(json.dumps(_build_document_payload(summary), indent=2, ensure_ascii=False))

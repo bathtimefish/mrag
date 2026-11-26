@@ -42,7 +42,7 @@ uv venv
 uv pip install -e ".[vaporetto,reranker]"
 ```
 
-日本語形態素解析（`vaporetto`）と CrossEncoder リランキング（`reranker`）を含む標準構成がセットアップされます。
+日本語形態素解析（`vaporetto`）と CrossEncoder リランキング（`reranker`）を含む標準構成がセットアップされます。`mrag mcp` を使う場合は `mcp` extra も必要です: `uv pip install -e ".[vaporetto,reranker,mcp]"`
 
 ### vaporetto ネイティブライブラリ
 
@@ -57,11 +57,24 @@ uv pip install -e ".[vaporetto,reranker]"
    # cp libsqlite_vaporetto.so ~/.mrag/extensions/    # Linux
    ```
 
+   Windows ではライブラリ名が `sqlite_vaporetto.dll` になります：
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\.mrag\extensions"
+   Copy-Item sqlite_vaporetto.dll "$env:USERPROFILE\.mrag\extensions\"
+   ```
+
 カスタムパスを使う場合は環境変数で指定できます：
 
 ```bash
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
+
+```powershell
+$env:MRAG_VAPORETTO_LIB = "C:\path\to\sqlite_vaporetto.dll"   # Windows
+```
+
+環境変数を指定しない場合、mrag は `~/.mrag/extensions/`、`/usr/local/lib`、`/usr/lib` の順に、それぞれ直下とその 1 階層下のサブディレクトリを探します。そのうち 1 か所に vaporetto のライブラリが複数あると、`mrag init` は `MRAG_VAPORETTO_LIB` の指定を求めるエラーで停止します。
 
 `mrag init` 実行時に vaporetto が検出されない場合は trigram トークナイザーに自動フォールバックします。`mrag doctor` で検出状況を確認できます。
 
@@ -113,10 +126,11 @@ mrag search "クエリ"
 | `mrag search <query>` | 検索する |
 | `mrag eval <query>` | 検索品質を評価する |
 | `mrag serve` | HTTP API サーバーを起動する |
-| `mrag mcp` | プロジェクトを read-only MCP server として公開する |
+| `mrag mcp [validate \| schema \| init-config]` | プロジェクトを read-only MCP server として公開する。サブコマンドは設定の検証・schema 出力・雛形出力 |
 | `mrag remove <doc-id>` | ドキュメントを削除する |
 | `mrag exclusions add \| list \| restore` | 正本を保持したまま検索対象から除外する |
 | `mrag documents sync <dir> \| rebind <doc-id> <file>` | 移動・変更・消失したファイルと document の対応を保つ |
+| `mrag catalog migrate-identities [--dry-run] [--json]` | 古い方式で保存された source identity を変換する。該当するプロジェクトは、これを実行するまで `mrag add` が拒否される |
 | `mrag profiles list \| show <name>` | プロファイルの一覧 / 詳細を表示する |
 | `mrag kb-info show \| validate \| schema` | ナレッジベース自己記述メタデータを扱う |
 | `mrag inspect document \| chunks \| chunk \| sections` | インデックスの内部構造を調査する |
@@ -130,15 +144,16 @@ mrag search "クエリ"
 
 ディレクトリ投入では、最初に `mrag add <dir> --recursive --dry-run --json`
 で対象を確認し、同じ選択条件から `--dry-run` を外して適用してください。filter、symlink、
-duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
+duplicate、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
 を参照してください。
 
 追加後にディレクトリ配下のファイルが移動・変更・消失したときは、`mrag documents sync <dir>`
 が catalog の対応を計画として示し、`--apply` で実行します。改名しても document ID は保たれます。
 [document とファイルの同期](./docs/document-sync-ja.md)を参照してください。
 
-正本を保持したままナレッジへの寄与を止める場合は、`mrag remove`ではなくdry-runから始める
-`mrag exclusions`を使用します。cleanup、復帰、障害時挙動の詳細は
+正本を保持したままナレッジへの寄与を止める場合は、ドキュメントを削除する`mrag remove`ではなく
+`mrag exclusions`を使用します。`exclusions add`、`exclusions restore`、`remove`はいずれも
+dry-runから始まり、`--force`を付けるまでは実行内容を表示するだけです。cleanup、復帰、障害時挙動の詳細は
 [ドキュメントの検索除外](./docs/document-exclusions-ja.md)を参照してください。
 
 

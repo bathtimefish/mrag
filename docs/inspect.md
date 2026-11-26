@@ -43,6 +43,8 @@ Main fields in the output:
 
 When `--profile` is omitted, the command reports **every profile** under which the document has been indexed.
 
+> Unknown profile: a `--profile` the project does not store (no file under `profiles/`) is refused by `inspect document`, `inspect chunks` and `inspect sections` alike, with exit 2 and `profile_not_found` naming the profiles it does store — the same answer `mrag search`, `mrag index` and `mrag reindex` give. The catalog is asked first, so a profile that indexed the document is still shown after its file is removed. A stored profile that has indexed nothing is not an error: `inspect document` says no profile has indexed the document.
+
 
 ## `mrag inspect chunks` — chunk list
 
@@ -69,6 +71,7 @@ The `variant` object contains these fields:
 - `qdrant_collection` — Qdrant collection name this chunk belongs to
 - `augmentation_status` — `fallback_raw` / `null`
 - **`embedding_status`** — `fallback_no_vector` / `null` (v0.21.0+. Chunks with `fallback_no_vector` are excluded from vector search.)
+- `embedding_error` — the reason the embedding failed, when `embedding_status` is `fallback_no_vector`; otherwise `null`
 - **`has_qdrant_point`** — `true` / `false` (v0.21.0+. `false` for fallback chunks.)
 
 > Paging rule of thumb: for large documents with hundreds of chunks, prefer `--limit 50` so the terminal doesn't flood. For small- and mid-sized documents, you can omit the limit and dump everything.

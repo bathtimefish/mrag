@@ -174,10 +174,10 @@ After updating `kb_information.yaml`, re-run `generate` (there is no diff/merge 
 
 ## Adding the file to an existing project
 
-Projects created with `mrag init` before v0.17 do not have a `kb_information.yaml`. To make them eligible for the registry, add it with one of these approaches:
+Projects created with `mrag init` before v0.17 do not have a `kb_information.yaml`. To make them eligible for the registry, create the file by hand:
 
 ```bash
-# Approach 1: write the template by hand
+# Write the template by hand
 cat > kb_information.yaml <<'EOF'
 version: 1
 knowledge_base:
@@ -192,18 +192,15 @@ agent_usage:
   example_queries: []
 EOF
 mrag kb-info validate
-
-# Approach 2: regenerate via mrag init --force (overwrites existing mrag.yaml and profiles)
-mrag init . --force --non-interactive
 ```
 
-> Caution: `mrag init --force` overwrites every project file, including `kb_information.yaml`. If you've edited `mrag.yaml` or `profiles/*.yaml`, take a backup first.
+> Caution: `mrag init --force` cannot be used for this. It only reinitializes an empty project, and refuses a project that contains documents. On an empty project it overwrites `mrag.yaml`, `kb_information.yaml`, `profiles/default.yaml`, and `profiles/context_prompt.txt`.
 
 
 ## Tips
 
-- `mrag kb-info show` outputs YAML directly, so you can feed it to pipelines like `mrag kb-info show | yq '.agent_usage.tags'` for partial extraction.
+- `mrag kb-info show` outputs YAML directly, so you can feed it to pipelines like `mrag kb-info show | yq '.agent_usage.tags'` for partial extraction. `mrag mcp` serves the same file to MCP clients as the resource `mrag://kb/info` (→ [mcp.md](./mcp.md)).
 - The JSON for `--kb-info-json` is meant to be built by an agent. Embedding the JSON Schema from `mrag kb-info schema` in a system prompt pairs nicely with structured generation (JSON mode).
-- `agent_usage` may be empty and the mrag CLI itself will still run, but `mrag registry validate` inspects this file's contents (`path`, `id`, `preferred_profiles` consistency), so running `mrag kb-info validate` before joining a registry is a safe habit.
+- `agent_usage` may be empty and the mrag CLI itself will still run. `mrag registry validate` only checks that this file exists and does not read its contents (the `path`, `id`, and `preferred_profiles` it checks are the registry's own entries), and `mrag registry generate` skips a project whose file is invalid, so running `mrag kb-info validate` before joining a registry is a safe habit.
 - Updating the file is most straightforward via direct edits in a text editor. A `mrag kb-info edit` command is deliberately not implemented (to keep the spec simple).
 - For details on registry aggregation, see [registry.md](./registry.md).

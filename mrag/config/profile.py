@@ -294,6 +294,25 @@ class ProfileConfig(BaseModel):
         return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+RETRIEVAL_STRATEGIES = ("hybrid", "vector", "keyword", "parent_child")
+
+
+def validate_retrieval_strategy(strategy: str) -> str:
+    """Return ``strategy`` if it names a retrieval strategy, else refuse it.
+
+    Every search path asks this of the strategy it is about to run — the
+    ``--strategy`` option, a request's ``strategy`` field or the profile's
+    ``retrieval.strategy`` — so a misspelt one is an error rather than a
+    hybrid search reported under the misspelt name.
+    """
+    if strategy not in RETRIEVAL_STRATEGIES:
+        raise ValueError(
+            f"unknown retrieval strategy {strategy!r}; "
+            f"use one of: {', '.join(RETRIEVAL_STRATEGIES)}"
+        )
+    return strategy
+
+
 def validate_effective_tokenizer(
     profile: ProfileConfig,
     project_tokenizer: str,
@@ -316,6 +335,41 @@ def validate_effective_tokenizer(
             "indexing or searching."
         )
     return project_tokenizer
+
+
+class ProfileNotFoundError(FileNotFoundError):
+    """A profile the project does not store, with the ones it does."""
+
+    code = "profile_not_found"
+
+    def __init__(self, profile_name: str, available: list[str]) -> None:
+        self.profile_name = profile_name
+        self.available = available
+        names = ", ".join(available) if available else "none"
+        super().__init__(
+            f"profile_not_found: no profile named '{profile_name}' is stored in "
+            f"the project (available: {names})"
+        )
+
+
+def stored_profile_names(project_dir: Path) -> list[str]:
+    """The profiles the project stores: the files under ``profiles/``."""
+    profiles_dir = project_dir / "profiles"
+    if not profiles_dir.is_dir():
+        return []
+    return sorted(path.stem for path in profiles_dir.glob("*.yaml") if path.is_file())
+
+
+def require_stored_profile(profile_name: str, project_dir: Path) -> None:
+    """Refuse a profile the project does not store, naming the ones it does.
+
+    Every command that takes ``--profile`` and reads or builds an index asks
+    here first, so an unknown name gets one answer whichever command was
+    asked: ``profile_not_found``, exit 2 at the CLI.
+    """
+    available = stored_profile_names(project_dir)
+    if profile_name not in available:
+        raise ProfileNotFoundError(profile_name, available)
 
 
 def load_profile(profile_name: str, project_dir: Path | None = None) -> ProfileConfig:

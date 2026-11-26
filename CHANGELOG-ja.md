@@ -7,6 +7,95 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.6 — 2026-11-26
+
+### 修正
+
+- **`mrag kb-info show`が、fileをそのまま出力します。** consoleのmarkupを通して出して
+  いたため、`tags: [iot, mqtt]`や`preferred_profiles: [default]`のようなflow形式のlistが
+  空になり、長い行は折り返されていました。出力はもうYAMLではなく、`yq`へ渡すと違う値が
+  読まれました。今後はfileの文字をそのまま書きます。
+- **`mrag exclusions list`が、各ruleを誰が書いたかを示します。** `mrag documents sync`が
+  書いたruleが、`--json`でも表でも`origin: user`と表示されていました。一覧がその列を
+  読んでいませんでした。sync自身は別のqueryで読んでいたので、解除するものと残すものの
+  判定は正しいままでした。今後はruleを読むすべての経路がoriginを持ちます。
+- **綴りを誤ったretrieval strategyはerrorになります。** `--strategy keywrod`、requestの
+  `strategy`、profileの`retrieval.strategy`が`hybrid`・`vector`・`keyword`・
+  `parent_child`のどれでもないとき、hybrid検索として実行され、誤った名前のまま報告されて
+  いました。今後は`mrag search`と`mrag eval`が`unknown retrieval strategy`でexit 1に
+  なり、`POST /api/v1/retrieve`は400を返します。
+- **`GET /api/v1/profiles` が project のプロファイルを一覧します。** これまでは catalog に
+  記録されたプロファイルだけを返していたので、一度もインデックスしていないプロファイルが、
+  MCP の `list_profiles` tool には出るのにここには出ませんでした。どちらも、読み込める
+  `profiles/*.yaml` のすべてを返します。
+- **`MRAG_API_KEY` を設定していても、ブラウザから API を呼べるようになりました。** 認証の判定が
+  CORS の preflight を `401` にしていたため(preflight は `Authorization` ヘッダを持ちません)、
+  別 origin からのリクエストは一切送れませんでした。preflight にはキーなしで応答し、その後の
+  本来のリクエストにはこれまでどおりキーが要ります。
+- `/` を認証の対象外から外しました。`/` にはルートが無く、対象外にしても認証なしの `404` を
+  返すだけでした。キーを設定していると `401` になります。OpenAPI のページ(`/docs`・
+  `/openapi.json`・`/redoc`)は対象外のままです。
+- `packaging\build.bat` がすべての option を読むようになりました。これまでは最初の1つだけを
+  読んでいたので、`--with-reranker --onedir` は何も言わずに lean の onefile を作り、
+  2つ目以降の未知の option も拒否されませんでした。
+- `mrag extract`は、extractorのwarningを表示する代わりに`TypeError`で落ちる状態でした。
+  リリース済みのextractorはwarningを返しません。今後warningはstderrへ出し、stdoutは
+  抽出した本文だけのままです。
+- `mrag search`と`mrag eval`の`--strategy`のhelpに`parent_child`を加えました。
+
+### ドキュメント
+
+- README・SETUP・AGENTSと`docs/`以下のページをcodeと照らし、遅れていた箇所を直しました。
+  `mrag init`が書くもの、`chunk_size`を超える表とcode blockの分割、Native APIのerrorの
+  形とprofileの一覧、Windowsのbuild script、`mrag documents sync`と`rebind`の報告、
+  tutorialの出力例などです。日英は同じ内容です。
+
+## 1.7.5 — 2026-11-12
+
+### 修正
+
+- **`mrag documents rebind --apply`が、計画ではなく実際に行ったことを報告します。**
+  新しい内容が唯一の段である`update`(pathを動かさず、除外も解除しない)で、その内容を
+  取り込めなかったとき、「Updated <id> → <file>」と表示し、`status: "partial"`・
+  `applied: true`・`new_revision: true`、exit 3で監査logを書いていました。catalogも
+  保存済みのoriginalも変わっていませんでした。今後は`status: "failed"`・
+  `applied: false`・`new_revision: false`、exit 1で、監査logを書きません。最初の
+  transactionが失敗した実行も同じで、`revoke_exclusions: 0`を返します。
+- 内容の失敗より前にpathを動かした、またはsyncの除外を解除した実行は、これまでどおり
+  `partial`・exit 3で監査logを書きます。`new_revision`は`false`になります。
+- 失敗した実行とpartialの実行の人向け出力はerrorだけです。「Updated」「Rebound」の
+  見出しも「Run again with --apply」も出しません。partialでは、失敗より前の段は残した
+  ことを添えます。MRAG Plusが先に同じ変更をしました。
+
+### アップグレード時の注意
+
+- 内容だけのrebindの失敗でexit 3を見ていたscriptには、exit 1が返ります。適用した
+  reportの`new_revision`は実際に行った段を表します。
+
+## 1.7.4 — 2026-11-11
+
+### 修正
+
+- **projectが保持していないprofileへの答えを、indexを読む・作るcommandのあいだで1つに
+  しました。** `profiles/`にfileの無い名前を`--profile`に渡すと、答えが4通りに分かれて
+  いました。`mrag inspect document`は「No profiles have indexed this document.」でexit 0、
+  `mrag inspect chunks`は0件のchunkを表示してexit 0、`mrag inspect sections`は
+  `preserve_heading_path`が無効なので見出し構造が無いと言ってexit 1、`mrag search`・
+  `mrag index`・`mrag reindex`は無いfileのpathを示してexit 1(`index`は
+  「Indexing profile …」を先に表示)でした。6つとも、何かを読む・作る前に、exit 2と
+  `profile_not_found: no profile named '<name>' is stored in the project
+  (available: <保持しているprofile>)`で拒否します。`mrag documents sync --profile`が既に
+  使っていたcodeです。
+- `mrag inspect`はcatalogを先に見ます。文書をindexしたprofileは、そのfileを消した後も
+  読めます。保持していて何もindexしていないprofileへの答えは変わりません。
+
+### アップグレード時の注意
+
+- 存在しない`--profile`を渡した`mrag search`・`mrag index`・`mrag reindex`のexit 1を
+  見ていたscriptには、exit 2が返ります。`mrag.yaml`の`default_profile`がfileの無い
+  profileを指しているときも同じです。
+- `mrag eval`・`mrag serve`・`mrag exclusions`は変わりません。
+
 ## 1.7.3 — 2026-11-11
 
 ### 修正
