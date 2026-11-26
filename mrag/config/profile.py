@@ -294,6 +294,25 @@ class ProfileConfig(BaseModel):
         return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+RETRIEVAL_STRATEGIES = ("hybrid", "vector", "keyword", "parent_child")
+
+
+def validate_retrieval_strategy(strategy: str) -> str:
+    """Return ``strategy`` if it names a retrieval strategy, else refuse it.
+
+    Every search path asks this of the strategy it is about to run — the
+    ``--strategy`` option, a request's ``strategy`` field or the profile's
+    ``retrieval.strategy`` — so a misspelt one is an error rather than a
+    hybrid search reported under the misspelt name.
+    """
+    if strategy not in RETRIEVAL_STRATEGIES:
+        raise ValueError(
+            f"unknown retrieval strategy {strategy!r}; "
+            f"use one of: {', '.join(RETRIEVAL_STRATEGIES)}"
+        )
+    return strategy
+
+
 def validate_effective_tokenizer(
     profile: ProfileConfig,
     project_tokenizer: str,

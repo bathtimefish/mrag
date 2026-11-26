@@ -7,6 +7,40 @@ kept; the repository history is the record for those releases.
 
 ---
 
+## 1.7.6 — 2026-11-26
+
+### Fixed
+
+- **`mrag kb-info show` prints the file as it is.** It printed through the
+  console's markup, so a flow list such as `tags: [iot, mqtt]` or
+  `preferred_profiles: [default]` came out empty and long lines were wrapped;
+  the output was no longer the YAML, and piping it to `yq` read the wrong
+  values. It now writes the file's text unchanged.
+- **`mrag exclusions list` says who wrote each rule.** A rule that
+  `mrag documents sync` wrote was listed with `origin: user`, in `--json` and
+  in the table: the listing did not read the column. The sync itself read it
+  through another query, so what it lifted and what it left alone were right.
+  Every read of a rule now carries its origin.
+- **A misspelt retrieval strategy is an error.** `--strategy keywrod`, a
+  request's `strategy` field or a profile's `retrieval.strategy` that names
+  none of `hybrid`, `vector`, `keyword`, `parent_child` ran as a hybrid search
+  and was reported under the misspelt name. `mrag search` and `mrag eval` now
+  exit 1 with `unknown retrieval strategy`, and `POST /api/v1/retrieve`
+  answers 400.
+- `mrag extract` would have raised `TypeError` on an extractor's warning
+  instead of printing it. No extractor in a release returns one; warnings now
+  go to stderr, and stdout stays the extracted text.
+- The `--strategy` help of `mrag search` and `mrag eval` names `parent_child`.
+
+### Documentation
+
+- The README, SETUP, AGENTS and the pages under `docs/` were checked against
+  the code and corrected where they had fallen behind: what `mrag init`
+  writes, how tables and code blocks larger than `chunk_size` are split, the
+  Native API's error shapes and its profile list, the Windows build script,
+  what `mrag documents sync` and `rebind` report, and the tutorial's example
+  output, among others. Both languages say the same.
+
 ## 1.7.5 — 2026-11-12
 
 ### Fixed

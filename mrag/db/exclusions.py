@@ -79,6 +79,17 @@ def exclusions_schema_exists(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
+def _rule_columns(conn: sqlite3.Connection) -> str:
+    """The select list every read of a rule uses, who wrote it included.
+
+    A table from before 1.3 has no ``origin`` column until a write adds it;
+    its rules are a person's.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(document_exclusions)")}
+    origin = "origin" if "origin" in columns else "'user' AS origin"
+    return f"id, document_id, profile_name, reason, created_at, revoked_at, {origin}"
+
+
 def _from_row(row: sqlite3.Row) -> DocumentExclusion:
     return DocumentExclusion(
         id=row["id"],
@@ -87,8 +98,7 @@ def _from_row(row: sqlite3.Row) -> DocumentExclusion:
         reason=row["reason"],
         created_at=row["created_at"],
         revoked_at=row["revoked_at"],
-        # Selected by the sync; an older query leaves it at the default.
-        origin=row["origin"] if "origin" in row.keys() else "user",
+        origin=row["origin"],
     )
 
 
@@ -121,7 +131,7 @@ def list_exclusions(
             return []
         where = "" if include_revoked else "WHERE revoked_at IS NULL"
         rows = conn.execute(
-            f"""SELECT id, document_id, profile_name, reason, created_at, revoked_at
+            f"""SELECT {_rule_columns(conn)}
                 FROM document_exclusions {where}
                 ORDER BY created_at, id"""
         ).fetchall()
@@ -136,7 +146,7 @@ def find_exclusion(db_path: Path, exclusion_id: str) -> DocumentExclusion | None
         if not exclusions_schema_exists(conn):
             return None
         row = conn.execute(
-            """SELECT id, document_id, profile_name, reason, created_at, revoked_at
+            f"""SELECT {_rule_columns(conn)}
                FROM document_exclusions WHERE id = ?""",
             (exclusion_id,),
         ).fetchone()
@@ -157,7 +167,7 @@ def find_covering_exclusion(
             return None
         if profile_name is None:
             row = conn.execute(
-                """SELECT id, document_id, profile_name, reason, created_at, revoked_at
+                f"""SELECT {_rule_columns(conn)}
                    FROM document_exclusions
                    WHERE document_id = ? AND profile_name IS NULL
                      AND revoked_at IS NULL""",
@@ -165,7 +175,7 @@ def find_covering_exclusion(
             ).fetchone()
         else:
             row = conn.execute(
-                """SELECT id, document_id, profile_name, reason, created_at, revoked_at
+                f"""SELECT {_rule_columns(conn)}
                    FROM document_exclusions
                    WHERE document_id = ? AND revoked_at IS NULL
                      AND (profile_name IS NULL OR profile_name = ?)
@@ -235,7 +245,7 @@ def revoke_exclusion(db_path: Path, exclusion_id: str) -> DocumentExclusion:
     with db_connection(db_path) as conn:
         ensure_exclusions_schema(conn)
         row = conn.execute(
-            """SELECT id, document_id, profile_name, reason, created_at, revoked_at
+            f"""SELECT {_rule_columns(conn)}
                FROM document_exclusions WHERE id = ?""",
             (exclusion_id,),
         ).fetchone()
@@ -280,11 +290,9 @@ def active_exclusions_by_document(conn: sqlite3.Connection) -> dict[str, list[Do
     """
     if not exclusions_schema_exists(conn):
         return {}
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(document_exclusions)")}
-    origin = "origin" if "origin" in columns else "'user' AS origin"
     grouped: dict[str, list[DocumentExclusion]] = {}
     for row in conn.execute(
-        f"""SELECT id, document_id, profile_name, reason, created_at, revoked_at, {origin}
+        f"""SELECT {_rule_columns(conn)}
             FROM document_exclusions WHERE revoked_at IS NULL ORDER BY created_at, id"""
     ):
         grouped.setdefault(row["document_id"], []).append(_from_row(row))

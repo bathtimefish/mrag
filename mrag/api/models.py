@@ -8,7 +8,7 @@ class RetrieveRequest(BaseModel):
     profile: str | None = None
     # Omit to use the resolved profile's retrieval.top_k.
     top_k: int | None = Field(default=None, ge=1, le=100)
-    strategy: str | None = None  # hybrid | vector | keyword
+    strategy: str | None = None  # hybrid | vector | keyword | parent_child
 
 
 class SearchLocation(BaseModel):

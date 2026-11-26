@@ -7,6 +7,35 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.6 — 2026-11-26
+
+### 修正
+
+- **`mrag kb-info show`が、fileをそのまま出力します。** consoleのmarkupを通して出して
+  いたため、`tags: [iot, mqtt]`や`preferred_profiles: [default]`のようなflow形式のlistが
+  空になり、長い行は折り返されていました。出力はもうYAMLではなく、`yq`へ渡すと違う値が
+  読まれました。今後はfileの文字をそのまま書きます。
+- **`mrag exclusions list`が、各ruleを誰が書いたかを示します。** `mrag documents sync`が
+  書いたruleが、`--json`でも表でも`origin: user`と表示されていました。一覧がその列を
+  読んでいませんでした。sync自身は別のqueryで読んでいたので、解除するものと残すものの
+  判定は正しいままでした。今後はruleを読むすべての経路がoriginを持ちます。
+- **綴りを誤ったretrieval strategyはerrorになります。** `--strategy keywrod`、requestの
+  `strategy`、profileの`retrieval.strategy`が`hybrid`・`vector`・`keyword`・
+  `parent_child`のどれでもないとき、hybrid検索として実行され、誤った名前のまま報告されて
+  いました。今後は`mrag search`と`mrag eval`が`unknown retrieval strategy`でexit 1に
+  なり、`POST /api/v1/retrieve`は400を返します。
+- `mrag extract`は、extractorのwarningを表示する代わりに`TypeError`で落ちる状態でした。
+  リリース済みのextractorはwarningを返しません。今後warningはstderrへ出し、stdoutは
+  抽出した本文だけのままです。
+- `mrag search`と`mrag eval`の`--strategy`のhelpに`parent_child`を加えました。
+
+### ドキュメント
+
+- README・SETUP・AGENTSと`docs/`以下のページをcodeと照らし、遅れていた箇所を直しました。
+  `mrag init`が書くもの、`chunk_size`を超える表とcode blockの分割、Native APIのerrorの
+  形とprofileの一覧、Windowsのbuild script、`mrag documents sync`と`rebind`の報告、
+  tutorialの出力例などです。日英は同じ内容です。
+
 ## 1.7.5 — 2026-11-12
 
 ### 修正

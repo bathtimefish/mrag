@@ -147,3 +147,23 @@ class TestKbInfoGroupHelp:
         assert "show" in result.output
         assert "validate" in result.output
         assert "schema" in result.output
+
+
+class TestKbInfoShowIsTheFile:
+    def test_a_flow_list_and_a_long_line_come_out_as_written(self, tmp_path, monkeypatch):
+        """`show` prints the bytes of the file: brackets are not markup and
+        nothing is wrapped, so the output is still the YAML (1.7.6)."""
+        project_dir = _init_project(tmp_path, monkeypatch)
+        text = (
+            "version: 1\n"
+            "agent_usage:\n"
+            "  tags: [iot, mqtt, m5stack]\n"
+            "  preferred_profiles: [default]\n"
+            "  note: " + "long " * 40 + "end\n"
+        )
+        (project_dir / KB_INFORMATION_FILENAME).write_text(text, encoding="utf-8")
+
+        result = runner.invoke(app, ["kb-info", "show"], catch_exceptions=False)
+
+        assert result.exit_code == 0
+        assert result.stdout == text
