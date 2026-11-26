@@ -64,6 +64,11 @@ whole manual or repeating an environment audit before every edit.
   excluded documents; see [exclusion semantics](docs/document-exclusions.md).
 - **Interfaces share retrieval behavior.** Respect the profile's `top_k` when
   callers omit a count, and preserve explicit overrides and profile scoping.
+  `mrag eval` is the one deliberate exception: it retrieves 10 per profile so
+  the profiles it compares return sets of one size. Strategy names are checked
+  in one place, `validate_retrieval_strategy` in
+  [profile config](mrag/config/profile.py), which `run_retrieval` and `eval`
+  call; a new strategy is added there, never per surface.
   CLI JSON stdout must remain machine-readable, with diagnostics on stderr.
   MCP is read-only; its stdio stdout is reserved for JSON-RPC. Preserve existing
   API/MCP authentication behavior when changing their request paths.
@@ -86,12 +91,16 @@ Use this map to locate the affected behavior, not as a required reading order.
 | HTTP and Dify | [mrag/api](mrag/api) | [API tests](tests/test_api.py), [Dify tests](tests/test_dify_api.py), [API contract](docs/native-api.md) |
 | MCP | [mrag/mcp](mrag/mcp) | [MCP tool tests](tests/test_mcp_tools.py), [MCP configuration](docs/mcp.md) |
 | Inspection and registry | [Inspect queries](mrag/db/inspect_queries.py), [CLI](mrag/cli) | `test_inspect_*`, `test_registry_*` in [tests](tests); [inspection](docs/inspect.md), [registry](docs/registry.md) |
+| Standalone binaries | [packaging](packaging) (`build.sh`, `build.bat`) | [Packaging guide](docs/packaging.md); smoke-test the built binary |
 
 ## Development and validation
 
 Python >= 3.11 and dependencies/extras are defined in [pyproject.toml](pyproject.toml).
 Use the repository's environment when available. With `.venv` installed, a
-focused test invocation is `rtk proxy .venv/bin/python -m pytest tests/<test_file>.py`.
+focused test invocation is `.venv/bin/python -m pytest tests/<test_file>.py`
+(`.venv\Scripts\python.exe` on Windows). Tests that need apsw (the
+`vaporetto` extra) skip without it. The full suite is slow — about 45 minutes on a
+Windows workstation — so run it for shared changes, not for every edit.
 
 Select tests for the behavior changed. Existing fixtures use temporary projects
 or in-memory SQLite, and many provider tests use mocks; some integration tests
@@ -106,6 +115,12 @@ operating constraints (working directory, model dependencies, Qdrant modes,
 indexing and restoration) are in [SKILL.md](SKILL.md). Distinguish environment
 failures from implementation failures; do not change a KB's tokenizer or
 retrieval semantics merely to bypass an unavailable dependency.
+
+A release changes the version in four places that a test holds together
+(`tests/test_version_sync.py`): `version` in `pyproject.toml`,
+`_FALLBACK_VERSION` in `mrag/__init__.py`, the `mrag` entry in `uv.lock`, and
+`metadata.version` in `SKILL.md`. It adds the entry to both `CHANGELOG.md` and
+`CHANGELOG-ja.md`.
 
 When changing a public command, schema, or retrieval behavior, update the
 relevant maintained documentation, including its English/Japanese counterpart

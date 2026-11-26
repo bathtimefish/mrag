@@ -39,6 +39,9 @@ kept; the repository history is the record for those releases.
 - `/` is no longer exempt from auth. It has no route, so the exemption only
   produced an unauthenticated `404`; with a key set it now answers `401`. The
   OpenAPI pages (`/docs`, `/openapi.json`, `/redoc`) stay exempt.
+- `packaging\build.bat` reads every option. It read only the first, so
+  `--with-reranker --onedir` built a lean onefile without a word, and an
+  unknown option after the first was never refused.
 - `mrag extract` would have raised `TypeError` on an extractor's warning
   instead of printing it. No extractor in a release returns one; warnings now
   go to stderr, and stdout stays the extracted text.

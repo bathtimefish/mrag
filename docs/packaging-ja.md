@@ -117,7 +117,7 @@ packaging\build.bat --onedir
 packaging\build.bat --help
 ```
 
-`build.bat` は最初の引数だけを読むため、`--with-reranker` と `--onedir` は併用できません。成果物は `dist\mrag.exe`（onefile）または `dist\mrag\mrag.exe`（onedir）です。スクリプトは `.venv\Scripts\python.exe` があればそれを、無ければ `python` を使います。環境変数 `PYTHON` で上書きできます。
+`build.sh` と同じく option は併用できます（`packaging\build.bat --with-reranker --onedir`）。1.7.6 より前の `build.bat` は最初の引数だけを読んでいました。成果物は `dist\mrag.exe`（onefile）または `dist\mrag\mrag.exe`（onedir）です。スクリプトは `.venv\Scripts\python.exe` があればそれを、無ければ `python` を使います。環境変数 `PYTHON` で上書きできます。
 
 PyInstaller を手で実行する場合、LEAN の onefile ビルドに相当するコマンドは次のとおりです（mrag と PyInstaller が入った環境の PowerShell で実行）。
 

@@ -35,6 +35,9 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 - `/` を認証の対象外から外しました。`/` にはルートが無く、対象外にしても認証なしの `404` を
   返すだけでした。キーを設定していると `401` になります。OpenAPI のページ(`/docs`・
   `/openapi.json`・`/redoc`)は対象外のままです。
+- `packaging\build.bat` がすべての option を読むようになりました。これまでは最初の1つだけを
+  読んでいたので、`--with-reranker --onedir` は何も言わずに lean の onefile を作り、
+  2つ目以降の未知の option も拒否されませんでした。
 - `mrag extract`は、extractorのwarningを表示する代わりに`TypeError`で落ちる状態でした。
   リリース済みのextractorはwarningを返しません。今後warningはstderrへ出し、stdoutは
   抽出した本文だけのままです。

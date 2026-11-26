@@ -117,7 +117,7 @@ packaging\build.bat --onedir
 packaging\build.bat --help
 ```
 
-`build.bat` reads only its first argument, so `--with-reranker` and `--onedir` cannot be combined. The artifact is `dist\mrag.exe` (onefile) or `dist\mrag\mrag.exe` (onedir). The script uses `.venv\Scripts\python.exe` when it exists, otherwise `python`; set the `PYTHON` environment variable to override.
+Options combine, as with `build.sh` (`packaging\build.bat --with-reranker --onedir`); before 1.7.6 `build.bat` read only its first argument. The artifact is `dist\mrag.exe` (onefile) or `dist\mrag\mrag.exe` (onedir). The script uses `.venv\Scripts\python.exe` when it exists, otherwise `python`; set the `PYTHON` environment variable to override.
 
 To run PyInstaller by hand instead, the equivalent of the LEAN onefile build from PowerShell (inside the environment where mrag and PyInstaller are installed) is:
 
