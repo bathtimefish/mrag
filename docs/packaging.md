@@ -21,7 +21,7 @@ uv pip install pyinstaller
 
 ## Building
 
-Use the bundled build script `packaging/build.sh`.
+Use the bundled build script `packaging/build.sh` (on Windows, `packaging\build.bat` — see [Building on Windows](#building-on-windows)).
 
 ```bash
 packaging/build.sh                 # LEAN onefile (no reranker, default)
@@ -37,7 +37,7 @@ When the build finishes, the artifact is produced depending on the chosen mode:
 
 Internally the script auto-collects dependencies that PyInstaller's static analysis tends to miss (qdrant-client / uvicorn / FastAPI / pydantic / apsw) and always adds the two flags mrag requires:
 
-- `--copy-metadata mrag` — bundles version metadata (`importlib.metadata`). Without it the binary crashes immediately on startup.
+- `--copy-metadata mrag` — bundles version metadata (`importlib.metadata`). Without it the binary still starts, but reports `_FALLBACK_VERSION` from `mrag/__init__.py` as its version instead of the installed package's version.
 - `--collect-data mrag` — collects packaged data such as `schema.sql`. Without it `mrag init` fails.
 
 Combined with mrag's source-level hardening for freezing (v0.21.2), these work with no extra manual steps.
@@ -79,7 +79,7 @@ Always smoke-test after building.
 
 ```bash
 # onefile
-./dist/mrag --version          # → 0.23.0
+./dist/mrag --version          # prints the installed version, e.g. 1.7.6
 ./dist/mrag --help
 
 # onedir
@@ -99,30 +99,44 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 - **No cross-compilation**: build per target OS / architecture.
 - **The vaporetto tokenizer is not included in the binary**: the Japanese morphological tokenizer's shared library is an external plugin loaded at runtime from `~/.mrag/extensions`, independent of packaging. This is intentional — it stays swappable even after freezing. To use vaporetto, place the extension on the target machine as usual (`mrag init` needs `apsw` to choose vaporetto, and the extension runs on it where the frozen Python's `sqlite3` cannot load extensions; the script includes it automatically when available).
 - **External services still required**: mrag uses Ollama for embeddings and Qdrant for vector search. These are not embedded in the binary and are still needed at runtime (packaging freezes mrag itself, not its service dependencies).
-- **Version sync**: keep `version` in `pyproject.toml` and `_FALLBACK_VERSION` in `mrag/__init__.py` in agreement. The binary's reported version is based on this value.
+- **Version sync**: keep `version` in `pyproject.toml` and `_FALLBACK_VERSION` in `mrag/__init__.py` in agreement. The binary reports the version from the bundled package metadata (the `version` the package was installed with); `_FALLBACK_VERSION` is reported only when that metadata is missing.
 - **MIT**: mrag has no copyleft dependency, so the binary can be redistributed under the MIT License. If you bundle the sqlite-vaporetto model, include its BSD-3-Clause notice.
 
 
 ## Building on Windows
 
-`build.sh` assumes a Unix shell. On Windows, run the equivalent from PowerShell (note the `--add-data` separator becomes `;`).
+`build.sh` assumes a Unix shell. On Windows, use the bundled batch script `packaging\build.bat`, which passes the same PyInstaller flags.
+
+```bat
+:: LEAN onefile (no reranker, default)
+packaging\build.bat
+:: full (bundles sentence-transformers + torch)
+packaging\build.bat --with-reranker
+:: folder build — faster startup
+packaging\build.bat --onedir
+packaging\build.bat --help
+```
+
+`build.bat` reads only its first argument, so `--with-reranker` and `--onedir` cannot be combined. The artifact is `dist\mrag.exe` (onefile) or `dist\mrag\mrag.exe` (onedir). The script uses `.venv\Scripts\python.exe` when it exists, otherwise `python`; set the `PYTHON` environment variable to override.
+
+To run PyInstaller by hand instead, the equivalent of the LEAN onefile build from PowerShell (inside the environment where mrag and PyInstaller are installed) is:
 
 ```powershell
 $collect = @('qdrant_client','uvicorn','fastapi','pydantic','apsw') |
     ForEach-Object { '--collect-all', $_ }
-pyinstaller --onefile --name mrag --clean --noconfirm `
+python -m PyInstaller --onefile --name mrag --clean --noconfirm `
   --copy-metadata mrag --collect-submodules mrag --collect-data mrag `
   @collect `
-  --exclude-module torch --exclude-module sentence_transformers `
+  --exclude-module torch --exclude-module sentence_transformers --exclude-module transformers `
   packaging\mrag_entry.py
 ```
 
-For a full build, drop the `--exclude-module` flags and add the reranker packages to `$collect`.
+For a full build, drop the `--exclude-module` flags and add the reranker packages (`sentence_transformers`, `transformers`, `torch`, `tokenizers`, `safetensors`) to `$collect`.
 
 
 ## Troubleshooting
 
-- **`PackageNotFoundError: mrag` on startup** → `--copy-metadata mrag` is missing. The script adds it automatically.
+- **`--version` reports `_FALLBACK_VERSION` rather than the installed version** → `--copy-metadata mrag` is missing, so the binary has no package metadata and falls back. The script adds the flag automatically.
 - **`mrag init` cannot find schema.sql** → `--collect-data mrag` is missing. Same as above.
 - **`ModuleNotFoundError` (uvicorn protocols / etc.)** → the package was not collected. Add it to `add_collect_if_present` in the script and rebuild.
 - **Binary is huge / slow to start** → confirm the reranker is excluded (use LEAN), and choose `--onedir` for repeated use.

@@ -174,10 +174,10 @@ agent_usage:
 
 ## 既存プロジェクトへの後付け
 
-v0.17 以前に `mrag init` で作られたプロジェクトには `kb_information.yaml` がありません。registry に参加させる場合は次のいずれかの方法で追加します：
+v0.17 以前に `mrag init` で作られたプロジェクトには `kb_information.yaml` がありません。registry に参加させる場合はファイルを手動で作成します：
 
 ```bash
-# 方法 1: テンプレートから手動で作成
+# テンプレートから手動で作成
 cat > kb_information.yaml <<'EOF'
 version: 1
 knowledge_base:
@@ -192,18 +192,15 @@ agent_usage:
   example_queries: []
 EOF
 mrag kb-info validate
-
-# 方法 2: mrag init --force で再生成（既存の mrag.yaml / profiles は上書きされるので注意）
-mrag init . --force --non-interactive
 ```
 
-> 注意：`mrag init --force` は `kb_information.yaml` を含むすべてのプロジェクトファイルを上書きします。`mrag.yaml` や `profiles/*.yaml` を編集していた場合は事前にバックアップを取ってください。
+> 注意：この用途に `mrag init --force` は使えません。`--force` が再初期化するのは空のプロジェクトだけで、ドキュメントを含むプロジェクトは拒否されます。空のプロジェクトでは `mrag.yaml`、`kb_information.yaml`、`profiles/default.yaml`、`profiles/context_prompt.txt` が上書きされます。
 
 
 ## Tips
 
 - `mrag kb-info show` は YAML をそのまま出すので、`mrag kb-info show | yq '.agent_usage.tags'` のように部分抽出のパイプラインに使えます
 - `--kb-info-json` 用の JSON はエージェントから組み立てる前提です。`mrag kb-info schema` で取得した JSON Schema をシステムプロンプトに埋め込んでおくと、構造化生成（JSON モード）と相性が良いです
-- `agent_usage` は空でも mrag CLI 自体は動きますが、`mrag registry validate` でこのファイルの内容が検査される（path・id・preferred_profiles の整合）ので、registry に参加させる前に `mrag kb-info validate` を回しておくと安全です
+- `agent_usage` は空でも mrag CLI 自体は動きます。`mrag registry validate` が確認するのはこのファイルの存在だけで、内容は読みません（検査される path・id・preferred_profiles は registry 側のエントリの値です）。また `mrag registry generate` は内容が不正なプロジェクトを skip するので、registry に参加させる前に `mrag kb-info validate` を回しておくと安全です
 - 内容の更新はテキストエディタでの直接編集が一番素直です。`mrag kb-info edit` のようなコマンドは意図的に未実装です（→ 仕様の単純化のため）
 - registry 側の集約挙動については [registry-ja.md](./registry-ja.md) を参照してください

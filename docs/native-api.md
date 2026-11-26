@@ -238,7 +238,7 @@ use the list endpoint for the derived states and source identity:
   "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "status": "extracted",
   "created_at": "2026-05-22T10:00:00",
-  "extracted_text_path": "data/extracted/abcdef0123456789.md",
+  "extracted_text_path": "data/documents/abcdef0123456789/extracted.txt",
   "chunk_count": 42
 }
 ```
@@ -269,7 +269,7 @@ Response:
 ]
 ```
 
-Profiles loaded from `profiles/*.yaml` are returned. Profiles registered in `mrag.yaml` but whose YAML file cannot be found are silently dropped.
+The list contains the profiles the catalog has recorded, which means profiles that have been indexed (`mrag index` records the profile it runs with). A `profiles/*.yaml` file that has never been indexed is not listed, and a recorded profile whose YAML file cannot be found is silently dropped. The values of each entry are read from the profile's YAML file.
 
 ### Detail
 
@@ -313,12 +313,29 @@ The `MRAG_API_KEY` environment variable controls auth the same way as the [Dify 
 
 | HTTP | Trigger |
 |---|---|
+| 400 | `GET /api/v1/documents`: unknown query parameter or invalid parameter value (returned as the error envelope below). `POST /api/v1/retrieve`: the retrieval was refused, e.g. `strategy` is none of `hybrid`, `vector`, `keyword`, `parent_child`, or the profile's `keyword.tokenizer` does not match the project's tokenizer (returned as `{"detail": "<reason>"}`) |
 | 401 | `Authorization` header missing or mismatched when auth is required (returned as `{"detail": "Unauthorized"}`) |
-| 404 | Profile name or document ID does not exist |
+| 404 | Profile name or document ID does not exist. Returns `{"detail": "Not found"}`; `GET /api/v1/documents` with an unknown `profile` returns the error envelope below |
 | 422 | `query` field missing, `top_k` out of range, JSON structure invalid |
+| 500 | Unhandled internal error. Returns `{"detail": "Internal server error"}` |
 | 503 | Qdrant or other internal resource is unreachable. Returns `{"detail": "<reason>"}` (retryable) |
 
-All Native API error responses follow FastAPI's default shape (`{"detail": ...}`).
+Native API error responses follow FastAPI's default shape (`{"detail": ...}`), with one exception: the list endpoint `GET /api/v1/documents` returns its errors (400 and 404) in its own envelope:
+
+```json
+{
+  "schema_version": 1,
+  "status": "error",
+  "error": {
+    "code": "documents_query_unknown_parameter",
+    "kind": "validation",
+    "message": "this endpoint does not accept that query parameter",
+    "retryable": false
+  }
+}
+```
+
+`error.code` is one of `documents_query_unknown_parameter`, `documents_query_invalid`, `document_status_unknown`, `documents_page_invalid` (all 400, `kind: "validation"`), or `profile_not_found` (404, `kind: "config"`). `retryable` is always `false`.
 
 
 ## OpenAPI documentation

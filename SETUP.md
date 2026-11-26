@@ -241,6 +241,6 @@ For next steps — initializing a project, adding documents, and building the in
 
 Key points to keep in mind when using `mrag init`:
 
-- `mrag init` creates a **subdirectory** inside the current working directory. Run it from the **parent** directory of where you want the project to live — not from inside the intended project directory.
+- `mrag init <PROJECT_DIR>` creates the project at that path. When `PROJECT_DIR` is omitted, `mrag init` creates a **subdirectory** inside the current working directory, named after the project name. In that case, run it from the **parent** directory of where you want the project to live — not from inside the intended project directory.
 - The vaporetto library (§3) must be in place **before** running `mrag init`. The tokenizer is auto-detected at init time and stored in `mrag.yaml`. Changing it after init requires deleting the project and re-running `mrag init`.
 - Qdrant runs **embedded** by default (`mode: local`). No Docker setup is needed. Only one `mrag index` process can run at a time per project (the embedded Qdrant holds a file lock on the `qdrant/` directory).

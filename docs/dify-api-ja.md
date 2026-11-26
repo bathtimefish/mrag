@@ -160,7 +160,7 @@ Dify で **「外部ナレッジ（External Knowledge）」** として mrag を
 1. Dify Studio の「ナレッジ」セクションから「外部ナレッジを追加」を選ぶ
 2. **エンドポイント URL** に `http(s)://<mrag-host>:<port>/retrieval` を入力
 3. **API キー** に `MRAG_API_KEY` と同じ値を入力（mrag 側で未設定なら空欄で可）
-4. **Knowledge ID** に `mrag.yaml` の `knowledge_base.id` を入力（`mrag init` 直後にコンソール表示される値）
+4. **Knowledge ID** に `mrag.yaml` の `knowledge_base.id` を入力（`mrag serve` の起動時にコンソールへ `Knowledge ID: <id>` と表示される値）
 
 接続テストが通ったら、Dify のチャットフロー側で「ナレッジ取得（Knowledge Retrieval）」ノードからこのナレッジを参照できます。
 

@@ -21,7 +21,7 @@ uv pip install pyinstaller
 
 ## ビルド手順
 
-リポジトリ同梱のビルドスクリプト `packaging/build.sh` を使います。
+リポジトリ同梱のビルドスクリプト `packaging/build.sh` を使います（Windows では `packaging\build.bat`。後述の「Windows でのビルド」を参照）。
 
 ```bash
 packaging/build.sh                 # LEAN onefile（reranker 抜き・既定）
@@ -37,7 +37,7 @@ packaging/build.sh --help
 
 スクリプトは内部で、PyInstaller が静的解析で取りこぼしやすい依存（qdrant-client / uvicorn / FastAPI / pydantic / apsw）を自動収集し、mrag の動作に必須な次の2点を必ず付与します。
 
-- `--copy-metadata mrag` … バージョン情報（`importlib.metadata`）の同梱。これが無いと起動時に即クラッシュします
+- `--copy-metadata mrag` … バージョン情報（`importlib.metadata`）の同梱。これが無くてもバイナリは起動しますが、バージョンとしてインストール済みパッケージの値ではなく `mrag/__init__.py` の `_FALLBACK_VERSION` を表示します
 - `--collect-data mrag` … `schema.sql` などのパッケージ同梱データの収集。これが無いと `mrag init` が失敗します
 
 これらは mrag 側のコードがパッケージ化に耐えるようハードニング済み（v0.21.2）であることと合わせて、追加の手作業なしで動作します。
@@ -79,7 +79,7 @@ onefile は毎回展開コストがかかるため、何度も呼び出す CLI �
 
 ```bash
 # onefile の場合
-./dist/mrag --version          # → 0.23.0
+./dist/mrag --version          # インストール済みのバージョンを表示（例：1.7.6）
 ./dist/mrag --help
 
 # onedir の場合
@@ -99,30 +99,44 @@ mkdir /tmp/kb-test && cd /tmp/kb-test
 - **クロスコンパイル不可**：配布対象の OS / アーキテクチャごとにビルドが必要です。
 - **vaporetto トークナイザはバイナリに含まれません**：日本語形態素トークナイザの共有ライブラリは実行時に `~/.mrag/extensions` からロードされる外部プラグインであり、パッケージ化とは独立しています。これは意図的な設計で、バイナリに固めても差し替え可能なまま保たれます。vaporetto を使う場合は、配布先にも従来どおり拡張を配置してください（`mrag init` が vaporetto を選ぶには `apsw` が要り、固めた Python の `sqlite3` が拡張を読めない場合は拡張も `apsw` の上で動きます。スクリプトは存在すれば自動で含めます）。
 - **外部サービス依存は残ります**：mrag は埋め込み生成に Ollama、ベクトル検索に Qdrant を使います。これらはバイナリには含まれず、実行時に別途必要です（パッケージ化は mrag 本体を固めるだけで、依存サービスを内包するものではありません）。
-- **バージョン同期**：`pyproject.toml` の `version` と `mrag/__init__.py` の `_FALLBACK_VERSION` は一致させてください。バイナリのバージョン表示はこの値に基づきます。
+- **バージョン同期**：`pyproject.toml` の `version` と `mrag/__init__.py` の `_FALLBACK_VERSION` は一致させてください。バイナリは同梱されたパッケージメタデータのバージョン（パッケージをインストールした時点の `version`）を表示し、メタデータが無い場合にだけ `_FALLBACK_VERSION` を表示します。
 - **MIT**：mrag にコピーレフト依存はないため、バイナリは MIT License で再配布できます。sqlite-vaporetto のモデルを同梱する場合は BSD-3-Clause 表示を含めてください。
 
 
 ## Windows でのビルド
 
-`build.sh` は Unix シェル前提です。Windows では PowerShell から同等のコマンドを実行します（`--add-data` の区切り文字が `;` になる点に注意）。
+`build.sh` は Unix シェル前提です。Windows ではリポジトリ同梱のバッチスクリプト `packaging\build.bat` を使います。PyInstaller に渡すフラグは `build.sh` と同じです。
+
+```bat
+:: LEAN onefile（reranker 抜き・既定）
+packaging\build.bat
+:: フル（sentence-transformers + torch を同梱）
+packaging\build.bat --with-reranker
+:: フォルダ形式（起動が速い）
+packaging\build.bat --onedir
+packaging\build.bat --help
+```
+
+`build.bat` は最初の引数だけを読むため、`--with-reranker` と `--onedir` は併用できません。成果物は `dist\mrag.exe`（onefile）または `dist\mrag\mrag.exe`（onedir）です。スクリプトは `.venv\Scripts\python.exe` があればそれを、無ければ `python` を使います。環境変数 `PYTHON` で上書きできます。
+
+PyInstaller を手で実行する場合、LEAN の onefile ビルドに相当するコマンドは次のとおりです（mrag と PyInstaller が入った環境の PowerShell で実行）。
 
 ```powershell
 $collect = @('qdrant_client','uvicorn','fastapi','pydantic','apsw') |
     ForEach-Object { '--collect-all', $_ }
-pyinstaller --onefile --name mrag --clean --noconfirm `
+python -m PyInstaller --onefile --name mrag --clean --noconfirm `
   --copy-metadata mrag --collect-submodules mrag --collect-data mrag `
   @collect `
-  --exclude-module torch --exclude-module sentence_transformers `
+  --exclude-module torch --exclude-module sentence_transformers --exclude-module transformers `
   packaging\mrag_entry.py
 ```
 
-フルビルドにする場合は `--exclude-module` を外し、`$collect` に reranker 系パッケージを追加してください。
+フルビルドにする場合は `--exclude-module` を外し、`$collect` に reranker 系パッケージ（`sentence_transformers`、`transformers`、`torch`、`tokenizers`、`safetensors`）を追加してください。
 
 
 ## トラブルシュート
 
-- **起動時に `PackageNotFoundError: mrag`** → `--copy-metadata mrag` が抜けています。スクリプト経由なら自動付与されます。
+- **`--version` がインストール済みのバージョンではなく `_FALLBACK_VERSION` を表示する** → `--copy-metadata mrag` が抜けており、バイナリにパッケージメタデータが無いため fallback の値になっています。スクリプト経由なら自動付与されます。
 - **`mrag init` で schema.sql が見つからない** → `--collect-data mrag` が抜けています。同上。
 - **`ModuleNotFoundError`（uvicorn のプロトコル等）** → 対象パッケージが収集されていません。スクリプトの `add_collect_if_present` に当該パッケージを追加してビルドし直してください。
 - **バイナリが巨大／起動が遅い** → reranker を含めていないか確認し（LEAN を使う）、繰り返し利用なら `--onedir` を選んでください。

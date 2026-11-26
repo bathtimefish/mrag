@@ -161,7 +161,7 @@ These are the key steps for registering mrag as an **External Knowledge** source
 1. From the "Knowledge" section in Dify Studio, choose "Add External Knowledge"
 2. Enter `http(s)://<mrag-host>:<port>/retrieval` as the **endpoint URL**
 3. Enter the same value as `MRAG_API_KEY` for the **API key** (leave empty if `MRAG_API_KEY` is not set on the mrag side)
-4. Enter `knowledge_base.id` from `mrag.yaml` as the **Knowledge ID** (this value is printed on the mrag console right after `mrag init`)
+4. Enter `knowledge_base.id` from `mrag.yaml` as the **Knowledge ID** (this value is printed as `Knowledge ID: <id>` in the `mrag serve` startup banner)
 
 Once the connection test passes, you can reference this knowledge from Dify's chat flow via a Knowledge Retrieval node.
 

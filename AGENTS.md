@@ -34,7 +34,9 @@ whole manual or repeating an environment audit before every edit.
   distinct identities; legacy rows retain `legacy_unbound` identity rather than
   guessing their original path. Non-path identities live under the reserved
   `identities/` namespace (scheme 2), so no project file may be added from
-  there; only `mrag catalog migrate-identities` rewrites a stored identity. Content identity (SHA-256) still applies across
+  there; a stored identity is rewritten only by `mrag catalog migrate-identities`,
+  a `move` applied by `mrag documents sync --apply`, and
+  `mrag documents rebind --apply`. Content identity (SHA-256) still applies across
   sources, so a re-added file matching any registered document — migrated rows
   included — is `skipped_duplicate`. Native API and MCP lists share one row and
   envelope contract (`mrag/core/ingestion/inventory.py`); change it there, never

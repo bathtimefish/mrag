@@ -39,8 +39,8 @@ directoryを`--recursive`なしで指定すると拒否されます。`--include
 ## pathの選択
 
 matchには、指定したsource rootからの相対pathをPOSIX形式へ正規化して使用します。
-candidateとreport itemはこの相対pathでsortされるため、抽出を並列化しても同じtreeから
-決定的なreportが得られます。
+candidateとreport itemはこの相対pathでsortされるため、同じtreeから決定的なreportが
+得られます。
 
 選択順序は次のとおりです。
 
@@ -99,8 +99,8 @@ source identityを保ちます。外部ディレクトリの追加時は不透�
 後から単一ファイルとして追加しても同じ元ファイルを見つけられます。
 mragは既存document IDを維持して抽出recordを置換します。
 
-準備後のdocumentは直列化されたwrite boundaryを通して永続化し、最終reportは相対pathの
-安定順を維持します。
+fileは1件ずつ読んで抽出し、その後1件ずつ永続化します。並列に動く処理はありません。
+最終reportは相対pathの安定順を維持します。
 
 ## JSON reportとexit code
 
@@ -114,9 +114,12 @@ mragは既存document IDを維持して抽出recordを置換します。
   "status": "partial",
   "summary": {"added": 4, "skipped": 2, "failed": 1, "cancelled": 0},
   "items": [
-    {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
-    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
+    {"source": "manuals/a.md", "status": "added", "document_id": "...",
+     "original_sha256": "...", "warnings": [], "error": null},
+    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...",
+     "original_sha256": "...", "warnings": [], "error": null},
     {"source": "manuals/c.pdf", "status": "failed", "document_id": null,
+     "original_sha256": null, "warnings": [],
      "error": {"code": "prepare_failed",
                "message": "Unsupported file type: .pdf (requires external conversion to Markdown)"}}
   ],
@@ -126,11 +129,26 @@ mragは既存document IDを維持して抽出recordを置換します。
 }
 ```
 
+`original_sha256`は、再帰追加の`added`と`skipped_duplicate`のitemではfileのSHA-256、
+それ以外のitemでは`null`です。`warnings`は文字列のlistで、報告するものがなければ空です。
+`--dry-run`では、追加を試みるfileは`status: "planned"`になり、対応していない形式のfileは
+code `unsupported_source`の`failed`になります（`--dry-run`なしでは`prepare_failed`）。
+top-levelの`status`は`success`、`partial`、`error`（全itemが失敗）、`cancelled`の
+いずれかです。
+
+scanが拒否するsource root — `data/`、`identities/`などproject自身のdirectoryの配下、
+`--follow-symlinks`なしのsymlink directory、不正な`--include`／`--exclude`のglob、使えない
+`.mragignore` — は、code `directory_scan_failed`の`failed` item 1件としてreportされ、
+exit codeは1です。sourceが存在しない場合、作業directoryが初期化済みprojectでない場合、
+使用方法が不正な場合はreportを出さず、`--json`では
+`{"schema_version": 1, "command": "add", "status": "error", "error": {"code": "...", "message": "..."}}`
+を出力します。
+
 | exit code | 意味 |
 |---:|---|
 | `0` | failed itemなし。addedとduplicate skipの両方を含む場合がある。 |
 | `3` | defaultのbest-effort modeで部分成功。成功したdocumentは登録済みのまま。 |
-| `1` | 全itemが失敗、または`--strict`指定中に1件以上失敗。 |
+| `1` | 全itemが失敗（拒否されたsource rootは失敗item 1件）、または`--strict`指定中に1件以上失敗。sourceが存在しない場合と、初期化済みprojectの中で実行していない場合も1。 |
 | `2` | CLIの使用方法が不正。 |
 | `130` | 中断された。実行はファイルの境界で止まった。下記参照。 |
 

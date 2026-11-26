@@ -130,7 +130,7 @@ Run `mrag <command> --help` for the full set of options.
 For directory ingestion, preview with `mrag add <dir> --recursive --dry-run
 --json`, then apply the same selection without `--dry-run`. See [recursive
 directory ingestion](./docs/recursive-add.md) for filtering, symlink, duplicate,
-concurrency, and partial-success behavior.
+and partial-success behavior.
 
 When files under a directory move, change or disappear after they were added,
 `mrag documents sync <dir>` shows what the catalog would do about it and

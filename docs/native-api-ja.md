@@ -232,9 +232,9 @@ GET /api/v1/documents/{document_id} HTTP/1.1
   "id": "abcdef0123456789",
   "filename": "manual.md",
   "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "status": "indexed",
+  "status": "extracted",
   "created_at": "2026-05-22T10:00:00",
-  "extracted_text_path": "data/extracted/abcdef0123456789.md",
+  "extracted_text_path": "data/documents/abcdef0123456789/extracted.txt",
   "chunk_count": 42
 }
 ```
@@ -265,7 +265,7 @@ GET /api/v1/profiles HTTP/1.1
 ]
 ```
 
-`profiles/*.yaml` を読み込んだ結果が返ります。`mrag.yaml` 側に登録済みでも YAML ファイルが見つからないプロファイルは除外されます。
+一覧に載るのは catalog に記録されているプロファイル、つまりインデックス済みのプロファイルです（`mrag index` が、実行に使ったプロファイルを記録します）。一度もインデックスしていない `profiles/*.yaml` は一覧に出ません。記録済みでも YAML ファイルが見つからないプロファイルは除外されます。各エントリの値はプロファイルの YAML ファイルから読み込みます。
 
 ### 詳細
 
@@ -309,12 +309,29 @@ GET /api/v1/profiles/{profile_name} HTTP/1.1
 
 | HTTP | 発生条件 |
 |---|---|
+| 400 | `GET /api/v1/documents`：未知のクエリパラメータ / パラメータ値の不正（後述のエラー envelope 形式）。`POST /api/v1/retrieve`：検索が拒否された場合。例：`strategy` が `hybrid` / `vector` / `keyword` / `parent_child` のどれでもない、プロファイルの `keyword.tokenizer` がプロジェクトのトークナイザと一致しない（`{"detail": "<原因>"}` 形式） |
 | 401 | 認証必須時の `Authorization` ヘッダ欠落 / 不一致（`{"detail": "Unauthorized"}` 形式） |
-| 404 | プロファイル名 / ドキュメント ID が存在しない |
+| 404 | プロファイル名 / ドキュメント ID が存在しない。`{"detail": "Not found"}` を返します。`GET /api/v1/documents` に存在しない `profile` を指定した場合は後述のエラー envelope を返します |
 | 422 | `query` フィールド欠落、`top_k` 範囲外、JSON 構造不正 |
+| 500 | 処理されなかった内部エラー。`{"detail": "Internal server error"}` を返します |
 | 503 | Qdrant / 内部リソース不到達。`{"detail": "<原因>"}` を返します（リトライ可能） |
 
-Native API のエラーレスポンスはすべて FastAPI のデフォルト形式（`{"detail": ...}`）に従います。
+Native API のエラーレスポンスは FastAPI のデフォルト形式（`{"detail": ...}`）に従いますが、一覧エンドポイント `GET /api/v1/documents` だけは例外で、エラー（400 と 404）を独自の envelope で返します：
+
+```json
+{
+  "schema_version": 1,
+  "status": "error",
+  "error": {
+    "code": "documents_query_unknown_parameter",
+    "kind": "validation",
+    "message": "this endpoint does not accept that query parameter",
+    "retryable": false
+  }
+}
+```
+
+`error.code` は `documents_query_unknown_parameter`、`documents_query_invalid`、`document_status_unknown`、`documents_page_invalid`（いずれも 400、`kind: "validation"`）、`profile_not_found`（404、`kind: "config"`）のいずれかです。`retryable` は常に `false` です。
 
 
 ## OpenAPI ドキュメント

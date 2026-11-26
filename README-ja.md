@@ -130,7 +130,7 @@ mrag search "クエリ"
 
 ディレクトリ投入では、最初に `mrag add <dir> --recursive --dry-run --json`
 で対象を確認し、同じ選択条件から `--dry-run` を外して適用してください。filter、symlink、
-duplicate、並列変換、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
+duplicate、部分成功の詳細は[ディレクトリの再帰追加](./docs/recursive-add-ja.md)
 を参照してください。
 
 追加後にディレクトリ配下のファイルが移動・変更・消失したときは、`mrag documents sync <dir>`
