@@ -221,5 +221,6 @@ content was taken, not whether the plan meant to take it.
 
 Neither command rebuilds the index on its own; `--index` on the sync, or
 `mrag index`, does. A moved or rebound document counts as changed: the document
-list reports it `stale` until then, and the next index rebuilds it under its new
+list (`GET /api/v1/documents` and the MCP `list_documents` tool) reports it
+`stale` until then, and the next index rebuilds it under its new
 name.

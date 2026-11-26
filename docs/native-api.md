@@ -37,6 +37,8 @@ mrag serve --host 0.0.0.0 --port 8000
 
 `mrag serve`'s options (`--profile` / `--no-rerank`, etc.) and the authentication behavior are shared with the Dify API. See the "mrag-side setup" section of [dify-api.md](./dify-api.md) for the details.
 
+> Note: `--profile` does not choose the profile `POST /api/v1/retrieve` searches. When a request omits `profile`, that endpoint uses `default_profile` from `mrag.yaml`, whatever `--profile` says. In the Native API, `--profile` is the default profile of `GET /api/v1/documents` only.
+
 
 ## `POST /api/v1/retrieve` — retrieval
 
@@ -263,7 +265,7 @@ Response:
   {
     "name": "default",
     "strategy": "hybrid",
-    "embedding_model": "nomic-embed-text",
+    "embedding_model": "embeddinggemma-2:740m-q8_0",
     "chunking_strategy": "recursive"
   }
 ]
@@ -283,12 +285,12 @@ The response is a list entry with the **main chunking and retrieval parameters**
 {
   "name": "default",
   "strategy": "hybrid",
-  "embedding_model": "nomic-embed-text",
+  "embedding_model": "embeddinggemma-2:740m-q8_0",
   "chunking_strategy": "recursive",
   "chunk_size": 800,
   "overlap": 120,
-  "dense_top_k": 30,
-  "keyword_top_k": 30,
+  "dense_top_k": 20,
+  "keyword_top_k": 20,
   "fusion": "rrf"
 }
 ```
@@ -307,6 +309,8 @@ The `MRAG_API_KEY` environment variable controls auth the same way as the [Dify 
 > - Native API (`/api/v1/*`): `{"detail": "Unauthorized"}`
 >
 > Both return HTTP `401`, but the response body shape differs — branch on it on the client side.
+
+CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, the auth check runs before CORS, so a browser's preflight `OPTIONS` request — which carries no `Authorization` header — is answered `401` without CORS headers.
 
 
 ## Error code reference
@@ -348,7 +352,7 @@ While `mrag serve` is running, the following URLs are accessible from a browser:
 | `http://<host>:<port>/redoc` | Redoc |
 | `http://<host>:<port>/openapi.json` | Raw OpenAPI spec JSON |
 
-These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection and health checks). For production deployments, consider restricting access at a reverse proxy.
+These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection). `/` is exempt as well, but no route is mounted there: `GET /` answers `404`, so it does not work as a health check. To check that the server is up without a key, request one of the three URLs above. For production deployments, consider restricting access at a reverse proxy.
 
 
 ## Tips

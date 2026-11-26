@@ -97,7 +97,6 @@ content identityにはSHA-256を使用します。内容が登録済みのfile�
 `--force`を指定してください。document IDは保持され、内容で一致した文書は自身の
 source identityを保ちます。外部ディレクトリの追加時は不透明な root key を登録し、
 後から単一ファイルとして追加しても同じ元ファイルを見つけられます。
-mragは既存document IDを維持して抽出recordを置換します。
 
 fileは1件ずつ読んで抽出し、その後1件ずつ永続化します。並列に動く処理はありません。
 最終reportは相対pathの安定順を維持します。

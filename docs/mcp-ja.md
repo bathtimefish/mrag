@@ -78,6 +78,18 @@ mrag mcp --config ./mrag-mcp.yaml
 
 設定ファイル内の相対 `project_dir` は、その設定ファイルがあるディレクトリからの相対パスとして解決されます。
 
+このほかに省略可能な節が 3 つあります。`mrag mcp init-config` は既定値付きでこれらも出力します。
+
+| キー | 既定値 | 意味 |
+|---|---|---|
+| `features.tools` | `true` | tools を公開する |
+| `features.resources` | `true` | resources を公開する |
+| `features.management_tools` | `false` | `false` のままにします。`true` は設定エラーとして拒否されます |
+| `limits.content_max_chars` | `20000` | tool の結果に含まれる chunk 本文と、YAML・抽出テキスト・text の原本の各 resource を、この文字数で切り詰めます。`0` で切り詰めなし。切り詰めた tool の結果には `truncated: true` と `content_chars`・`returned_chars` が付きます |
+| `limits.artifact_max_bytes` | `1048576` | `.../original` が返す原本の最大サイズ |
+| `limits.request_timeout_seconds` | `60` | 値の検証（1 以上）だけ行います。server はこの値を適用しません |
+| `logging.level` | `INFO` | `DEBUG`・`INFO`・`WARNING`・`ERROR` のいずれか（大文字） |
+
 ## 環境変数による上書き
 
 環境変数は YAML より優先されます。
@@ -104,6 +116,8 @@ mrag mcp
 | `MRAG_MCP_TOP_K_MAX` | `top_k` 上限 |
 | `MRAG_MCP_NO_RERANK` | rerank 無効化 |
 | `MRAG_MCP_HOST` / `MRAG_MCP_PORT` / `MRAG_MCP_PATH` | HTTP bind 設定 |
+| `MRAG_MCP_ALLOWED_ORIGINS` | `http.allowed_origins` に入れる origin のカンマ区切りリスト |
+| `MRAG_MCP_LOG_LEVEL` | `logging.level` |
 | `MRAG_MCP_API_KEY` | HTTP bearer token |
 | `MRAG_MCP_API_KEY_FILE` | HTTP bearer token を格納したファイル |
 
@@ -136,11 +150,30 @@ MVP では read-only tools のみ公開します。
 | `inspect_chunk` | 1 chunk の本文/context を確認 |
 | `inspect_sections` | heading / parent-child 構造を確認 |
 
+引数（必須なのは各 tool の先頭に挙げたものだけです）:
+
+| Tool | 引数 |
+|---|---|
+| `search` | `query`、`profile`（既定: server の profile）、`strategy`（既定: MCP 設定の `retrieval.strategy`。未設定なら選択した profile の値）、`top_k`（既定: `retrieval.top_k_default`。未設定なら選択した profile の `retrieval.top_k`）、`no_rerank`（既定: `retrieval.no_rerank`） |
+| `list_documents` | `profile`、`all`、`status`、`limit`、`offset`。すべて省略可能で、内容は冒頭の説明のとおり |
+| `list_profiles` | なし |
+| `inspect_document` | `document_id`、`profile`（1 つの profile に絞る） |
+| `inspect_chunks` | `document_id`、`profile`、`limit`（既定: 全 chunk）、`offset`（既定 `0`）、`show_content` と `show_context`（既定 `false`） |
+| `inspect_chunk` | `chunk_id` |
+| `inspect_sections` | `document_id`、`profile` |
+
+`inspect_chunks` と `inspect_sections` の `profile` を省略できるのは、その document が
+ちょうど 1 つの profile で index されている場合だけです。
+
+`search` は `top_k` を上限に丸めません。呼び出しで指定した値でも既定値から解決した値でも、
+`retrieval.top_k_max` を超えると tool error（`isError: true`）になります。メッセージは
+`top_k must be <= retrieval.top_k_max (50)` で、括弧内は有効な上限値です。
+
 `search` の各結果は `reference` を持ちます — document の名前、保存された原本と
 抽出物（project root からの相対パス）、`mrag://documents/{document_id}/original`
 リソース。agent は読んだものを引用できます。`mrag search --json` と
 `POST /api/v1/retrieve` が返すのと同じオブジェクトで、各フィールドは
-[ネイティブ API](./native-api-ja.md) を参照してください。
+[ネイティブ API](./native-api-ja.md#post-apiv1retrieve--検索) を参照してください。
 
 `search` toolはactiveなdocument exclusionを適用します。sourceは保持されるため、除外documentも
 `list_documents`には引き続き現れます。exclusion管理は意図的にCLI限定です。詳細は
@@ -167,6 +200,11 @@ mrag://chunks/{chunk_id}
 
 大きな本文は `limits.content_max_chars` に従って切り詰められます。
 
+`mrag://documents` が返すのは 1 ページ目だけです。内容は `list_documents` を引数なしで
+呼んだ結果（server の profile、抽出済みの文書、先頭 100 行）と同じです。続きがあるかどうかは
+返り値の `page.next_offset` で分かります。2 ページ目以降は `list_documents` tool で取得して
+ください。
+
 `.../original` は保存された原本を、追加時に記録された種類で返します。Markdown や
 text のファイルは text として、1.0.0 より前に追加された PDF は blob として返します。
 text か blob かはこの種類で決まり、バイト列がたまたま decode できるかどうかでは
@@ -188,3 +226,9 @@ auth:
 ```
 
 既定 host は `127.0.0.1` です。`0.0.0.0` に bind し、bearer token が未設定の場合は警告を出します。
+
+token を設定している場合、`Authorization` ヘッダが `Bearer <token>` でないリクエストには
+`401` と plain text の本文 `Unauthorized` を返します。`http.allowed_origins` が空でない場合、
+`Origin` ヘッダがリストにないリクエストには `403` と plain text の本文 `Forbidden origin` を
+返します（`Origin` ヘッダのないリクエストは通ります。origin の判定は token の判定より先です）。
+どちらの応答も `text/plain` で、JSON-RPC の error ではありません。

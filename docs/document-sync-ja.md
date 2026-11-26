@@ -206,5 +206,5 @@ report の `new_revision` は、計画が取り込むつもりだったかでは
 表します。
 
 どちらのコマンドも単独では index を再構築しません。sync の `--index` か `mrag index` が
-行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧は
-`stale` と報告し、次の index が新しい名前で作り直します。
+行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧
+(`GET /api/v1/documents` と MCP の `list_documents` tool)は `stale` と報告し、次の index が新しい名前で作り直します。
