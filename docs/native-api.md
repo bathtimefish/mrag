@@ -271,7 +271,7 @@ Response:
 ]
 ```
 
-The list contains the profiles the catalog has recorded, which means profiles that have been indexed (`mrag index` records the profile it runs with). A `profiles/*.yaml` file that has never been indexed is not listed, and a recorded profile whose YAML file cannot be found is silently dropped. The values of each entry are read from the profile's YAML file.
+The list contains the profiles the project defines: every `profiles/*.yaml` file that loads, indexed or not — the same list as the MCP `list_profiles` tool. A file that does not load as a profile is left out. Before 1.7.6 the list held only profiles that had been indexed. The values of each entry are read from the profile's YAML file.
 
 ### Detail
 
@@ -310,7 +310,7 @@ The `MRAG_API_KEY` environment variable controls auth the same way as the [Dify 
 >
 > Both return HTTP `401`, but the response body shape differs — branch on it on the client side.
 
-CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, the auth check runs before CORS, so a browser's preflight `OPTIONS` request — which carries no `Authorization` header — is answered `401` without CORS headers.
+CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, a browser's preflight (an `OPTIONS` request with `Access-Control-Request-Method`, which carries no `Authorization` header) is answered without a key, and the request it clears still needs one. Before 1.7.6 the preflight was answered `401`.
 
 
 ## Error code reference
@@ -352,7 +352,7 @@ While `mrag serve` is running, the following URLs are accessible from a browser:
 | `http://<host>:<port>/redoc` | Redoc |
 | `http://<host>:<port>/openapi.json` | Raw OpenAPI spec JSON |
 
-These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection). `/` is exempt as well, but no route is mounted there: `GET /` answers `404`, so it does not work as a health check. To check that the server is up without a key, request one of the three URLs above. For production deployments, consider restricting access at a reverse proxy.
+These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection). Nothing else is: `/` has no route, and with a key set `GET /` answers `401` (before 1.7.6 it was exempt and answered `404`). To check that the server is up without a key, request one of the three URLs above. For production deployments, consider restricting access at a reverse proxy.
 
 
 ## Tips

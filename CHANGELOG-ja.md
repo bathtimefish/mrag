@@ -24,6 +24,17 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
   `parent_child`のどれでもないとき、hybrid検索として実行され、誤った名前のまま報告されて
   いました。今後は`mrag search`と`mrag eval`が`unknown retrieval strategy`でexit 1に
   なり、`POST /api/v1/retrieve`は400を返します。
+- **`GET /api/v1/profiles` が project のプロファイルを一覧します。** これまでは catalog に
+  記録されたプロファイルだけを返していたので、一度もインデックスしていないプロファイルが、
+  MCP の `list_profiles` tool には出るのにここには出ませんでした。どちらも、読み込める
+  `profiles/*.yaml` のすべてを返します。
+- **`MRAG_API_KEY` を設定していても、ブラウザから API を呼べるようになりました。** 認証の判定が
+  CORS の preflight を `401` にしていたため(preflight は `Authorization` ヘッダを持ちません)、
+  別 origin からのリクエストは一切送れませんでした。preflight にはキーなしで応答し、その後の
+  本来のリクエストにはこれまでどおりキーが要ります。
+- `/` を認証の対象外から外しました。`/` にはルートが無く、対象外にしても認証なしの `404` を
+  返すだけでした。キーを設定していると `401` になります。OpenAPI のページ(`/docs`・
+  `/openapi.json`・`/redoc`)は対象外のままです。
 - `mrag extract`は、extractorのwarningを表示する代わりに`TypeError`で落ちる状態でした。
   リリース済みのextractorはwarningを返しません。今後warningはstderrへ出し、stdoutは
   抽出した本文だけのままです。

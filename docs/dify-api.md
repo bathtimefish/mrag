@@ -137,9 +137,9 @@ Auth failures return Dify-compatible error codes:
 | `Authorization` header missing or malformed | 401 | `1001` | `Invalid Authorization header format.` |
 | Bearer token mismatch | 401 | `1002` | `Authorization failed. Please check your API key.` |
 
-> Note: the four paths `/`, `/docs`, `/openapi.json`, and `/redoc` are exempt from auth. Only `/docs`, `/openapi.json`, and `/redoc` answer (the OpenAPI docs); no route is mounted at `/`, so `GET /` returns `404` and does not work as a health check.
+> Note: the three paths `/docs`, `/openapi.json`, and `/redoc` (the OpenAPI docs) are exempt from auth. `/` has no route and, since 1.7.6, is not exempt: with a key set `GET /` answers `401`.
 
-> Note: CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, the auth check runs before CORS, so a browser's preflight `OPTIONS` request — which carries no `Authorization` header — is answered `401` without CORS headers.
+> Note: CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, a browser's preflight (an `OPTIONS` request with `Access-Control-Request-Method`, which carries no `Authorization` header) is answered without a key, and the request it clears still needs one. Before 1.7.6 the preflight was answered `401`.
 
 
 ## Error code reference

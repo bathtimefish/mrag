@@ -27,6 +27,18 @@ kept; the repository history is the record for those releases.
   and was reported under the misspelt name. `mrag search` and `mrag eval` now
   exit 1 with `unknown retrieval strategy`, and `POST /api/v1/retrieve`
   answers 400.
+- **`GET /api/v1/profiles` lists the project's profiles.** It listed only the
+  profiles the catalog had recorded, so a profile never indexed was missing
+  there while the MCP `list_profiles` tool showed it. Both now list every
+  `profiles/*.yaml` that loads.
+- **A browser can call the API when `MRAG_API_KEY` is set.** The auth check
+  answered the CORS preflight `401`, since a preflight carries no
+  `Authorization` header, so no cross-origin request could be sent. The
+  preflight is now answered without a key; the request it clears still needs
+  one.
+- `/` is no longer exempt from auth. It has no route, so the exemption only
+  produced an unauthenticated `404`; with a key set it now answers `401`. The
+  OpenAPI pages (`/docs`, `/openapi.json`, `/redoc`) stay exempt.
 - `mrag extract` would have raised `TypeError` on an extractor's warning
   instead of printing it. No extractor in a release returns one; warnings now
   go to stderr, and stdout stays the extracted text.

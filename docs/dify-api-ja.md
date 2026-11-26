@@ -136,9 +136,9 @@ activeなdocument exclusionは、すべての検索strategyでresponse構築前�
 | `Authorization` ヘッダ欠落 / 形式不正 | 401 | `1001` | `Invalid Authorization header format.` |
 | Bearer トークンが不一致 | 401 | `1002` | `Authorization failed. Please check your API key.` |
 
-> 補足：`/`、`/docs`、`/openapi.json`、`/redoc` の 4 つのパスは認証の対象外です。このうち応答するのは `/docs`、`/openapi.json`、`/redoc`（OpenAPI ドキュメント）だけです。`/` にはルートが定義されていないため、`GET /` は `404` を返し、ヘルスチェックには使えません。
+> 補足：`/docs`、`/openapi.json`、`/redoc`（OpenAPI ドキュメント）の 3 つのパスは認証の対象外です。`/` にはルートが無く、1.7.6 からは対象外でもないので、キーを設定していると `GET /` は `401` になります。
 
-> 補足：CORS は全開放で、設定項目はありません。サーバーはすべての origin・メソッド・ヘッダを許可します（`Access-Control-Allow-Origin: *`）。`MRAG_API_KEY` を設定している場合は認証の判定が CORS より先に動くため、ブラウザの preflight（`OPTIONS`）リクエストは `Authorization` ヘッダを持たないので、CORS ヘッダなしの `401` になります。
+> 補足：CORS は全開放で、設定項目はありません。サーバーはすべての origin・メソッド・ヘッダを許可します（`Access-Control-Allow-Origin: *`）。`MRAG_API_KEY` を設定している場合も、ブラウザの preflight（`Access-Control-Request-Method` を持つ `OPTIONS` リクエスト。`Authorization` ヘッダを持ちません）にはキーなしで応答し、その後の本来のリクエストにはこれまでどおりキーが要ります。1.7.6 より前は preflight が `401` になっていました。
 
 
 ## エラーコード一覧

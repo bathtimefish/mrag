@@ -351,6 +351,18 @@ def test_list_profiles(api_client):
     assert "default" in names
 
 
+def test_list_profiles_includes_a_profile_never_indexed(api_client):
+    """The list is the project's profiles, as MCP lists them (1.7.6)."""
+    default = api_client.tmp_path / "profiles" / "default.yaml"
+    other = api_client.tmp_path / "profiles" / "unindexed.yaml"
+    other.write_text(
+        default.read_text(encoding="utf-8").replace("name: default", "name: unindexed"),
+        encoding="utf-8",
+    )
+    names = [p["name"] for p in api_client.client.get("/api/v1/profiles").json()]
+    assert names == ["default", "unindexed"]
+
+
 def test_get_profile(api_client):
     resp = api_client.client.get("/api/v1/profiles/default")
     assert resp.status_code == 200
@@ -417,6 +429,30 @@ def test_auth_wrong_key_rejected(auth_client, monkeypatch):
         "/api/v1/documents", headers={"Authorization": "Bearer wrong-key"}
     )
     assert resp.status_code == 401
+
+
+def test_root_is_not_exempt_from_auth(auth_client, monkeypatch):
+    """Only the OpenAPI pages are exempt; `/` has no route (1.7.6)."""
+    monkeypatch.setenv("MRAG_API_KEY", "secret-test-key")
+    assert auth_client.get("/").status_code == 401
+    assert auth_client.get("/openapi.json").status_code == 200
+
+
+def test_cors_preflight_is_answered_without_a_key(auth_client, monkeypatch):
+    """A preflight carries no Authorization header; it used to get 401 (1.7.6)."""
+    monkeypatch.setenv("MRAG_API_KEY", "secret-test-key")
+    resp = auth_client.options(
+        "/api/v1/retrieve",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") in ("*", "http://localhost:3000")
+    # The request it clears still needs the key.
+    assert auth_client.post("/api/v1/retrieve", json={"query": "x"}).status_code == 401
 
 
 def test_auth_correct_key_accepted(auth_client, monkeypatch):

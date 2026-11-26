@@ -154,25 +154,25 @@ async def get_document(document_id: str, request: Request) -> DocumentDetail:
 
 @router.get("/profiles", response_model=list[ProfileItem])
 async def list_profiles(request: Request) -> list[ProfileItem]:
+    # The profiles the project defines, as the MCP `list_profiles` tool lists
+    # them: every `profiles/*.yaml` that loads. It listed the profiles the
+    # catalog had recorded, so one never indexed was missing here and present
+    # over MCP (1.7.6).
     state = _get_state(request)
-    conn = open_connection(state.db_path)
-    rows = conn.execute("SELECT name FROM profiles ORDER BY name").fetchall()
-    conn.close()
-
     items: list[ProfileItem] = []
-    for row in rows:
+    for path in sorted((state.project_dir / "profiles").glob("*.yaml")):
         try:
-            prof = load_profile(row["name"], state.project_dir)
-            items.append(
-                ProfileItem(
-                    name=prof.name,
-                    strategy=prof.retrieval.strategy,
-                    embedding_model=prof.embedding.model,
-                    chunking_strategy=prof.chunking.strategy,
-                )
+            prof = load_profile(path.stem, state.project_dir)
+        except Exception:
+            continue
+        items.append(
+            ProfileItem(
+                name=prof.name,
+                strategy=prof.retrieval.strategy,
+                embedding_model=prof.embedding.model,
+                chunking_strategy=prof.chunking.strategy,
             )
-        except FileNotFoundError:
-            pass
+        )
     return items
 
 
