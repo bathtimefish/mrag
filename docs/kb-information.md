@@ -199,7 +199,7 @@ mrag kb-info validate
 
 ## Tips
 
-- `mrag kb-info show` outputs YAML directly, so you can feed it to pipelines like `mrag kb-info show | yq '.agent_usage.tags'` for partial extraction.
+- `mrag kb-info show` outputs YAML directly, so you can feed it to pipelines like `mrag kb-info show | yq '.agent_usage.tags'` for partial extraction. `mrag mcp` serves the same file to MCP clients as the resource `mrag://kb/info` (→ [mcp.md](./mcp.md)).
 - The JSON for `--kb-info-json` is meant to be built by an agent. Embedding the JSON Schema from `mrag kb-info schema` in a system prompt pairs nicely with structured generation (JSON mode).
 - `agent_usage` may be empty and the mrag CLI itself will still run. `mrag registry validate` only checks that this file exists and does not read its contents (the `path`, `id`, and `preferred_profiles` it checks are the registry's own entries), and `mrag registry generate` skips a project whose file is invalid, so running `mrag kb-info validate` before joining a registry is a safe habit.
 - Updating the file is most straightforward via direct edits in a text editor. A `mrag kb-info edit` command is deliberately not implemented (to keep the spec simple).

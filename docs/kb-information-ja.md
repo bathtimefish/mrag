@@ -199,7 +199,7 @@ mrag kb-info validate
 
 ## Tips
 
-- `mrag kb-info show` は YAML をそのまま出すので、`mrag kb-info show | yq '.agent_usage.tags'` のように部分抽出のパイプラインに使えます
+- `mrag kb-info show` は YAML をそのまま出すので、`mrag kb-info show | yq '.agent_usage.tags'` のように部分抽出のパイプラインに使えます。`mrag mcp` は同じファイルを resource `mrag://kb/info` として MCP クライアントに出します（→ [mcp-ja.md](./mcp-ja.md)）
 - `--kb-info-json` 用の JSON はエージェントから組み立てる前提です。`mrag kb-info schema` で取得した JSON Schema をシステムプロンプトに埋め込んでおくと、構造化生成（JSON モード）と相性が良いです
 - `agent_usage` は空でも mrag CLI 自体は動きます。`mrag registry validate` が確認するのはこのファイルの存在だけで、内容は読みません（検査される path・id・preferred_profiles は registry 側のエントリの値です）。また `mrag registry generate` は内容が不正なプロジェクトを skip するので、registry に参加させる前に `mrag kb-info validate` を回しておくと安全です
 - 内容の更新はテキストエディタでの直接編集が一番素直です。`mrag kb-info edit` のようなコマンドは意図的に未実装です（→ 仕様の単純化のため）

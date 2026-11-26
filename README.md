@@ -41,7 +41,7 @@ uv venv
 uv pip install -e ".[vaporetto,reranker]"
 ```
 
-This installs the standard configuration that includes Japanese morphological tokenization (`vaporetto`) and CrossEncoder reranking (`reranker`).
+This installs the standard configuration that includes Japanese morphological tokenization (`vaporetto`) and CrossEncoder reranking (`reranker`). `mrag mcp` additionally needs the `mcp` extra: `uv pip install -e ".[vaporetto,reranker,mcp]"`.
 
 ### Vaporetto native library
 
@@ -56,11 +56,24 @@ The `vaporetto` extra installs `apsw` (which `mrag init` needs to choose Vaporet
    # cp libsqlite_vaporetto.so ~/.mrag/extensions/    # Linux
    ```
 
+   On Windows the library is `sqlite_vaporetto.dll`:
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\.mrag\extensions"
+   Copy-Item sqlite_vaporetto.dll "$env:USERPROFILE\.mrag\extensions\"
+   ```
+
 To use a custom path, set the environment variable:
 
 ```bash
 export MRAG_VAPORETTO_LIB=/path/to/libsqlite_vaporetto.dylib
 ```
+
+```powershell
+$env:MRAG_VAPORETTO_LIB = "C:\path\to\sqlite_vaporetto.dll"   # Windows
+```
+
+Without the variable, mrag looks in `~/.mrag/extensions/`, `/usr/local/lib` and `/usr/lib`, in that order, each with its immediate subdirectories. If one of them holds more than one vaporetto library, `mrag init` stops with an error asking you to set `MRAG_VAPORETTO_LIB`.
 
 If vaporetto is not detected when you run `mrag init`, mrag falls back to the trigram tokenizer automatically. Run `mrag doctor` to verify the detection state.
 
@@ -112,10 +125,11 @@ For step-by-step details and the agent-integration workflow, see [docs/tutorial.
 | `mrag search <query>` | Run a search |
 | `mrag eval <query>` | Evaluate retrieval quality |
 | `mrag serve` | Start the HTTP API server |
-| `mrag mcp` | Expose the project as a read-only MCP server |
+| `mrag mcp [validate \| schema \| init-config]` | Expose the project as a read-only MCP server, or check, describe and scaffold its config |
 | `mrag remove <doc-id>` | Remove a document |
 | `mrag exclusions add \| list \| restore` | Retain a document while excluding it from retrieval |
 | `mrag documents sync <dir> \| rebind <doc-id> <file>` | Keep documents in step with files that moved, changed or disappeared |
+| `mrag catalog migrate-identities [--dry-run] [--json]` | Convert source identities stored under an older scheme; `mrag add` refuses such a project until this is run |
 | `mrag profiles list \| show <name>` | List or show profile details |
 | `mrag kb-info show \| validate \| schema` | Manage the knowledge-base self-description |
 | `mrag inspect document \| chunks \| chunk \| sections` | Inspect the index internals |
@@ -137,8 +151,10 @@ When files under a directory move, change or disappear after they were added,
 `--apply` does it, keeping document IDs across renames. See [keeping documents
 in step with their files](./docs/document-sync.md).
 
-To stop a retained document from contributing knowledge, use the dry-run-first
-`mrag exclusions` workflow instead of `mrag remove`. See [document retrieval
+To stop a retained document from contributing knowledge, use the
+`mrag exclusions` workflow instead of `mrag remove`, which deletes the document.
+`exclusions add`, `exclusions restore` and `remove` are all dry-run-first: they
+only report what they would do until `--force` is passed. See [document retrieval
 exclusions](./docs/document-exclusions.md) for cleanup, restoration, and failure
 semantics.
 

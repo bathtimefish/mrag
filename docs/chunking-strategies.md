@@ -11,7 +11,7 @@ In mrag, the strategy is selected via the `chunking.strategy` field in `profiles
 
 | Strategy | Intended format | Description |
 |----------|-----------------|-------------|
-| `recursive` | Plain text | Default. Splits recursively in the order paragraph → line → character |
+| `recursive` | Plain text | Default. Splits recursively in the order paragraph → line → space → character |
 | `markdown_recursive` | Markdown with headings | Splits on heading boundaries first |
 | `block_aware` | Markdown containing tables and code blocks | Recognizes paragraphs, tables, and code as typed "blocks"; tables and code that fit within `chunk_size` are never split mid-block |
 | `parent_child` | Cases that need both precise retrieval and rich context | Small child chunks score the hit; the larger parent chunk is what gets returned |
@@ -42,7 +42,7 @@ How it works:
 
 1. First tries to split on paragraphs (blank-line boundaries)
 2. Paragraphs that don't fit in `chunk_size` are split further by line
-3. Lines that still don't fit are split by character
+3. Lines that still don't fit are split at spaces, and a run without spaces that still doesn't fit is split by character
 4. Adjacent chunks overlap by `overlap` characters
 
 Because it prefers natural boundaries (paragraph → line) while still accommodating long text, this strategy is highly general-purpose.
@@ -128,7 +128,7 @@ How it works:
 
 > Important: `chunking.strategy: parent_child` and `retrieval.strategy: parent_child` must be **set together**. Setting only one triggers a profile validation error.
 
-> Note: `dense_top_k` / `keyword_top_k` are eventually narrowed down to `top_k`, so set them to roughly `top_k × 3` to keep the candidate net wide at the child level (you need extra candidates at the retrieval stage because multiple children can collapse into the same parent).
+> Note: `dense_top_k` / `keyword_top_k` are eventually narrowed down to `top_k`, so set them to roughly `top_k × 3` to keep the candidate net wide at the child level (you need extra candidates at the retrieval stage because multiple children can collapse into the same parent). The fused child list is cut to its top `top_k × 3` before parents are resolved, and a `dense_top_k` or `keyword_top_k` below `top_k` is a profile validation error.
 
 > Note: combining a `parent_child` profile with `rerank.enabled: true` truncates the ~3000-character parent chunk down to 512 tokens at the reranker, which degrades the reliability of rerank scores. Keep this in mind when using `parent_child`.
 

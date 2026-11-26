@@ -85,7 +85,7 @@ embedding:
 ```
 
 - **`query_prefix`** is put before the query when it is embedded — by `vector`, by the vector half of `hybrid` and `parent_child`, and by `mrag eval`. The keyword half still searches the query as written. No stored vector depends on it, so it is not part of the index identity: changing it rebuilds nothing.
-- **`document_prefix`** is put before every chunk when it is embedded, after any contextual-augmentation context. `{title}` in it becomes the document's file name without its extension (`none` when there is none), the model card's `title: {title} | text: ` form. Once set, it is part of the index identity, so setting or changing it rebuilds the index; renaming a file with `mrag documents sync` rebuilds that document at the next `mrag index`, so its title follows. New projects leave it unset: in our measurements the titled form helped on one corpus and hurt on human-judged questions.
+- **`document_prefix`** is put before every chunk when it is embedded, ahead of any contextual-augmentation context. `{title}` in it becomes the document's file name without its extension (`none` when there is none), the model card's `title: {title} | text: ` form. Once set, it is part of the index identity, so setting or changing it rebuilds the index; renaming a file with `mrag documents sync` rebuilds that document at the next `mrag index`, so its title follows. New projects leave it unset: in our measurements the titled form helped on one corpus and hurt on human-judged questions.
 
 Both are optional. Unset, a text is embedded exactly as written — what every profile written before mrag 1.6.0 does, and what `bge-m3`, which takes no prefix, needs. Stored chunk variants, the FTS5 index and search results never contain either prefix. A prefix is 1 to 256 characters; `{title}` may appear at most once, and only in `document_prefix`.
 
@@ -134,7 +134,7 @@ retrieval:
 ```
 
 - `weights` must have exactly two elements in the order `[vector, keyword]`
-- A sum of zero or less is a validation error
+- A negative or non-finite weight (`.nan`, `.inf`), or a sum of zero, is a validation error
 - `weights` is a retrieval-time parameter, so changing it does not require re-indexing
 
 ### Equal fused scores
@@ -182,7 +182,7 @@ Strengths and weaknesses:
 - **Strong at**: long documents where you want "precise queries to land on the right spot, but the returned context to be wide"
 - **Weak at**: short documents or setups with small parent chunks — the structural benefit of `parent_child` fades
 
-> Important: `dense_top_k` / `keyword_top_k` are the candidate counts at the child-chunk stage. Because parents are deduplicated during aggregation, they need to be set comfortably larger than the final `top_k` (a rule of thumb is `top_k × 3` or more), or the result count will not reach `top_k`.
+> Important: `dense_top_k` / `keyword_top_k` are the candidate counts at the child-chunk stage. Because parents are deduplicated during aggregation, they need to be set comfortably larger than the final `top_k` (a rule of thumb is `top_k × 3` or more), or the result count will not reach `top_k`. Larger values stop adding parents past a point: the fused child list is cut to its top `top_k × 3` (`rerank.top_n × 3` when reranking runs) before parents are resolved. A `dense_top_k` or `keyword_top_k` below `top_k` is a profile validation error, for every strategy that uses that stage.
 
 > Note: combining a `parent_child` profile with `rerank.enabled: true` truncates the ~3000-character parent chunk down to 512 tokens at the reranker, which degrades the reliability of rerank scores. Keep this in mind when using `parent_child`.
 
@@ -219,7 +219,7 @@ mrag search "your query" --top-k 3
 mrag search "your query" --no-rerank
 ```
 
-This lets you experiment with a different strategy on the spot — no profile edit, no re-indexing required.
+This lets you experiment with a different strategy on the spot — no profile edit, no re-indexing required. Since 1.7.6 a strategy that is none of `hybrid`, `vector`, `keyword`, `parent_child` — in `--strategy`, in a request's `strategy` field or in the profile's `retrieval.strategy` — is an error: `mrag search` and `mrag eval` exit 1 with `unknown retrieval strategy`, and `POST /api/v1/retrieve` answers 400.
 
 Omitting `--top-k` uses the profile's `retrieval.top_k`, so a profile change takes effect without repeating the option on every search.
 

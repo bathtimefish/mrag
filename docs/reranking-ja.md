@@ -94,7 +94,7 @@ mrag serve --no-rerank
 
 - **`mrag search --json`** — `score` と並ぶ**トップレベルフィールド**として出力されます（メタデータ内にも同値が残ります）
 - **`mrag serve` の API レスポンス** — 各結果の **`metadata.retrieval_score`** に入ります（トップレベルには出ません）
-- **`mrag eval`** など人間向け出力 — `score=0.81  (retrieval=0.42)` のように `score` の隣にカッコ書きで表示されます
+- **`mrag eval`** — `score=0.81  (retrieval=0.42)` のように `score` の隣にカッコ書きで表示されます。`mrag search` の人間向け出力に出るのは `score` だけなので、`mrag search` では `--json` を使ってください
 
 CLI の `--json` 出力で確認する例：
 
@@ -110,7 +110,7 @@ mrag search "クエリ" --json | jq '.results[] | {score, retrieval_score: .retr
 
 ## `top_n` の決め方
 
-`rerank.top_n` はリランキング対象として取得する候補数で、デフォルトは **30** です。最終的に返す件数（`retrieval.top_k`、デフォルト 8）より大きく設定する必要があります。
+`rerank.top_n` はリランキング対象として取得する候補数で、デフォルトは **30** です。検索が返すのは最大でも `top_n` 件なので、最終的に返す件数（`retrieval.top_k`、デフォルト 8）より小さくすると、返る件数が黙って `top_n` 件までに減ります（プロファイルの検証エラーにはなりません）。
 
 選び方の目安：
 
