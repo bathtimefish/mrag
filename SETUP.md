@@ -81,6 +81,7 @@ uv pip install -e ".[vaporetto,reranker]"
 
 - `vaporetto`: Japanese morphological tokenization. Installs `apsw`, which `mrag init` needs before it chooses Vaporetto for a new project, and which loads the extension where Python's built-in `sqlite3` cannot (a build compiled without extension loading). Where `sqlite3` can — uv's Python builds among them — mrag runs the extension on it, so one process uses one SQLite; `mrag doctor` shows which. The native shared library must also be placed separately — see §3.
 - `reranker`: CrossEncoder reranking via `sentence-transformers`.
+- `mcp` (not in the command above): required by `mrag mcp`. Add it when the project will be exposed as an MCP server: `uv pip install -e ".[vaporetto,reranker,mcp]"`.
 
 **Verification:**
 
@@ -226,7 +227,7 @@ Skip this if you do not plan to use `augmentation.strategy: contextual`.
 If the project profile uses contextual augmentation, the generation model must also be pulled before `mrag index`:
 
 ```bash
-ollama pull gemma4:e2b   # default model; check profiles/default.yaml → augmentation.model
+ollama pull gemma4:e2b   # default when the profile sets no augmentation.model (mrag init writes none)
 ```
 
 The generation model is separate from the embedding model — it generates a short context text per chunk at index time only.
@@ -241,6 +242,6 @@ For next steps — initializing a project, adding documents, and building the in
 
 Key points to keep in mind when using `mrag init`:
 
-- `mrag init` creates a **subdirectory** inside the current working directory. Run it from the **parent** directory of where you want the project to live — not from inside the intended project directory.
+- `mrag init <PROJECT_DIR>` creates the project at that path. When `PROJECT_DIR` is omitted, `mrag init` creates a **subdirectory** inside the current working directory, named after the project name. In that case, run it from the **parent** directory of where you want the project to live — not from inside the intended project directory.
 - The vaporetto library (§3) must be in place **before** running `mrag init`. The tokenizer is auto-detected at init time and stored in `mrag.yaml`. Changing it after init requires deleting the project and re-running `mrag init`.
 - Qdrant runs **embedded** by default (`mode: local`). No Docker setup is needed. Only one `mrag index` process can run at a time per project (the embedded Qdrant holds a file lock on the `qdrant/` directory).

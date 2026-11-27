@@ -8,18 +8,31 @@ set WITH_RERANKER=0
 set ONEFILE_FLAG=--onefile
 set PACKAGE_MODE=onefile
 
+:: Every argument is read, in order, as build.sh reads them: the script once
+:: looked at the first only, so `--with-reranker --onedir` built a lean
+:: onefile without a word, and anything after the first was never checked.
+:parse_args
 if "%~1"=="" goto args_done
-if /i "%~1"=="--with-reranker" set WITH_RERANKER=1
-if /i "%~1"=="--with-reranker" goto args_done
-if /i "%~1"=="--onedir"        set ONEFILE_FLAG=--onedir
-if /i "%~1"=="--onedir"        set PACKAGE_MODE=onedir
-if /i "%~1"=="--onedir"        goto args_done
-if /i "%~1"=="--onefile"       set ONEFILE_FLAG=--onefile
-if /i "%~1"=="--onefile"       set PACKAGE_MODE=onefile
-if /i "%~1"=="--onefile"       goto args_done
-if /i "%~1"=="--help"          goto show_help
-if /i "%~1"=="-h"              goto show_help
-echo Unknown option: %~1  (use --with-reranker, --onedir, or --help) 1>&2
+if /i "%~1"=="--with-reranker" (
+    set "WITH_RERANKER=1"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--onedir" (
+    set "ONEFILE_FLAG=--onedir"
+    set "PACKAGE_MODE=onedir"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--onefile" (
+    set "ONEFILE_FLAG=--onefile"
+    set "PACKAGE_MODE=onefile"
+    shift
+    goto parse_args
+)
+if /i "%~1"=="--help" goto show_help
+if /i "%~1"=="-h"     goto show_help
+echo Unknown option: %~1  (use --with-reranker, --onedir, --onefile, or --help) 1>&2
 exit /b 2
 
 :show_help
@@ -27,6 +40,7 @@ echo Usage:
 echo   packaging\build.bat                  - lean onefile build (NO reranker / torch)
 echo   packaging\build.bat --with-reranker  - full build (bundles sentence-transformers + torch)
 echo   packaging\build.bat --onedir         - folder build (near-instant startup)
+echo   Options combine, e.g.  packaging\build.bat --with-reranker --onedir
 echo   packaging\build.bat --help
 exit /b 0
 

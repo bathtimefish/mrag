@@ -7,6 +7,49 @@ mragの主要な変更点を記録します。0.24.0より前のエントリは�
 
 ---
 
+## 1.7.6 — 2026-11-26
+
+### 修正
+
+- **`mrag kb-info show`が、fileをそのまま出力します。** consoleのmarkupを通して出して
+  いたため、`tags: [iot, mqtt]`や`preferred_profiles: [default]`のようなflow形式のlistが
+  空になり、長い行は折り返されていました。出力はもうYAMLではなく、`yq`へ渡すと違う値が
+  読まれました。今後はfileの文字をそのまま書きます。
+- **`mrag exclusions list`が、各ruleを誰が書いたかを示します。** `mrag documents sync`が
+  書いたruleが、`--json`でも表でも`origin: user`と表示されていました。一覧がその列を
+  読んでいませんでした。sync自身は別のqueryで読んでいたので、解除するものと残すものの
+  判定は正しいままでした。今後はruleを読むすべての経路がoriginを持ちます。
+- **綴りを誤ったretrieval strategyはerrorになります。** `--strategy keywrod`、requestの
+  `strategy`、profileの`retrieval.strategy`が`hybrid`・`vector`・`keyword`・
+  `parent_child`のどれでもないとき、hybrid検索として実行され、誤った名前のまま報告されて
+  いました。今後は`mrag search`と`mrag eval`が`unknown retrieval strategy`でexit 1に
+  なり、`POST /api/v1/retrieve`は400を返します。
+- **`GET /api/v1/profiles` が project のプロファイルを一覧します。** これまでは catalog に
+  記録されたプロファイルだけを返していたので、一度もインデックスしていないプロファイルが、
+  MCP の `list_profiles` tool には出るのにここには出ませんでした。どちらも、読み込める
+  `profiles/*.yaml` のすべてを返します。
+- **`MRAG_API_KEY` を設定していても、ブラウザから API を呼べるようになりました。** 認証の判定が
+  CORS の preflight を `401` にしていたため(preflight は `Authorization` ヘッダを持ちません)、
+  別 origin からのリクエストは一切送れませんでした。preflight にはキーなしで応答し、その後の
+  本来のリクエストにはこれまでどおりキーが要ります。
+- `/` を認証の対象外から外しました。`/` にはルートが無く、対象外にしても認証なしの `404` を
+  返すだけでした。キーを設定していると `401` になります。OpenAPI のページ(`/docs`・
+  `/openapi.json`・`/redoc`)は対象外のままです。
+- `packaging\build.bat` がすべての option を読むようになりました。これまでは最初の1つだけを
+  読んでいたので、`--with-reranker --onedir` は何も言わずに lean の onefile を作り、
+  2つ目以降の未知の option も拒否されませんでした。
+- `mrag extract`は、extractorのwarningを表示する代わりに`TypeError`で落ちる状態でした。
+  リリース済みのextractorはwarningを返しません。今後warningはstderrへ出し、stdoutは
+  抽出した本文だけのままです。
+- `mrag search`と`mrag eval`の`--strategy`のhelpに`parent_child`を加えました。
+
+### ドキュメント
+
+- README・SETUP・AGENTSと`docs/`以下のページをcodeと照らし、遅れていた箇所を直しました。
+  `mrag init`が書くもの、`chunk_size`を超える表とcode blockの分割、Native APIのerrorの
+  形とprofileの一覧、Windowsのbuild script、`mrag documents sync`と`rebind`の報告、
+  tutorialの出力例などです。日英は同じ内容です。
+
 ## 1.7.5 — 2026-11-12
 
 ### 修正

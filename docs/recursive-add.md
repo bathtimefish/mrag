@@ -43,7 +43,7 @@ and `--strict` are likewise rejected for a single-file source.
 
 All matching uses normalized POSIX paths relative to the supplied source root.
 Candidates and report items are sorted by that relative path, so the same tree
-produces deterministic reporting even when extraction runs concurrently.
+produces deterministic reporting.
 
 Selection is evaluated in this order:
 
@@ -111,8 +111,8 @@ extracted again; mrag preserves the existing document ID, and a document matched
 by content keeps its own source identity. External directory ingestion registers
 an opaque root key, so later single-file additions can find the same source.
 
-Prepared documents are persisted through a serialized write boundary, and the
-final report remains in stable relative-path order.
+Files are read and extracted one at a time, then persisted one at a time; no
+step runs concurrently. The final report remains in stable relative-path order.
 
 ## JSON report and exit codes
 
@@ -126,9 +126,12 @@ candidate or scan issue:
   "status": "partial",
   "summary": {"added": 4, "skipped": 2, "failed": 1, "cancelled": 0},
   "items": [
-    {"source": "manuals/a.md", "status": "added", "document_id": "...", "error": null},
-    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...", "error": null},
+    {"source": "manuals/a.md", "status": "added", "document_id": "...",
+     "original_sha256": "...", "warnings": [], "error": null},
+    {"source": "manuals/b.md", "status": "skipped_duplicate", "document_id": "...",
+     "original_sha256": "...", "warnings": [], "error": null},
     {"source": "manuals/c.pdf", "status": "failed", "document_id": null,
+     "original_sha256": null, "warnings": [],
      "error": {"code": "prepare_failed",
                "message": "Unsupported file type: .pdf (requires external conversion to Markdown)"}}
   ],
@@ -138,11 +141,28 @@ candidate or scan issue:
 }
 ```
 
+`original_sha256` is the SHA-256 of the file for the `added` and
+`skipped_duplicate` items of a recursive add and `null` for every other item.
+`warnings` is a list of strings, empty when there is nothing to report. With
+`--dry-run`, a file the run would try to add has `status: "planned"`, and a file
+in an unsupported format is `failed` with the code `unsupported_source`
+(`prepare_failed` without `--dry-run`). The top-level `status` is `success`,
+`partial`, `error` (every item failed) or `cancelled`.
+
+A source root the scan refuses — one inside `data/`, `identities/` or another of
+the project's own directories, a symlinked directory without
+`--follow-symlinks`, an invalid `--include` or `--exclude` glob, an unusable
+`.mragignore` — is reported as one `failed` item with the code
+`directory_scan_failed`, and the command exits 1. A source that does not exist,
+a working directory that is not an initialised project, and invalid usage
+produce no report; with `--json` they emit
+`{"schema_version": 1, "command": "add", "status": "error", "error": {"code": "...", "message": "..."}}`.
+
 | Exit code | Meaning |
 |---:|---|
 | `0` | No failed items. Added and duplicate-skipped items may both be present. |
 | `3` | Partial success in the default best-effort mode. Successful documents remain registered. |
-| `1` | Every item failed, or at least one item failed with `--strict`. |
+| `1` | Every item failed (a refused source root is one failed item), or at least one item failed with `--strict`. Also: the source does not exist, or the command was not run inside an initialised project. |
 | `2` | Invalid CLI usage. |
 | `130` | Interrupted: the run stopped at a file boundary. See below. |
 

@@ -79,6 +79,18 @@ mrag mcp --config ./mrag-mcp.yaml
 
 Relative `project_dir` values in a config file are resolved from the directory containing that config file.
 
+Three more sections are optional; `mrag mcp init-config` prints them with their defaults:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `features.tools` | `true` | Expose the tools |
+| `features.resources` | `true` | Expose the resources |
+| `features.management_tools` | `false` | Must stay `false`; `true` is rejected as a config error |
+| `limits.content_max_chars` | `20000` | Chunk content in tool results, and the YAML, extracted-text and text-original resources, are cut to this many characters; `0` turns the cut off. A cut tool result says `truncated: true` with `content_chars` and `returned_chars` |
+| `limits.artifact_max_bytes` | `1048576` | Largest stored original `.../original` serves |
+| `limits.request_timeout_seconds` | `60` | Accepted and validated (1 or more); the server does not apply it |
+| `logging.level` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR`, in upper case |
+
 ## Environment overrides
 
 Environment variables override YAML values:
@@ -105,6 +117,8 @@ Common variables:
 | `MRAG_MCP_TOP_K_MAX` | Maximum accepted `top_k` |
 | `MRAG_MCP_NO_RERANK` | Disable reranking |
 | `MRAG_MCP_HOST` / `MRAG_MCP_PORT` / `MRAG_MCP_PATH` | HTTP bind settings |
+| `MRAG_MCP_ALLOWED_ORIGINS` | Comma-separated list for `http.allowed_origins` |
+| `MRAG_MCP_LOG_LEVEL` | `logging.level` |
 | `MRAG_MCP_API_KEY` | HTTP bearer token |
 | `MRAG_MCP_API_KEY_FILE` | File containing the HTTP bearer token |
 
@@ -136,6 +150,26 @@ The MVP server exposes read-only tools:
 | `inspect_chunks` | List chunk metadata |
 | `inspect_chunk` | Inspect one chunk with content/context |
 | `inspect_sections` | Inspect heading or parent-child structure |
+
+Parameters (only the first one listed for a tool is required):
+
+| Tool | Parameters |
+|---|---|
+| `search` | `query`; `profile` (default: the server's profile); `strategy` (default: `retrieval.strategy` of the MCP config if set, otherwise the selected profile's); `top_k` (default: `retrieval.top_k_default` if set, otherwise the selected profile's `retrieval.top_k`); `no_rerank` (default: `retrieval.no_rerank`) |
+| `list_documents` | `profile`, `all`, `status`, `limit`, `offset` — all optional, described above |
+| `list_profiles` | none |
+| `inspect_document` | `document_id`; `profile` (limit the answer to one profile) |
+| `inspect_chunks` | `document_id`; `profile`; `limit` (default: every chunk); `offset` (default `0`); `show_content` and `show_context` (default `false`) |
+| `inspect_chunk` | `chunk_id` |
+| `inspect_sections` | `document_id`; `profile` |
+
+For `inspect_chunks` and `inspect_sections`, `profile` may be omitted only when
+the document is indexed under exactly one profile.
+
+`search` does not clamp `top_k`. A value above `retrieval.top_k_max` — given in
+the call or resolved from the defaults — fails as a tool error (`isError: true`):
+`top_k must be <= retrieval.top_k_max (50)`, with the limit in effect in the
+parentheses.
 
 Each `search` result carries a `reference` — the document's name, its stored
 original and extraction (project-relative paths), and the
@@ -169,6 +203,11 @@ mrag://chunks/{chunk_id}
 
 Large content is truncated according to `limits.content_max_chars`.
 
+`mrag://documents` returns the first page only: what `list_documents` returns
+with no arguments (the server's profile, extracted documents, the first 100
+rows). `page.next_offset` in the answer tells whether more exist; page through
+them with the `list_documents` tool.
+
 `.../original` serves the stored original in the type recorded when it was
 added: a Markdown or text file as text, a PDF added before 1.0.0 as a blob.
 Text or blob follows from that type, not from whether the bytes happen to
@@ -190,3 +229,10 @@ auth:
 ```
 
 The default host is `127.0.0.1`. If you bind to `0.0.0.0` without a bearer token, mrag prints a warning.
+
+When a token is configured, a request whose `Authorization` header is not
+`Bearer <token>` is answered `401` with the plain-text body `Unauthorized`.
+When `http.allowed_origins` is not empty, a request whose `Origin` header is
+not in the list is answered `403` with the plain-text body `Forbidden origin`
+(a request without an `Origin` header passes; the origin is checked before the
+token). Both answers are `text/plain`, not JSON-RPC errors.

@@ -7,6 +7,8 @@ from rich.console import Console
 from mrag.extractors import detect_source_type, get_extractor
 
 console = Console()
+# Warnings go to stderr, so stdout stays the extracted text alone.
+err_console = Console(stderr=True)
 
 
 def extract(
@@ -27,7 +29,8 @@ def extract(
         raise typer.Exit(1)
 
     for w in result.warnings:
-        console.print(f"[yellow]Warning:[/yellow] {w}", err=True)
+        err_console.print("[yellow]Warning:[/yellow]", end=" ")
+        err_console.print(w, markup=False, highlight=False)
 
     content = result.markdown if format == "markdown" else result.text
 

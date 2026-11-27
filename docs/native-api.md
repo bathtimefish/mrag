@@ -37,6 +37,8 @@ mrag serve --host 0.0.0.0 --port 8000
 
 `mrag serve`'s options (`--profile` / `--no-rerank`, etc.) and the authentication behavior are shared with the Dify API. See the "mrag-side setup" section of [dify-api.md](./dify-api.md) for the details.
 
+> Note: `--profile` does not choose the profile `POST /api/v1/retrieve` searches. When a request omits `profile`, that endpoint uses `default_profile` from `mrag.yaml`, whatever `--profile` says. In the Native API, `--profile` is the default profile of `GET /api/v1/documents` only.
+
 
 ## `POST /api/v1/retrieve` — retrieval
 
@@ -238,7 +240,7 @@ use the list endpoint for the derived states and source identity:
   "file_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "status": "extracted",
   "created_at": "2026-05-22T10:00:00",
-  "extracted_text_path": "data/extracted/abcdef0123456789.md",
+  "extracted_text_path": "data/documents/abcdef0123456789/extracted.txt",
   "chunk_count": 42
 }
 ```
@@ -263,13 +265,13 @@ Response:
   {
     "name": "default",
     "strategy": "hybrid",
-    "embedding_model": "nomic-embed-text",
+    "embedding_model": "embeddinggemma-2:740m-q8_0",
     "chunking_strategy": "recursive"
   }
 ]
 ```
 
-Profiles loaded from `profiles/*.yaml` are returned. Profiles registered in `mrag.yaml` but whose YAML file cannot be found are silently dropped.
+The list contains the profiles the project defines: every `profiles/*.yaml` file that loads, indexed or not — the same list as the MCP `list_profiles` tool. A file that does not load as a profile is left out. Before 1.7.6 the list held only profiles that had been indexed. The values of each entry are read from the profile's YAML file.
 
 ### Detail
 
@@ -283,12 +285,12 @@ The response is a list entry with the **main chunking and retrieval parameters**
 {
   "name": "default",
   "strategy": "hybrid",
-  "embedding_model": "nomic-embed-text",
+  "embedding_model": "embeddinggemma-2:740m-q8_0",
   "chunking_strategy": "recursive",
   "chunk_size": 800,
   "overlap": 120,
-  "dense_top_k": 30,
-  "keyword_top_k": 30,
+  "dense_top_k": 20,
+  "keyword_top_k": 20,
   "fusion": "rrf"
 }
 ```
@@ -308,17 +310,36 @@ The `MRAG_API_KEY` environment variable controls auth the same way as the [Dify 
 >
 > Both return HTTP `401`, but the response body shape differs — branch on it on the client side.
 
+CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, a browser's preflight (an `OPTIONS` request with `Access-Control-Request-Method`, which carries no `Authorization` header) is answered without a key, and the request it clears still needs one. Before 1.7.6 the preflight was answered `401`.
+
 
 ## Error code reference
 
 | HTTP | Trigger |
 |---|---|
+| 400 | `GET /api/v1/documents`: unknown query parameter or invalid parameter value (returned as the error envelope below). `POST /api/v1/retrieve`: the retrieval was refused, e.g. `strategy` is none of `hybrid`, `vector`, `keyword`, `parent_child`, or the profile's `keyword.tokenizer` does not match the project's tokenizer (returned as `{"detail": "<reason>"}`) |
 | 401 | `Authorization` header missing or mismatched when auth is required (returned as `{"detail": "Unauthorized"}`) |
-| 404 | Profile name or document ID does not exist |
+| 404 | Profile name or document ID does not exist. Returns `{"detail": "Not found"}`; `GET /api/v1/documents` with an unknown `profile` returns the error envelope below |
 | 422 | `query` field missing, `top_k` out of range, JSON structure invalid |
+| 500 | Unhandled internal error. Returns `{"detail": "Internal server error"}` |
 | 503 | Qdrant or other internal resource is unreachable. Returns `{"detail": "<reason>"}` (retryable) |
 
-All Native API error responses follow FastAPI's default shape (`{"detail": ...}`).
+Native API error responses follow FastAPI's default shape (`{"detail": ...}`), with one exception: the list endpoint `GET /api/v1/documents` returns its errors (400 and 404) in its own envelope:
+
+```json
+{
+  "schema_version": 1,
+  "status": "error",
+  "error": {
+    "code": "documents_query_unknown_parameter",
+    "kind": "validation",
+    "message": "this endpoint does not accept that query parameter",
+    "retryable": false
+  }
+}
+```
+
+`error.code` is one of `documents_query_unknown_parameter`, `documents_query_invalid`, `document_status_unknown`, `documents_page_invalid` (all 400, `kind: "validation"`), or `profile_not_found` (404, `kind: "config"`). `retryable` is always `false`.
 
 
 ## OpenAPI documentation
@@ -331,7 +352,7 @@ While `mrag serve` is running, the following URLs are accessible from a browser:
 | `http://<host>:<port>/redoc` | Redoc |
 | `http://<host>:<port>/openapi.json` | Raw OpenAPI spec JSON |
 
-These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection and health checks). For production deployments, consider restricting access at a reverse proxy.
+These are **exempt from authentication** even when `MRAG_API_KEY` is set (the intent is local API inspection). Nothing else is: `/` has no route, and with a key set `GET /` answers `401` (before 1.7.6 it was exempt and answered `404`). To check that the server is up without a key, request one of the three URLs above. For production deployments, consider restricting access at a reverse proxy.
 
 
 ## Tips

@@ -370,3 +370,28 @@ def test_show_extracted_bad_id_exits_nonzero(tmp_path: Path):
 
         result = runner.invoke(app, ["show-extracted", "nonexistent-id"])
         assert result.exit_code != 0
+
+
+def test_extract_prints_a_warning_and_still_the_content(tmp_path: Path, sample_txt: Path, monkeypatch):
+    """An extractor's warning goes to stderr; before 1.7.6 printing it raised TypeError."""
+    import sys
+
+    from mrag.extractors.base import ExtractionResult
+
+    # `mrag.cli.extract` the attribute is the command; the module holds the lookup.
+    extract_cli = sys.modules["mrag.cli.extract"]
+
+    class Warned:
+        def extract(self, file_path):
+            return ExtractionResult(
+                markdown="body", text="body", warnings=["a table [1] was flattened"]
+            )
+
+    monkeypatch.setattr(extract_cli, "get_extractor", lambda source_type: Warned())
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["extract", str(sample_txt)], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "body"
+    assert "a table [1] was flattened" in result.stderr

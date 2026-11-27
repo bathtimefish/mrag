@@ -106,7 +106,14 @@ def create_app(
     if api_key:
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next) -> Response:
-            if request.url.path in ("/", "/docs", "/openapi.json", "/redoc"):
+            # The OpenAPI pages only: `/` has no route, so exempting it only
+            # meant an unauthenticated 404 (1.7.6).
+            if request.url.path in ("/docs", "/openapi.json", "/redoc"):
+                return await call_next(request)
+            # A browser's CORS preflight carries no Authorization header by
+            # design; refused here, no cross-origin request could ever be sent.
+            # It reaches no route: the CORS middleware answers it (1.7.6).
+            if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
                 return await call_next(request)
             auth = request.headers.get("Authorization", "")
             is_dify = request.url.path == "/retrieval"

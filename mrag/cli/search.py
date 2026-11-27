@@ -85,7 +85,7 @@ def search(
         None, "--top-k", "-k", help="Number of results (default: profile retrieval.top_k)"
     ),
     strategy: Optional[str] = typer.Option(
-        None, "--strategy", "-s", help="hybrid | vector | keyword (default: profile setting)"
+        None, "--strategy", "-s", help="hybrid | vector | keyword | parent_child (default: profile setting)"
     ),
     no_rerank: bool = typer.Option(False, "--no-rerank", help="Disable reranking even if enabled in profile"),
     json_output: bool = typer.Option(

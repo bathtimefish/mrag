@@ -62,6 +62,8 @@ What it does:
 4. Checks all entries for duplicate `id`
 5. Writes to the `--output` path if given, otherwise to `<root>/knowledge_registry.yaml`
 
+The generated file has four top-level keys: `version` (always `1`), `generated_at` (the UTC time of generation, ISO 8601), `agent_instructions`, and `knowledge_bases`.
+
 ### Skip vs. error policy
 
 | Situation | Behavior |
@@ -152,7 +154,7 @@ Each issue in the `--json` output carries a stable string in its `issue` field. 
 
 ## `agent_instructions` — guidance for agents
 
-The registry contains a section that describes the selection policy and the search command template that agents should follow. Defaults are filled in at generation time. Edit it to match how you want agents to behave (run `mrag registry validate` afterward to re-check consistency).
+The registry contains a section that describes the selection policy and the search command template that agents should follow. Defaults are filled in at generation time. Edit it to match how you want agents to behave (run `mrag registry validate` afterward to re-check consistency). `generate` always writes the defaults, so re-running it discards your edits to this section — reapply them after regenerating.
 
 ```yaml
 agent_instructions:
@@ -182,7 +184,7 @@ mrag registry validate ./knowledges/knowledge_registry.yaml --json | jq '.issue_
 
 - Generation warnings go to stderr, so you can capture them as logs
 - If `issue_count` from validation is 0, agents can safely `cd` into each project directory
-- Re-run `generate` whenever knowledge bases are added or removed, profiles are added, or names change (it always regenerates the whole file — there is no diff/merge mode)
+- Re-run `generate` whenever knowledge bases are added or removed, profiles are added, or names change (it always regenerates the whole file — there is no diff/merge mode, so hand edits such as a customized `agent_instructions` are replaced by the defaults)
 
 
 ## Tips
@@ -190,5 +192,5 @@ mrag registry validate ./knowledges/knowledge_registry.yaml --json | jq '.issue_
 - `--dry-run` writes the YAML to **stdout**, so you can pipe surveys like `mrag registry generate ./knowledges --dry-run | yq`. Warnings remain isolated on stderr.
 - The exit 1 for "zero matches" is intentional — it catches a wrong root directory, or a layout where projects are nested one level deeper than expected. Follow the tip in the error message and run `mrag init <root>/<kb-name>`.
 - Manual edits to the registry are expected. After tweaking `agent_instructions`, run `mrag registry validate` before relying on the new version.
-- To create an empty registry deliberately, use `touch <root>/knowledge_registry.yaml` (there is no `--allow-empty` flag as of v0.18.0).
+- To create an empty registry deliberately, write the file by hand with at least `generated_at: "2026-01-01T00:00:00+00:00"` (a quoted string) and `knowledge_bases: []`. `generate` has no `--allow-empty` flag, and an empty file created with `touch` fails `mrag registry validate` because `generated_at` is required.
 - For per-knowledge-base metadata, see [kb-information.md](./kb-information.md).

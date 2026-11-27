@@ -71,6 +71,7 @@ The `variant` object contains these fields:
 - `qdrant_collection` — Qdrant collection name this chunk belongs to
 - `augmentation_status` — `fallback_raw` / `null`
 - **`embedding_status`** — `fallback_no_vector` / `null` (v0.21.0+. Chunks with `fallback_no_vector` are excluded from vector search.)
+- `embedding_error` — the reason the embedding failed, when `embedding_status` is `fallback_no_vector`; otherwise `null`
 - **`has_qdrant_point`** — `true` / `false` (v0.21.0+. `false` for fallback chunks.)
 
 > Paging rule of thumb: for large documents with hundreds of chunks, prefer `--limit 50` so the terminal doesn't flood. For small- and mid-sized documents, you can omit the limit and dump everything.

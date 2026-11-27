@@ -62,6 +62,8 @@ mrag registry generate ./knowledges --dry-run
 4. エントリ間の `id` 重複をすべて検査する
 5. `--output` の指定があればそこに、無ければルート直下の `knowledge_registry.yaml` に書き出す
 
+生成されるファイルのトップレベルのキーは `version`（常に `1`）、`generated_at`（生成時刻。UTC の ISO 8601 形式）、`agent_instructions`、`knowledge_bases` の 4 つです。
+
 ### スキップとエラーの方針
 
 | 状況 | 挙動 |
@@ -152,7 +154,7 @@ mrag registry validate ./knowledges/knowledge_registry.yaml --json
 
 ## `agent_instructions` — エージェントへの指示
 
-レジストリには、エージェントに対する選択ポリシーと検索コマンドのテンプレートを記述するセクションが含まれます。生成時にはデフォルト値が入ります。必要に応じて編集して運用に合わせてください（編集後は `mrag registry validate` で整合性を再確認してください）。
+レジストリには、エージェントに対する選択ポリシーと検索コマンドのテンプレートを記述するセクションが含まれます。生成時にはデフォルト値が入ります。必要に応じて編集して運用に合わせてください（編集後は `mrag registry validate` で整合性を再確認してください）。`generate` は常にデフォルト値を書き出すため、再実行するとこのセクションへの編集は失われます。再生成のあとに編集し直してください。
 
 ```yaml
 agent_instructions:
@@ -182,7 +184,7 @@ mrag registry validate ./knowledges/knowledge_registry.yaml --json | jq '.issue_
 
 - 生成時の警告は stderr に出るのでログとして残せます
 - 検証時の `issue_count` が 0 であれば、エージェントが安心して各プロジェクトに `cd` できる状態です
-- ナレッジベースの増減・プロファイル追加・名称変更があったら、`generate` を再実行してください（差分マージではなく全件再生成です）
+- ナレッジベースの増減・プロファイル追加・名称変更があったら、`generate` を再実行してください（差分マージではなく全件再生成です。カスタマイズした `agent_instructions` などの手動編集はデフォルト値に置き換わります）
 
 
 ## Tips
@@ -190,5 +192,5 @@ mrag registry validate ./knowledges/knowledge_registry.yaml --json | jq '.issue_
 - `--dry-run` は **stdout に YAML を出す**ので、`mrag registry generate ./knowledges --dry-run | yq` のような俯瞰用パイプラインに使えます。警告メッセージは stderr に分離されています
 - 1 件もマッチしない場合の exit 1 は、ルートディレクトリを間違えていたり、サブディレクトリが 1 階層深く配置されているケースをすぐ気付けるように設計されています。エラーメッセージ末尾の Tip に従って `mrag init <root>/<kb-name>` を実行してください
 - レジストリの手動編集は想定内です。`agent_instructions` のカスタマイズ後は `mrag registry validate` を回してから運用に乗せてください
-- 空のレジストリを意図的に作りたい場合は `touch <root>/knowledge_registry.yaml` で代替してください（v0.18.0 時点では `--allow-empty` 相当のオプションはありません）
+- 空のレジストリを意図的に作りたい場合は、少なくとも `generated_at: "2026-01-01T00:00:00+00:00"`（引用符付きの文字列）と `knowledge_bases: []` を書いたファイルを手動で作成してください。`generate` に `--allow-empty` 相当のオプションはなく、`touch` で作った空ファイルは `generated_at` が必須のため `mrag registry validate` を通りません
 - ナレッジベース単体のメタデータについては [kb-information-ja.md](./kb-information-ja.md) を参照してください

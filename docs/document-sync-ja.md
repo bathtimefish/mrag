@@ -49,16 +49,18 @@ catalog がそのディレクトリ配下に置く全 document と、scan が見
 | `add` | document のないファイルで、その内容をどの document も持っていない | 新しい document として登録する |
 | `update` | document のファイルが別の内容を持っている | 新しい内容を document の現在の版として保存する。ID は変わらない |
 | `move` | document のファイルが消え、その内容を持つ新しいファイルがちょうど 1 つある | document を新しいパスへ向ける。ID は変わらない |
-| `exclude` | document のファイルが消え、その内容を持つものがない | document を全 profile から除外する（`reason: file_missing`） |
+| `exclude` | document のファイルが消え、新しいファイルと move として対応付けられなかった | document を全 profile から除外する（`reason: file_missing`。その内容を持つ新しいファイルはあるが対応付けられなかった場合は `ambiguous_move`） |
 | `restore` | sync が除外したファイルが同じ内容で戻ってきた | その除外を解除する |
 | `noop` | document のファイルが catalog の言う場所に同じ内容である | 何もしない |
 | `duplicate` | 新しいファイルの内容を別の document が既に持っている、または複数のファイルが同じ移動の候補 | 何もしない。内容を持つ document を report が名指しする |
 | `adopt_candidate` | 旧 catalog から移行されパスを記録していない document の内容を、新しいファイルが持っている | 何もしない。`documents rebind` で明示的に採用する |
 
 移動は 1 対 1 でのみ判定します。同じ内容の消えた document が 2 つ、あるいは同じ内容の
-新しいファイルが 2 つある場合、推測で対応付けることはなく、それぞれ `reason: ambiguous_move`
-の `duplicate` として報告し、何も変更しません。大文字小文字だけが変わる改名は、大文字小文字
-を区別しないファイルシステム上でも move です。
+新しいファイルが 2 つある場合、推測で対応付けることはありません。新しいファイルはそれぞれ
+`reason: ambiguous_move` の `duplicate` として報告し、手を付けません。消えた document は
+それぞれ `reason: ambiguous_move` の `exclude` になり、`--apply` はほかの `exclude` と同じく
+それを除外します。大文字小文字だけが変わる改名は、大文字小文字を区別しないファイルシステム
+上でも move です。
 
 mrag が取り込まない形式のファイル（PDF、Office、HTML）は `unsupported` として数え、
 何も残しません。コーパスのディレクトリには document でないファイルも置かれるものなので、
@@ -71,12 +73,18 @@ sync はそれらの追加を頼まれていないので、失敗するものが
 
 ### sync が書く除外と、人が書く除外
 
-`exclude` の item は `mrag exclusions add` と同じ document 除外を全 profile に書き、
-`origin: sync`、理由 `source file missing at documents sync` を付けます。sync が解除する
+`exclude` の item は `mrag exclusions add` が書くものと同じ種類の document 除外ルールを
+全 profile に書き、`origin: sync`、理由 `source file missing at documents sync` を付けます。
+書くのはルールだけで、`mrag exclusions add` が行う index の物理 cleanup（その document の
+FTS 行・chunk・Qdrant point の削除）は行いません。document を検索から外すのはこのルール
+です。sync が解除する
 のは自分が書いた除外だけで、ファイルが戻るか、document が move または rebind されたとき
-だけです。人が書いた除外（`origin: user`）を sync が解除することはなく、人が除外した
-document のファイルが消えても `reason: excluded_by_user` の `noop` です — 何をしたいかは
-既に示されています。そのような document の移動では除外も一緒に移ります。
+だけです。人が書いた除外（`origin: user`）を sync が解除することはなく、人が全 profile
+から除外した document のファイルが消えても `reason: excluded_by_user` の `noop` です —
+何をしたいかは既に示されています。そのような document の移動では除外も一緒に移ります。
+人が 1 つの profile に対して書いた除外にはこの効果がなく、ファイルが消えた document は
+ほかと同じく `exclude` になります。sync が既に除外していて、ファイルが消えたままの
+document は `reason: already_excluded_by_sync` の `noop` です。
 
 `mrag exclusions list --json` で各ルールの origin を確認できます。
 
@@ -119,14 +127,23 @@ project 外のファイルは、追加時のディレクトリ（*root*）配下
 }
 ```
 
-item の `status` は、計画では `planned` か `reported`、`--apply` 後は `applied`、`failed`、
-`cancelled` のいずれかです。sync 自身が定義する唯一の失敗は `ingestion_source_changed`
-（`reason: changed_during_sync`）で、計画と書き込みの間にファイルの内容が変わった場合です。
-次の実行が拾います。`directory_binding` は `project_relative` か `external_root` です。
+item の `status` は、計画では `--apply` が実行する item が `planned`、実行するものがない
+item（`noop`、`duplicate`、`adopt_candidate`）が `reported` です。`--apply` 後は `applied`、
+`failed`、`cancelled` のいずれかで、実行するものがない item は `reported` のままです。
+失敗した item は `error` object を持ち、その code は次の 3 つのいずれかです:
+`ingestion_source_changed`（`reason: changed_during_sync`。計画と書き込みの間にファイルの
+内容が変わった場合で、次の実行が拾います）、`documents_sync_duplicate_appeared`（計画と
+書き込みの間に別の document がその内容を持った）、`documents_sync_item_failed`（ファイルを
+読めなかった、または保存できなかった）。`scan_issues` は scan が読めなかったパスを `path`・
+`code`・`message` 付きで並べます。code はディレクトリ走査自身のもの
+（`directory_walk_failed`、`directory_symlink_cycle` など）か、`source_identity_failed`、
+`native_source_read_failed` です。scan issue は 1 件ずつ `summary.failed` に数え、計画でも
+同じです。`directory_binding` は `project_relative` か `external_root` です。
 `blocked` は常に 0 です。mrag は Markdown とテキストしか取り込まないので、変換待ちの
 ものがありません。
 
 `index` object は `--index` 指定時に現れます。計画では再構築する profile を添えて `planned`、
+または `reason` が `no_changes` か `no_indexed_profile` の `skipped` です。
 `--apply` 後は `indexed`、`failed`（`next_action` に実行すべき `mrag index --profile`）、
 または `reason` が `no_changes`、`no_indexed_profile`（index 済み profile がまだない。
 `--profile` で名指しする）、`cancelled` の `skipped` です。再構築ごとに `logs/` へ独自の
@@ -137,9 +154,9 @@ item の `status` は、計画では `planned` か `reported`、`--apply` 後は
 
 | exit code | 意味 |
 |---:|---|
-| `0` | 計画を表示した、または failed item なしで適用した。 |
-| `3` | 1 件以上の item が失敗、scan issue が報告された、再構築が失敗した、または監査ログを書けなかった。他の item は有効。 |
-| `2` | 使用方法が不正: ディレクトリが存在しない／ファイルである／project 自身のディレクトリ(`data/`・`identities/`・`profiles/`・`qdrant/`・`logs/`・`cache/`)、`--index` なしの `--profile`、未知の profile、`mrag catalog migrate-identities` が先に必要な catalog。 |
+| `0` | 計画を表示した、または適用した。いずれも failed item と scan issue がない。 |
+| `3` | 1 件以上の item が失敗、scan issue が報告された（`--apply` なしの計画でもこの場合は 3）、再構築が失敗した、または監査ログを書けなかった。他の item は有効。 |
+| `2` | 使用方法が不正: ディレクトリが存在しない／ファイルである／project 自身のディレクトリ(`data/`・`identities/`・`profiles/`・`qdrant/`・`logs/`・`cache/`)、`--index` なしの `--profile`、未知の profile、scan を始められなかった（`sync_scan_failed`: 不正な `--include`／`--exclude` の glob、使えない `.mragignore`、`--follow-symlinks` なしの symlink ディレクトリ）、`mrag catalog migrate-identities` が先に必要な catalog。 |
 | `1` | 初期化済み project の中ではない。 |
 | `130` | 中断された。下記参照。 |
 
@@ -170,9 +187,13 @@ rebind は sync が手を付けない場合のためのものです。移動 *�
 自分で名指ししたので `--force` は不要です。その document に対する sync 自身の除外は
 解除され、人の除外は残ります。
 
-別の document が既にそのパスにある（`rebind_target_taken`）か、既にその内容を持っている
-（`rebind_content_held_by_other_document`）場合は exit 1 で拒否し、report がその document
-を名指しします（`held_by`）。document を自分自身のファイルへ結び付けるのは `noop` です。
+その ID の document がない（`document_not_found`）場合、別の document が既にそのパスにある
+（`rebind_target_taken`）か、既にその内容を持っている
+（`rebind_content_held_by_other_document`）場合は exit 1 で拒否します。後の 2 つでは report
+がその document を名指しします（`held_by`）。report の `action` は、document のパスが変わる
+なら `rebind`、自分自身のファイルが異なる内容を持っているなら `update`、自分自身のファイルが
+同じ内容で sync の除外だけを解除するなら `restore`、自分自身のファイルが同じ内容で解除する
+sync の除外もないなら `noop` です。
 使用方法の誤り — 存在しないファイル、ディレクトリ、mrag が取り込まない形式、`data/` や
 `identities/` 配下のファイル — は exit 2 です。
 
@@ -185,5 +206,5 @@ report の `new_revision` は、計画が取り込むつもりだったかでは
 表します。
 
 どちらのコマンドも単独では index を再構築しません。sync の `--index` か `mrag index` が
-行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧は
-`stale` と報告し、次の index が新しい名前で作り直します。
+行います。移動や rebind をした document は変更ありとして扱われ、それまで document の一覧
+(`GET /api/v1/documents` と MCP の `list_documents` tool)は `stale` と報告し、次の index が新しい名前で作り直します。

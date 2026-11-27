@@ -9,6 +9,7 @@ from mrag.config.profile import (
     ProfileConfig,
     load_profile,
     validate_effective_tokenizer,
+    validate_retrieval_strategy,
 )
 from mrag.config.project import ProjectConfig
 from mrag.core.embedding.base import BaseEmbeddingProvider
@@ -110,7 +111,7 @@ def run_retrieval(
     profile = load_profile(resolved_profile_name, project_dir)
     effective_top_k = profile.retrieval.top_k if top_k is None else top_k
     db_path = find_db(project_dir)
-    resolved_strategy = strategy or profile.retrieval.strategy
+    resolved_strategy = validate_retrieval_strategy(strategy or profile.retrieval.strategy)
     tokenizer = validate_effective_tokenizer(profile, config.fts_tokenizer)
 
     active_reranker = reranker

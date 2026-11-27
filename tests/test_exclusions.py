@@ -397,3 +397,41 @@ def test_profile_scoped_policy_does_not_hide_other_profiles(indexed_project):
         db_path=indexed_project.db_path,
         tokenizer=indexed_project.config.fts_tokenizer,
     )
+
+
+def test_every_read_of_a_rule_says_who_wrote_it(indexed_project):
+    """A rule the sync wrote reads as the sync's, whichever query reads it (1.7.6)."""
+    from mrag.db.exclusions import create_exclusion, find_covering_exclusion, find_exclusion
+
+    created = create_exclusion(
+        indexed_project.db_path, indexed_project.document_id, None, "file missing", origin="sync"
+    )
+
+    assert [rule.origin for rule in list_exclusions(indexed_project.db_path)] == ["sync"]
+    assert find_exclusion(indexed_project.db_path, created.id).origin == "sync"
+    covering = find_covering_exclusion(indexed_project.db_path, indexed_project.document_id, None)
+    assert covering.origin == "sync"
+    scoped = find_covering_exclusion(indexed_project.db_path, indexed_project.document_id, "default")
+    assert scoped.origin == "sync"
+
+    listed = runner.invoke(app, ["exclusions", "list", "--json"], catch_exceptions=False)
+    assert json.loads(listed.stdout)["exclusions"][0]["origin"] == "sync"
+
+
+def test_a_table_from_before_origin_reads_as_a_persons_rules(tmp_path: Path):
+    """A read does not add the column; a table without it holds only a person's rules."""
+    import sqlite3
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """CREATE TABLE document_exclusions (
+               id TEXT PRIMARY KEY, document_id TEXT NOT NULL, profile_name TEXT,
+               reason TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
+           INSERT INTO document_exclusions VALUES
+               ('e1', 'd1', NULL, 'old rule', '2026-01-01T00:00:00+00:00', NULL);"""
+    )
+    conn.commit()
+    conn.close()
+
+    assert [rule.origin for rule in list_exclusions(db_path)] == ["user"]

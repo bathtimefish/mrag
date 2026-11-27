@@ -4,7 +4,7 @@ description: Operate mrag knowledge bases when creating, ingesting, searching, t
 license: MIT
 metadata:
   upstream: https://github.com/bathtimefish/mrag
-  version: "1.2.0"
+  version: "1.7.6"
 ---
 
 # mrag knowledge base operations
@@ -18,11 +18,13 @@ to mrag's source code do not require following a KB lifecycle.
 
 - Run project commands from the target KB directory containing `mrag.yaml`.
   The source checkout and the KB can be different directories. If using a
-  checkout's virtual environment, resolve `.venv/bin/mrag` to an absolute path
-  before changing directories. `doctor` is project-independent; `init` and
+  checkout's virtual environment, resolve `.venv/bin/mrag` (`.venv\Scripts\mrag.exe`
+  on Windows) to an absolute path before changing directories. `doctor` is project-independent; `init` and
   `registry` operate on the paths supplied to them.
-- `mrag init --name <name> --non-interactive` creates a subdirectory. Run it
-  from the intended parent to avoid double nesting.
+- `mrag init <dir> --non-interactive` creates the project at `<dir>`. With
+  `--name <name>` and no `<dir>`, it creates a subdirectory named after the
+  project in the current directory; run that form from the intended parent to
+  avoid double nesting.
 - Ingestion follows `init → add → index → search`. Resume at the needed stage
   for an existing KB. `add` stores documents but does not index them.
 - `add` accepts `.md`, `.markdown`, and `.txt`. Convert other formats first;
@@ -45,12 +47,11 @@ to mrag's source code do not require following a KB lifecycle.
   ID. Migrated documents have `legacy_unbound` identity because their original
   path cannot be reconstructed. Content already registered under any source,
   including a migrated document, is still `skipped_duplicate`.
-- To find what a profile has not caught up with, ask the list rather than the
-  database: `GET /api/v1/documents?status=stale&status=ready` (or MCP
-  `list_documents` with `status: ["stale", "ready"]`), following
-  `page.next_offset` until it is `null`. Only extracted documents are listed
-  unless `all=true`; `aggregate_status` is what `status` filters on, while the
-  row's `status` stays the stored extraction value.
+- To find what a profile has not caught up with, ask the document list, not
+  the database: `GET /api/v1/documents?status=stale&status=ready` or MCP
+  `list_documents`, paging with `page.next_offset` until it is `null`. The
+  `status` filter reads `aggregate_status`; add `all=true` to include documents
+  not extracted yet (pending or failed).
 - The project's `identities/` directory is reserved: never place sources there
   (`add` refuses them, recursive add skips the directory). A project created by
   1.1.0 refuses `add` until `mrag catalog migrate-identities` converts its
@@ -69,7 +70,7 @@ guidance; it is not a prerequisite to reread before each command.
 | Install mrag or diagnose missing runtime dependencies | [SETUP.md](SETUP.md); `mrag doctor` |
 | Create a KB, add files, index, or export extracted text | [Tutorial](docs/tutorial.md); `mrag show-extracted` / `mrag export-extracted --help` |
 | Add a directory with filters or recover partial ingestion | [Recursive ingestion](docs/recursive-add.md) |
-| Files were renamed, edited or deleted after they were added | [Document sync](docs/document-sync.md) |
+| Files were renamed, edited or deleted after they were added; bind one document to a file a sync cannot match (`documents rebind`) | [Document sync](docs/document-sync.md) |
 | Populate or validate agent-facing KB metadata | [KB information](docs/kb-information.md) |
 | Select search strategy, compare results, or diagnose misses | [Retrieval strategies](docs/retrieval-strategies.md) |
 | Change chunk boundaries, preserve tables/code, or use parent-child | [Chunking strategies](docs/chunking-strategies.md) |
@@ -79,7 +80,8 @@ guidance; it is not a prerequisite to reread before each command.
 | Exclude, restore, or permanently remove a document | [Document exclusions](docs/document-exclusions.md) |
 | Discover or aggregate multiple KBs | [Registry](docs/registry.md) |
 | Serve HTTP retrieval or integrate Dify | [Native API](docs/native-api.md), [Dify API](docs/dify-api.md) |
-| Expose a KB through MCP | [MCP](docs/mcp.md) |
+| Expose a KB through MCP | [MCP](docs/mcp.md) (needs the `mcp` extra) |
+| Build a standalone binary | [Packaging](docs/packaging.md) |
 
 ## Choose settings for the goal
 
@@ -129,13 +131,16 @@ Context prompt templates must retain `{document}` and `{chunk}` placeholders.
 ## Retrieval and evidence
 
 Use `mrag search "<query>" --json` for machine-readable results. Omit `--top-k`
-to respect the profile's configured count. Cite a result through its
+to respect the profile's configured count. `--strategy` takes `hybrid`,
+`vector`, `keyword` or `parent_child`; any other value is an error (exit 1),
+as is a misspelt `retrieval.strategy` in the profile. Cite a result through its
 `reference`: the document's `display_name`, the project-relative `original` and
 `extracted_markdown`, and the `mrag://documents/<id>/original` MCP resource. The
 extraction named is the document's current one; when the document list
 (`GET /api/v1/documents`, MCP `list_documents`) reports it `stale`, re-index
 before citing. Use `eval` when duplicate detection
-or profile comparison is needed, and `inspect` for selected chunks rather than
+or profile comparison is needed (it retrieves 10 results per profile unless
+`--top-k` says otherwise, so the compared sets are the same size), and `inspect` for selected chunks rather than
 loading every chunk body. Multi-profile chunk/section inspection needs an
 explicit `--profile`.
 
@@ -156,8 +161,10 @@ status does not establish its accuracy. FTS5 retains the original chunk body.
 
 ## Integration and portability
 
-MCP is read-only and its stdio stdout is reserved for JSON-RPC. HTTP POST requests
-need JSON content type; when `MRAG_API_KEY` is configured, supply bearer auth.
+MCP is read-only and its stdio stdout is reserved for JSON-RPC; `mrag mcp` needs
+the `mcp` extra. HTTP POST requests need JSON content type; when `MRAG_API_KEY`
+is configured, supply bearer auth (a browser's CORS preflight is answered
+without it).
 Registry KB paths resolve relative to the registry file's directory, and the
 generator discovers projects one level below its root.
 

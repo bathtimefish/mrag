@@ -35,7 +35,7 @@ mrag serve --host 0.0.0.0 --port 8000
 
 - **`--host`** — Bind to an address reachable from Dify. For a local Dify instance, `127.0.0.1` is fine.
 - **`--port`** — Defaults to `8000`.
-- **`--profile`** — Profile used for retrieval. Defaults to `default_profile` in `mrag.yaml`.
+- **`--profile`** — Profile `/retrieval` searches with (also the default profile of the Native API's `GET /api/v1/documents`). Defaults to `default_profile` in `mrag.yaml`. The Native API's `POST /api/v1/retrieve` does not use it: a request without `profile` uses `default_profile`.
 - **`--no-rerank`** — Disables reranking for this server session even if the profile has `rerank.enabled: true` (useful when latency matters).
 
 The startup banner prints `Knowledge ID: <id>`. If a Dify request comes in with a `knowledge_id` that doesn't match this value, the response is 404 (see below).
@@ -137,7 +137,9 @@ Auth failures return Dify-compatible error codes:
 | `Authorization` header missing or malformed | 401 | `1001` | `Invalid Authorization header format.` |
 | Bearer token mismatch | 401 | `1002` | `Authorization failed. Please check your API key.` |
 
-> Note: the four endpoints `/`, `/docs`, `/openapi.json`, and `/redoc` are exempt from auth (so you can view the OpenAPI docs and run health checks).
+> Note: the three paths `/docs`, `/openapi.json`, and `/redoc` (the OpenAPI docs) are exempt from auth. `/` has no route and, since 1.7.6, is not exempt: with a key set `GET /` answers `401`.
+
+> Note: CORS is open and has no setting: the server allows every origin, method and header (`Access-Control-Allow-Origin: *`). When `MRAG_API_KEY` is set, a browser's preflight (an `OPTIONS` request with `Access-Control-Request-Method`, which carries no `Authorization` header) is answered without a key, and the request it clears still needs one. Before 1.7.6 the preflight was answered `401`.
 
 
 ## Error code reference
@@ -148,7 +150,7 @@ Auth failures return Dify-compatible error codes:
 | 401 | 1002 | Bearer token mismatch |
 | 404 | 2001 | `knowledge_id` does not match the value in `mrag.yaml` |
 | 400 | 4001 | Unsupported `metadata_condition` field, operator, or structure |
-| 422 | — | `knowledge_id` or `query` missing, `top_k` out of range, JSON structure invalid |
+| 422 | — | `knowledge_id`, `query`, `retrieval_setting` or `retrieval_setting.top_k` missing; `top_k` or `score_threshold` out of range; JSON structure invalid |
 | 500 | — | Internal server exceptions, e.g. Qdrant unreachable |
 
 Errors with `error_code: 1001 / 1002 / 2001 / 4001` are returned in the `{"error_code": ..., "error_msg": ...}` shape. `422` / `500` use FastAPI's default shape (`{"detail": ...}`).
@@ -161,7 +163,7 @@ These are the key steps for registering mrag as an **External Knowledge** source
 1. From the "Knowledge" section in Dify Studio, choose "Add External Knowledge"
 2. Enter `http(s)://<mrag-host>:<port>/retrieval` as the **endpoint URL**
 3. Enter the same value as `MRAG_API_KEY` for the **API key** (leave empty if `MRAG_API_KEY` is not set on the mrag side)
-4. Enter `knowledge_base.id` from `mrag.yaml` as the **Knowledge ID** (this value is printed on the mrag console right after `mrag init`)
+4. Enter `knowledge_base.id` from `mrag.yaml` as the **Knowledge ID** (this value is printed as `Knowledge ID: <id>` in the `mrag serve` startup banner)
 
 Once the connection test passes, you can reference this knowledge from Dify's chat flow via a Knowledge Retrieval node.
 
